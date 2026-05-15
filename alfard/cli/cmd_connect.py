@@ -112,39 +112,151 @@ def _connect_apikey(name: str, integration: dict) -> bool:
 
 
 def _connect_oauth(name: str, integration: dict) -> bool:
+    # Step 1: welcome panel
     console.print(Panel(
-        f"[bold]{integration['display_name']}[/bold] uses the [bold cyan]gws[/bold cyan] CLI "
-        "for local OAuth. Your credentials are stored on your machine only.",
+        integration["description"],
         title=integration["display_name"],
         border_style="cyan",
     ))
 
+    # Step 2: ensure gws is installed
     if not shutil.which("gws"):
-        console.print(
-            "\n[yellow]gws is not installed.[/yellow]\n"
-            "Install gws with: [bold]npm install -g @googleworkspace/cli[/bold]\n"
-        )
-        answer = Prompt.ask("Have you installed gws?", choices=["y", "n"], default="n")
-        if answer != "y":
-            console.print(
-                f"\nRun the install command above then re-run "
-                f"[bold cyan]alfard connect {name}[/bold cyan]"
-            )
+        console.print("[bold]Installing gws (Google Workspace CLI)...[/bold]")
+        if not shutil.which("npm"):
+            console.print(Panel(
+                "[red]npm is not installed.[/red]\n\n"
+                "Install Node.js from [bold cyan]https://nodejs.org[/bold cyan] then re-run "
+                f"[bold cyan]alfard connect {name}[/bold cyan]",
+                border_style="red",
+            ))
+            return False
+        result = subprocess.run(["npm", "install", "-g", "@googleworkspace/cli"])
+        if result.returncode != 0:
+            console.print(Panel(
+                "[red]gws installation failed.[/red]\n\n"
+                "Run [bold]npm install -g @googleworkspace/cli[/bold] manually then retry.",
+                border_style="red",
+            ))
             return False
 
-    console.print("\nOpening browser for Google OAuth — sign in and click Allow.")
-    result = subprocess.run(["gws", "auth", "setup"])
-    if result.returncode != 0:
-        console.print("[yellow]Warning: gws auth setup exited with an error. Continuing.[/yellow]")
+    # Step 3: skip GCP setup if credentials already exist
+    creds_dest = Path.home() / ".config" / "gws" / "client_secret.json"
+    if not creds_dest.exists():
+        # Step 4: print one-time GCP setup instructions
+        setup_instructions = (
+            "You need to create a free Google Cloud project to connect Gmail.\n"
+            "This is a one-time setup — you'll never need to do it again.\n\n"
+            "Step 1: Create a project\n"
+            "  → We'll open Google Cloud Console now\n"
+            "  → Click \"New Project\", name it anything (e.g. \"alfard\")\n"
+            "  → Click Create\n\n"
+            "Step 2: Enable Gmail API\n"
+            "  → We'll open the Gmail API page\n"
+            "  → Click Enable\n\n"
+            "Step 3: Configure consent screen\n"
+            "  → Go to APIs & Services → OAuth consent screen\n"
+            "  → Choose External → fill in app name \"alfard\" and your email\n"
+            "  → Click Save through all screens\n"
+            "  → Click \"Add users\" and add YOUR Gmail address as a test user\n\n"
+            "Step 4: Create credentials\n"
+            "  → Go to APIs & Services → Credentials\n"
+            "  → Click Create Credentials → OAuth client ID\n"
+            "  → Application type: Desktop app → name it \"alfard\" → Create\n"
+            "  → Click the download button (↓) to download the JSON file"
+        )
+        console.print(Panel(
+            setup_instructions,
+            title="One-time Google setup (5 minutes)",
+            border_style="yellow",
+        ))
 
+        # Step 5: wait for user to confirm they're ready
+        Prompt.ask("Ready to start? Press Enter to open Google Cloud Console", default="")
+
+        # Step 6a: GCP console
+        webbrowser.open("https://console.cloud.google.com")
+        Prompt.ask("Step 1 done — project created? [press Enter to continue]", default="")
+
+        # Step 6b: Gmail API
+        webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
+        Prompt.ask("Step 2 done — Gmail API enabled? [press Enter to continue]", default="")
+
+        # Step 6c: OAuth consent screen
+        webbrowser.open("https://console.cloud.google.com/auth/clients")
+        console.print(
+            "\nConfigure the consent screen:\n"
+            "  → Choose External\n"
+            "  → Fill in app name [bold]alfard[/bold] and your email\n"
+            "  → Click Save through all screens\n"
+            "  → Click [bold]Add users[/bold] and add your Gmail address as a test user"
+        )
+        Prompt.ask(
+            "Step 3 done — consent screen configured and test user added? [press Enter to continue]",
+            default="",
+        )
+
+        # Step 6d: credentials
+        webbrowser.open("https://console.cloud.google.com/apis/credentials")
+        console.print(
+            "\nCreate OAuth credentials:\n"
+            "  → Click [bold]Create Credentials[/bold] → OAuth client ID\n"
+            "  → Application type: [bold]Desktop app[/bold] → name it alfard → Create\n"
+            "  → Click the [bold]download button (↓)[/bold] to download the JSON file"
+        )
+        Prompt.ask("Step 4 done — credentials JSON downloaded? [press Enter to continue]", default="")
+
+        # Step 7: get credentials path and copy to gws config
+        creds_path = Prompt.ask(
+            "\nDrag and drop your downloaded credentials JSON file here, or paste the path"
+        ).strip().strip("'\"")
+
+        if not creds_path or not Path(creds_path).exists():
+            console.print(Panel(
+                "[red]File not found.[/red]\n\nRe-run "
+                f"[bold cyan]alfard connect {name}[/bold cyan] and provide a valid path.",
+                border_style="red",
+            ))
+            return False
+
+        creds_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(creds_path, creds_dest)
+        console.print("[green]Credentials saved.[/green]")
+
+    # Step 8: OAuth login
+    console.print("\n[dim]Opening browser for Google sign-in...[/dim]")
+    result = subprocess.run(["gws", "auth", "login"])
+    if result.returncode != 0:
+        console.print(Panel(
+            "[red]Google sign-in failed.[/red]\n\n"
+            "Check the error above, then re-run "
+            f"[bold cyan]alfard connect {name}[/bold cyan]",
+            border_style="red",
+        ))
+        return False
+
+    # Step 9: test the connection
+    console.print("[dim]Testing connection...[/dim]")
+    test = subprocess.run(
+        ["gws", "gmail", "+triage", "--max", "1"],
+        capture_output=True,
+        text=True,
+    )
+    if test.returncode != 0:
+        console.print(Panel(
+            f"[red]Connection test failed.[/red]\n\n{test.stderr.strip()}",
+            border_style="red",
+        ))
+        return False
+
+    # Step 10: write to .env
     _update_env(integration["credential_env"], "gws-managed")
 
+    # Step 11: add server to integrations.yaml
     entry = {
         "name": name,
         "transport": integration["mcp_transport"],
         "command": integration["mcp_command"],
         "args": integration["mcp_args"],
-        "env_vars": {integration["credential_env"]: integration["credential_env"]},
         "tools": {
             "reversible": integration["reversible_tools"],
             "irreversible": integration["irreversible_tools"],
@@ -156,10 +268,45 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     data["servers"].append(entry)
     _save_integrations(data)
 
+    # Step 12: add skill to agent(s)
+    from alfard.agents.loader import list_agents, add_skill, AGENTS_DIR  # noqa: F401
+
+    agents = list_agents()
+    added_to: str = ""
+    if agents:
+        console.print("\n[bold]Which agent should get the Gmail skill?[/bold]")
+        for i, agent_name in enumerate(agents, start=1):
+            console.print(f"  {i}. {agent_name}")
+        console.print(f"  {len(agents) + 1}. All agents")
+
+        choice_raw = Prompt.ask("Enter number", default="1")
+        try:
+            choice = int(choice_raw)
+        except ValueError:
+            choice = 1
+
+        if choice == len(agents) + 1:
+            for agent_name in agents:
+                add_skill(agent_name, name)
+            added_to = "all agents"
+        elif 1 <= choice <= len(agents):
+            selected = agents[choice - 1]
+            add_skill(selected, name)
+            added_to = selected
+        else:
+            selected = agents[0]
+            add_skill(selected, name)
+            added_to = selected
+
+    # Step 13: success panel
     display = integration["display_name"]
+    skill_line = f"\nSkill added to: {added_to}" if added_to else ""
+    run_hint = f"\nRun: [bold cyan]alfard run {added_to}[/bold cyan]" if added_to else ""
     console.print(Panel(
         f"[bold green]{display} connected.[/bold green]\n\n"
-        "Run [bold cyan]alfard status[/bold cyan] to confirm.",
+        f"Postman can now read and manage your Gmail inbox."
+        f"{skill_line}"
+        f"{run_hint}",
         border_style="green",
     ))
     return True

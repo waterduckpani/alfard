@@ -88,7 +88,7 @@ class Orchestrator:
                 if name.startswith(tuple(
                     f"{s}." for s in ["notion", "github", "slack",
                                       "linear", "gmail", "gdrive"]
-                )):
+                )) or name.startswith("gmail_") or name.startswith("gdrive_"):
                     try:
                         raw_result = tool["function"](**arguments)
                         result = {"success": True, "result": raw_result, "error": None}

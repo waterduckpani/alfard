@@ -85,6 +85,15 @@ def run(agent: str, no_mcp: bool) -> None:
     else:
         console.print("[dim]MCP skipped (--no-mcp)[/dim]")
 
+    # Register gws-based tools if Gmail is configured
+    import shutil
+    from pathlib import Path
+    from alfard.integrations.gws_tools import register_gmail_tools
+    gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
+    if shutil.which("gws") and gws_creds.exists():
+        register_gmail_tools(registry)
+        console.print("[dim]Gmail tools registered.[/dim]")
+
     # 6. Build orchestrator
     orchestrator = Orchestrator(
         llm=LLMClient(),

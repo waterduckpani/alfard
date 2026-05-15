@@ -130,19 +130,22 @@ CATALOGUE: dict[str, dict] = {
             "2. A browser window will open — sign in and click Allow\n"
             "3. Your credentials are stored locally and never leave your machine"
         ),
-        "mcp_transport": "stdio",
+        "mcp_transport": "gws",
         "mcp_command": "gws",
-        "mcp_args": ["mcp", "-s", "gmail"],
+        "mcp_args": [],
         "mcp_url": "",
         "reversible_tools": [
-            "gmail_list_messages", "gmail_get_message",
-            "gmail_search_messages", "gmail_list_labels",
-            "gmail_list_drafts", "gmail_get_thread",
+            "gmail_list_messages",
+            "gmail_get_message",
+            "gmail_search_messages",
+            "gmail_list_labels",
+            "gmail_get_thread",
         ],
         "irreversible_tools": [
-            "gmail_send_message", "gmail_create_draft",
-            "gmail_delete_message", "gmail_modify_message",
-            "gmail_create_label", "gmail_delete_label",
+            "gmail_send_message",
+            "gmail_create_draft",
+            "gmail_delete_message",
+            "gmail_modify_message",
         ],
     },
     "gdrive": {
@@ -156,9 +159,9 @@ CATALOGUE: dict[str, dict] = {
             "2. A browser window will open — sign in and click Allow\n"
             "3. Your credentials are stored locally and never leave your machine"
         ),
-        "mcp_transport": "stdio",
+        "mcp_transport": "gws",
         "mcp_command": "gws",
-        "mcp_args": ["mcp", "-s", "drive"],
+        "mcp_args": [],
         "mcp_url": "",
         "reversible_tools": [
             "drive_list_files", "drive_get_file",
