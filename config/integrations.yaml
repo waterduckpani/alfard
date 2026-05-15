@@ -1,32 +1,4 @@
-servers:
-- name: notion
-  transport: stdio
-  command: npx
-  args:
-  - -y
-  - '@notionhq/notion-mcp-server'
-  env_vars:
-    NOTION_TOKEN: NOTION_TOKEN
-  tools:
-    reversible:
-    - API-post-search
-    - API-get-block-children
-    - API-get-user
-    - API-get-users
-    - API-get-self
-    - API-retrieve-a-page
-    - API-retrieve-a-page-property
-    - API-retrieve-a-block
-    - API-retrieve-a-database
-    - API-retrieve-a-data-source
-    - API-query-data-source
-    - API-list-data-source-templates
-    - API-retrieve-a-comment
-    irreversible:
-    - API-post-page
-    - API-patch-page
-    - API-post-database
-    - API-patch-database
-    - API-delete-block
-    - API-patch-block-children
-    - API-append-block-children
+# alfard integrations
+# Run: alfard connect <name> to add integrations
+
+servers: []

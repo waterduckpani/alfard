@@ -34,3 +34,4 @@ config/alfard.yaml
 
 # macOS
 .DS_Store
+config/integrations.yaml
