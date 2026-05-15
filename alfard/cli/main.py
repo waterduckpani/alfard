@@ -12,8 +12,10 @@ from alfard.cli.cmd_status import status
 from alfard.cli.cmd_skill import skill
 from alfard.cli.cmd_cron import cron
 
-@click.group()
-def cli():
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
     """
     alfard — local AI agents, done right.
 
@@ -26,9 +28,23 @@ def cli():
       alfard connect        Connect integrations
       alfard run <agent>    Start chatting
 
-    Docs: https://github.com/yourusername/alfard
+    Docs: https://github.com/bharatknk/alfard
     """
-    pass
+    from pathlib import Path
+    config = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+
+    if ctx.invoked_subcommand is None:
+        if not config.exists():
+            from rich.console import Console
+            from rich.panel import Panel
+            Console().print(Panel(
+                "No configuration found.\n\n"
+                "Run [bold]alfard setup[/bold] to get started.",
+                border_style="grey42"
+            ))
+        else:
+            click.echo(ctx.get_help())
+
 
 cli.add_command(setup)
 cli.add_command(run)

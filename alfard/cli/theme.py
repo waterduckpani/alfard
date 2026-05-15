@@ -3,7 +3,7 @@
 # Core palette — dark slate and natural greens, warm grays
 # Not alarming. Not corporate. Clear and trustworthy.
 
-PRIMARY    = "slate_blue"        # main accent — deep calm blue-gray
+PRIMARY    = "steel_blue"        # main accent — deep calm blue-gray
 SUCCESS    = "dark_sea_green4"   # muted natural green
 WARNING    = "dark_goldenrod"    # warm amber, not neon yellow
 ERROR      = "indian_red"        # soft red, not alarming

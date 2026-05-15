@@ -1,8 +1,10 @@
-"""Interactive first-run setup — asks the user which LLM provider they want, their API key or
-localhost URL, and which model to use, then writes the result to config/alfard.yaml and .env."""
+"""Interactive first-run setup — gets alfard working from scratch."""
 
 import os
 import re
+import sys
+import shutil
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -10,8 +12,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
+from alfard.cli import theme
 
 console = Console()
+
+BASE_DIR = Path(__file__).parent
 
 PROVIDERS = {
     "1": "openrouter",
@@ -83,35 +88,61 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
         env_path.write_text(f"{new_line}\n")
 
 
-def run_setup():
-    base_dir = Path(__file__).parent
+def run_setup() -> None:
 
-    # 1. Welcome banner
-    console.print(
-        Panel(
-            "[bold cyan]secure-by-default AI agent framework[/bold cyan]",
-            title="[bold white]alfard[/bold white]",
-            border_style="cyan",
-            padding=(1, 4),
+    # ── 1. WELCOME ────────────────────────────────────────────────────────────
+    console.print(Panel(
+        "local AI agents, done right.\n\n"
+        "Secure by default. Every action logged.\n"
+        "Your data stays on your machine.\n\n"
+        "This wizard sets up alfard in about 2 minutes.",
+        title="alfard",
+        border_style=theme.PRIMARY,
+        padding=(1, 4),
+    ))
+
+    # ── 2. DEPENDENCY CHECK — Node/npm ────────────────────────────────────────
+    if not shutil.which("node") or not shutil.which("npm"):
+        console.print(Panel(
+            "Node.js is needed for MCP integrations (Notion, Gmail, GitHub, Slack).\n\n"
+            "If you skip this, core agent features still work — you can install\n"
+            "Node.js later and re-run [bold]alfard setup[/bold] to enable integrations.",
+            title="Node.js required for integrations",
+            border_style=theme.WARNING,
+        ))
+        console.print(
+            f"Install from [bold {theme.PRIMARY}]https://nodejs.org[/bold {theme.PRIMARY}]"
+            " then re-run alfard setup"
         )
-    )
+        answer = Prompt.ask("Is Node.js already installed?", choices=["y", "n"], default="n")
+        if answer == "n":
+            console.print(
+                f"[{theme.DIM}]Install Node.js and re-run alfard setup when ready.[/{theme.DIM}]"
+            )
+            sys.exit(0)
+        if not shutil.which("node") or not shutil.which("npm"):
+            console.print(Panel(
+                f"[{theme.ERROR}]Node.js still not found in PATH.[/{theme.ERROR}]\n\n"
+                "Make sure Node.js is installed and your terminal has been restarted.",
+                border_style=theme.ERROR,
+            ))
+            sys.exit(1)
+    console.print(f"[{theme.SUCCESS}]{theme.ICON_OK} Node.js found[/{theme.SUCCESS}]")
 
-    # 2. Provider selection
-    console.print("\n[bold]Select a provider:[/bold]")
+    # ── 3. LLM PROVIDER ───────────────────────────────────────────────────────
+    console.print(f"\n[bold {theme.HEADING}]LLM Provider[/bold {theme.HEADING}]")
+    console.print("Which provider do you want to use?\n")
+
     for num, name in PROVIDERS.items():
         tag = "  (local, no key needed)" if name in LOCAL_PROVIDERS else ""
         default_marker = "  [dim](default)[/dim]" if num == "1" else ""
         console.print(f"  {num}. {name}{tag}{default_marker}")
 
     provider_choice = Prompt.ask(
-        "\nProvider",
-        choices=list(PROVIDERS.keys()),
-        default="1",
+        "\nProvider", choices=list(PROVIDERS.keys()), default="1"
     )
     provider = PROVIDERS[provider_choice]
-    console.print(f"[green]Selected:[/green] {provider}")
 
-    # 3. API key or localhost URL
     api_key: str | None = None
     api_key_env: str | None = None
     base_url = PROVIDER_BASE_URLS[provider]
@@ -119,26 +150,19 @@ def run_setup():
     if provider in CLOUD_PROVIDERS:
         api_key_env = PROVIDER_API_KEY_ENV[provider]
         api_key = Prompt.ask(f"\nEnter your {provider} API key", password=True)
-        env_path = base_dir / ".env"
-        _update_env_file(env_path, api_key_env, api_key)
-        console.print(f"[green]API key written to[/green] {env_path.name} [dim]({api_key_env})[/dim]")
+        _update_env_file(BASE_DIR / ".env", api_key_env, api_key)
     else:
         console.print(f"\n[bold]Default localhost URL:[/bold] {base_url}")
         override = Prompt.ask("Base URL", default=base_url)
         base_url = override.rstrip("/")
 
-    # 4. Model selection
     models = PROVIDER_MODELS[provider]
     console.print("\n[bold]Select a model:[/bold]")
     for num, name in models:
         console.print(f"  {num}. {name}")
 
     model_choices = [m[0] for m in models]
-    model_choice = Prompt.ask(
-        "Model",
-        choices=model_choices,
-        default=model_choices[0],
-    )
+    model_choice = Prompt.ask("Model", choices=model_choices, default=model_choices[0])
     chosen_label = dict(models)[model_choice]
 
     if chosen_label == "custom":
@@ -146,12 +170,11 @@ def run_setup():
     else:
         model = chosen_label
 
-    # 5. Write config/alfard.yaml
-    config_dir = base_dir / "config"
+    config_dir = BASE_DIR / "config"
     config_dir.mkdir(exist_ok=True)
     config_path = config_dir / "alfard.yaml"
 
-    config = {
+    config_data = {
         "provider": {
             "name": provider,
             "model": model,
@@ -167,31 +190,113 @@ def run_setup():
             "log_path": "logs/audit.jsonl",
         },
     }
-
     with config_path.open("w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    # 6. Summary table
-    console.print()
-    table = Table(title="Configuration Summary", border_style="cyan", show_header=True)
-    table.add_column("Setting", style="bold")
-    table.add_column("Value")
-
-    table.add_row("Provider", provider)
-    table.add_row("Model", model)
-    table.add_row("Base URL", base_url)
-    table.add_row("API Key", "****" if api_key else "[dim]not required[/dim]")
-    table.add_row("Config path", str(config_path.relative_to(base_dir)))
-
-    console.print(table)
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
     console.print(
-        Panel(
-            "[bold green]Setup complete.[/bold green]  Run: [bold cyan]python main.py[/bold cyan]",
-            border_style="green",
-            padding=(0, 2),
-        )
+        f"\n[{theme.SUCCESS}]{theme.ICON_OK} Provider configured: {provider} / {model}[/{theme.SUCCESS}]"
     )
+
+    # ── 4. CREATE FIRST AGENT ─────────────────────────────────────────────────
+    console.print(f"\n[bold {theme.HEADING}]Create your first agent[/bold {theme.HEADING}]")
+    console.print("Agents are AI assistants with their own identity and skills.\n")
+
+    from alfard.agents.loader import AGENTS_DIR
+
+    agent_name = ""
+    while True:
+        agent_name = Prompt.ask("Agent name").strip().lower()
+        if not agent_name:
+            console.print(f"[{theme.ERROR}]Name cannot be empty.[/{theme.ERROR}]")
+            continue
+        if not re.match(r'^[a-z0-9-]+$', agent_name):
+            console.print(
+                f"[{theme.ERROR}]Name must be lowercase letters, numbers, or hyphens only.[/{theme.ERROR}]"
+            )
+            continue
+        break
+
+    agent_dir = AGENTS_DIR / agent_name
+    if agent_dir.exists():
+        console.print(
+            f"[{theme.WARNING}]Agent '{agent_name}' already exists — using existing agent.[/{theme.WARNING}]"
+        )
+    else:
+        description = Prompt.ask("What does this agent do?").strip()
+        personality = Prompt.ask(
+            "Personality or tone",
+            default="helpful and concise",
+        ).strip()
+
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        soul_content = f"""# {agent_name}
+
+## Purpose
+{description}
+
+## Personality
+{personality}
+
+## Rules
+- Always be honest about what you can and cannot do.
+- Never take irreversible actions without explicit user confirmation.
+- Keep responses concise and focused on the task.
+- If unsure, ask for clarification rather than guessing.
+"""
+        (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
+        (agent_dir / "brain.md").write_text(f"# {agent_name} — knowledge\n\n", encoding="utf-8")
+        (agent_dir / "memory.md").write_text(f"# {agent_name} — memory\n\n", encoding="utf-8")
+        console.print(f"[{theme.SUCCESS}]{theme.ICON_OK} Agent '{agent_name}' created[/{theme.SUCCESS}]")
+
+    # ── 5. CONNECT INTEGRATION (optional) ─────────────────────────────────────
+    console.print(f"\n[bold {theme.HEADING}]Connect an integration (optional)[/bold {theme.HEADING}]")
+    console.print("Connect Notion, Gmail, GitHub, Slack and more.\n")
+
+    do_connect = Prompt.ask("Connect an integration now?", choices=["y", "n"], default="n")
+
+    if do_connect == "y":
+        from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY
+        from alfard.cli.cmd_connect import _connect_apikey, _connect_oauth
+
+        names = list(CATALOGUE.keys())
+        for i, key in enumerate(names, start=1):
+            info = CATALOGUE[key]
+            console.print(
+                f"  {i}. {info['display_name']}  "
+                f"[{theme.DIM}]{info['description']}[/{theme.DIM}]"
+            )
+
+        raw = Prompt.ask("\nEnter number")
+        try:
+            choice_idx = int(raw) - 1
+        except ValueError:
+            choice_idx = -1
+
+        if 0 <= choice_idx < len(names):
+            chosen = names[choice_idx]
+            info = CATALOGUE[chosen]
+            if info["auth"] == AUTH_APIKEY:
+                _connect_apikey(chosen, info)
+            else:
+                _connect_oauth(chosen, info)
+        else:
+            console.print(f"[{theme.WARNING}]Invalid choice — skipping.[/{theme.WARNING}]")
+    else:
+        console.print(
+            f"[{theme.DIM}]You can connect integrations later: alfard connect[/{theme.DIM}]"
+        )
+
+    # ── 6. DONE ───────────────────────────────────────────────────────────────
+    console.print(Panel(
+        f"[{theme.SUCCESS}]{theme.ICON_OK} alfard is ready.[/{theme.SUCCESS}]\n\n"
+        f"Your agent: [bold]{agent_name}[/bold]\n\n"
+        "What to do next:\n"
+        f"  alfard run {agent_name}     start chatting\n"
+        "  alfard connect              connect integrations\n"
+        "  alfard cron add             schedule tasks\n"
+        "  alfard --help               see all commands",
+        border_style=theme.PANEL_SUCCESS,
+    ))
 
 
 if __name__ == "__main__":
