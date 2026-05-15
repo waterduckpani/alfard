@@ -1,0 +1,5 @@
+jobs:
+- enabled: true
+  name: summarise_my_inbox_from_the_last
+  schedule: 8am
+  task: summarise my inbox from the last 24 hours

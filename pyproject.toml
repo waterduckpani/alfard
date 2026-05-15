@@ -14,6 +14,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "click",
+    "apscheduler>=3.10",
 ]
 
 [project.scripts]
