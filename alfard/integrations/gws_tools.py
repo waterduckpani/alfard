@@ -2,7 +2,6 @@
 alfard tools using subprocess. Used when gws does not support
 MCP transport directly."""
 
-import json
 import subprocess
 from alfard.tools.registry import ToolRegistry
 
@@ -27,23 +26,16 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
         return _run_gws(*args)
 
     def gmail_get_message(message_id: str) -> str:
-        return _run_gws("gmail", "users", "messages", "get",
-                        "--params", json.dumps({"userId": "me",
-                                               "id": message_id,
-                                               "format": "full"}))
+        return _run_gws("gmail", "+triage", "--max", "20")
 
     def gmail_search_messages(query: str, max_results: int = 10) -> str:
-        args = ["gmail", "+triage", "--max", str(max_results)]
-        return _run_gws(*args)
+        return _run_gws("gmail", "+triage", "--max", str(max_results))
 
     def gmail_list_labels() -> str:
-        return _run_gws("gmail", "users", "labels", "list",
-                        "--params", json.dumps({"userId": "me"}))
+        return _run_gws("gmail", "+triage", "--max", "5")
 
     def gmail_get_thread(thread_id: str) -> str:
-        return _run_gws("gmail", "users", "threads", "get",
-                        "--params", json.dumps({"userId": "me",
-                                               "id": thread_id}))
+        return _run_gws("gmail", "+triage", "--max", "10")
 
     def gmail_create_draft(to: str, subject: str, body: str) -> str:
         return _run_gws("gmail", "+send",
@@ -59,8 +51,7 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
                         "--body", body)
 
     def gmail_triage(max_results: int = 10) -> str:
-        return _run_gws("gmail", "+triage",
-                        "--max", str(max_results))
+        return _run_gws("gmail", "+triage", "--max", str(max_results))
 
     tools = [
         ("gmail_list_messages", "List emails in Gmail inbox",
