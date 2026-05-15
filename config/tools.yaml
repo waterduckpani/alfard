@@ -1,0 +1,18 @@
+# Tool definitions for alfard.
+# Uncomment and configure tools as needed.
+#
+# tools:
+#   - name: web_search
+#     enabled: false
+#     description: Search the web for information
+#
+#   - name: file_read
+#     enabled: true
+#     description: Read files from the local filesystem
+#     sandbox: true
+#
+#   - name: shell_exec
+#     enabled: false
+#     description: Execute shell commands
+#     sandbox: true
+#     approval_required: true

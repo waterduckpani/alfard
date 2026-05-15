@@ -1,0 +1,24 @@
+[project]
+name = "alfard"
+version = "0.1.0"
+description = "Secure-by-default local AI agent orchestration framework"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic",
+    "openai",
+    "python-dotenv",
+    "gitpython",
+    "pyyaml",
+    "mcp",
+    "rich",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.scripts]
+alfard-setup = "setup_alfard:run_setup"
+alfard = "main:main"
+
+
+[tool.setuptools.packages.find]
+include = ["alfard*"]
