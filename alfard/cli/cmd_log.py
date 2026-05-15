@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 import yaml
+from alfard.cli import theme
 
 console = Console()
 
@@ -37,39 +38,39 @@ def _format_event(event: dict) -> Text:
     event_type = event.get("type", "unknown")
 
     if event_type == "llm_call":
-        text.append(f"{timestamp} ", style="dim")
+        text.append(f"{timestamp} ", style=theme.DIM)
         text.append("LLM  ", style="bold blue")
-        text.append(f"{event.get('provider')} / {event.get('model')} ", style="dim")
-        text.append(f"→ {event.get('response_type', '?')}", style="cyan")
-        text.append(f"  [{event.get('message_count', 0)} messages]", style="dim")
+        text.append(f"{event.get('provider')} / {event.get('model')} ", style=theme.DIM)
+        text.append(f"→ {event.get('response_type', '?')}", style=theme.BORDER)
+        text.append(f"  [{event.get('message_count', 0)} messages]", style=theme.DIM)
 
     elif event_type == "tool_call":
-        text.append(f"{timestamp} ", style="dim")
-        text.append("TOOL ", style="bold yellow")
+        text.append(f"{timestamp} ", style=theme.DIM)
+        text.append("TOOL ", style=f"bold {theme.WARNING}")
         text.append(f"{event.get('tool_name')} ", style="bold")
         source = event.get("source", "unknown")
-        source_style = "green" if source == "user_instruction" else "red"
+        source_style = theme.SUCCESS if source == "user_instruction" else theme.ERROR
         text.append(f"[{source}]", style=source_style)
 
     elif event_type == "gate_decision":
-        text.append(f"{timestamp} ", style="dim")
+        text.append(f"{timestamp} ", style=theme.DIM)
         decision = event.get("decision", "unknown")
         if decision == "approved":
-            text.append("GATE ", style="bold green")
+            text.append("GATE ", style=f"bold {theme.SUCCESS}")
             text.append(f"{event.get('tool_name')} ", style="bold")
-            text.append("approved", style="green")
+            text.append("approved", style=theme.SUCCESS)
         else:
-            text.append("GATE ", style="bold red")
+            text.append("GATE ", style=f"bold {theme.ERROR}")
             text.append(f"{event.get('tool_name')} ", style="bold")
-            text.append("rejected", style="red")
+            text.append("rejected", style=theme.ERROR)
         source = event.get("source", "unknown")
-        source_style = "green" if source == "user_instruction" else "red"
+        source_style = theme.SUCCESS if source == "user_instruction" else theme.ERROR
         text.append(f" [{source}]", style=source_style)
 
     else:
-        text.append(f"{timestamp} ", style="dim")
+        text.append(f"{timestamp} ", style=theme.DIM)
         text.append(f"{event_type.upper()} ", style="bold")
-        text.append(str(event), style="dim")
+        text.append(str(event), style=theme.DIM)
 
     return text
 
@@ -82,7 +83,7 @@ def _format_event(event: dict) -> Text:
 @click.option("--type", "-t", "event_type", default=None,
               help="Filter by event type: llm_call, tool_call, gate_decision")
 def log(agent: str | None, last: int, tail: bool, event_type: str | None):
-    """View the audit log.
+    """View the audit log — every action your agents have taken.
 
     Shows what the agent has been doing — every LLM call,
     tool call, and approval gate decision.
@@ -98,10 +99,10 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
 
     if not log_path or not log_path.exists():
         console.print(Panel(
-            "[yellow]No audit log found.[/yellow]\n\n"
+            f"[{theme.WARNING}]No audit log found.[/{theme.WARNING}]\n\n"
             "Run an agent first to generate log entries.\n"
-            "[dim]Expected path: logs/audit.jsonl[/dim]",
-            border_style="yellow"
+            f"[{theme.DIM}]Expected path: logs/audit.jsonl[/{theme.DIM}]",
+            border_style=theme.WARNING
         ))
         return
 
@@ -123,7 +124,7 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
 
     if tail:
         console.print(
-            f"[dim]Following {log_path.name} — press Ctrl+C to stop[/dim]\n"
+            f"[{theme.DIM}]Following {log_path.name} — press Ctrl+C to stop[/{theme.DIM}]\n"
         )
         try:
             with open(log_path, encoding="utf-8") as f:
@@ -142,26 +143,26 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
                     else:
                         time.sleep(0.2)
         except KeyboardInterrupt:
-            console.print("\n[dim]Stopped.[/dim]")
+            console.print(f"\n[{theme.DIM}]Stopped.[/{theme.DIM}]")
         return
 
     events = read_events(event_type)
 
     if not events:
-        console.print("[dim]No log entries found.[/dim]")
+        console.print(f"[{theme.DIM}]No log entries found.[/{theme.DIM}]")
         return
 
     events = events[-last:]
 
     console.print(
-        f"\n[dim]Showing last {len(events)} events from "
-        f"{log_path.name}[/dim]\n"
+        f"\n[{theme.DIM}]Showing last {len(events)} events from "
+        f"{log_path.name}[/{theme.DIM}]\n"
     )
 
     for event in events:
         console.print(_format_event(event))
 
     console.print(
-        f"\n[dim]Total: {len(events)} events shown. "
-        f"Run with --tail to follow live.[/dim]\n"
+        f"\n[{theme.DIM}]Total: {len(events)} events shown. "
+        f"Run with --tail to follow live.[/{theme.DIM}]\n"
     )

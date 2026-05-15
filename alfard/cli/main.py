@@ -13,7 +13,20 @@ from alfard.cli.cmd_skill import skill
 
 @click.group()
 def cli():
-    """alfard — secure-by-default local AI agent framework."""
+    """
+    alfard — local AI agents, done right.
+
+    Secure by default. Your data stays on your machine.
+    Every action is logged. Irreversible actions need your approval.
+
+    Getting started:
+      alfard setup          Configure your LLM provider
+      alfard create         Create your first agent
+      alfard connect        Connect integrations
+      alfard run <agent>    Start chatting
+
+    Docs: https://github.com/yourusername/alfard
+    """
     pass
 
 cli.add_command(setup)

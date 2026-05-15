@@ -6,6 +6,7 @@ import yaml
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich import print as rprint
+from alfard.cli import theme
 
 _CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
 
@@ -14,12 +15,15 @@ class CLINotifier:
 
     def present(self, tool_name: str, arguments: dict, source: str) -> str:
         content = (
-            f"Tool:       {tool_name}\n"
+            f"[dim]Tool:       {tool_name}\n"
             f"Arguments:  {json.dumps(arguments, indent=2)}\n"
-            f"Source:     {source}"
+            f"Source:     {source}[/dim]"
         )
-        rprint(Panel(content, title="Approval Required", border_style="yellow"))
-        return Prompt.ask("Approve?", choices=["y", "n"])
+        rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
+        while True:
+            choice = Prompt.ask("Approve? [dim]\\[y/n][/dim]").strip().lower()
+            if choice in ("y", "n"):
+                return choice
 
 
 class ApprovalGate:

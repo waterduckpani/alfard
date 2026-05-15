@@ -5,5 +5,6 @@ import click
 
 @click.command()
 def setup():
+    """First-run setup — configure your LLM provider and preferences."""
     # TODO: invoke setup_alfard wizard
     pass

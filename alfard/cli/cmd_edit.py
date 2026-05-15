@@ -6,6 +6,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from alfard.agents.loader import AGENTS_DIR
+from alfard.cli import theme
 
 console = Console()
 
@@ -20,7 +21,7 @@ FILE_MAP = {
 @click.argument("agent")
 @click.argument("file", type=click.Choice(["soul", "brain", "memory"]))
 def edit(agent: str, file: str):
-    """Open an agent file in your default editor.
+    """Edit an agent's soul, brain or memory files.
 
     AGENT is the agent name. FILE is one of: soul, brain, memory.
 
@@ -30,10 +31,10 @@ def edit(agent: str, file: str):
     agent_dir = AGENTS_DIR / agent
     if not agent_dir.exists():
         console.print(Panel(
-            f"[red]Agent '{agent}' not found.[/red]\n\n"
-            f"Run [bold cyan]alfard list[/bold cyan] to see available agents.\n"
-            f"Run [bold cyan]alfard create[/bold cyan] to create a new one.",
-            border_style="red"
+            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]\n\n"
+            f"Run [bold {theme.PRIMARY}]alfard list[/bold {theme.PRIMARY}] to see available agents.\n"
+            f"Run [bold {theme.PRIMARY}]alfard create[/bold {theme.PRIMARY}] to create a new one.",
+            border_style=theme.ERROR
         ))
         raise SystemExit(1)
 
@@ -42,11 +43,11 @@ def edit(agent: str, file: str):
 
     if file == "soul":
         console.print(Panel(
-            "[bold yellow]You are editing soul.md[/bold yellow]\n\n"
+            f"[bold {theme.WARNING}]You are editing soul.md[/bold {theme.WARNING}]\n\n"
             "This file defines the agent's identity and rules.\n"
             "The agent reads this file but can never modify it.\n"
             "Changes take effect on the next run.",
-            border_style="yellow",
+            border_style=theme.WARNING,
             title="⚠ Identity file"
         ))
 
@@ -69,11 +70,11 @@ def edit(agent: str, file: str):
 
     try:
         subprocess.run(editor_cmd, check=True)
-        console.print(f"[green]Saved:[/green] agents/{agent}/{filename}")
+        console.print(f"[{theme.SUCCESS}]Saved:[/{theme.SUCCESS}] agents/{agent}/{filename}")
     except FileNotFoundError:
         console.print(
-            f"[red]Editor '{editor}' not found.[/red] "
+            f"[{theme.ERROR}]Editor '{editor}' not found.[/{theme.ERROR}] "
             f"Set your $EDITOR environment variable or edit the file directly:\n"
-            f"[dim]{filepath}[/dim]"
+            f"[{theme.DIM}]{filepath}[/{theme.DIM}]"
         )
         raise SystemExit(1)

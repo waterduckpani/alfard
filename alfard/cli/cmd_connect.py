@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY, AUTH_OAUTH
+from alfard.cli import theme
 
 console = Console()
 
@@ -63,7 +64,7 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     console.print(Panel(
         integration["description"],
         title=integration["display_name"],
-        border_style="cyan",
+        border_style=theme.BORDER,
     ))
 
     console.print("\n[bold]How to get your token:[/bold]")
@@ -72,7 +73,7 @@ def _connect_apikey(name: str, integration: dict) -> bool:
 
     url = integration.get("get_token_url", "")
     if url:
-        console.print(f"\nOpening [bold cyan]{url}[/bold cyan]")
+        console.print(f"\n[bold {theme.PRIMARY}]{url}[/bold {theme.PRIMARY}]")
         webbrowser.open(url)
 
     token = Prompt.ask(
@@ -80,7 +81,7 @@ def _connect_apikey(name: str, integration: dict) -> bool:
         password=True,
     )
     if not token.strip():
-        console.print("[red]No token entered. Aborting.[/red]")
+        console.print(f"[{theme.ERROR}]No token entered. Aborting.[/{theme.ERROR}]")
         return False
 
     _update_env(integration["credential_env"], token.strip())
@@ -104,9 +105,9 @@ def _connect_apikey(name: str, integration: dict) -> bool:
 
     display = integration["display_name"]
     console.print(Panel(
-        f"[bold green]{display} connected.[/bold green]\n\n"
-        "Run [bold cyan]alfard status[/bold cyan] to confirm.",
-        border_style="green",
+        f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
+        f"Run [bold {theme.PRIMARY}]alfard status[/bold {theme.PRIMARY}] to confirm.",
+        border_style=theme.SUCCESS,
     ))
     return True
 
@@ -116,7 +117,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     console.print(Panel(
         integration["description"],
         title=integration["display_name"],
-        border_style="cyan",
+        border_style=theme.BORDER,
     ))
 
     # Step 2: ensure gws is installed
@@ -124,18 +125,18 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         console.print("[bold]Installing gws (Google Workspace CLI)...[/bold]")
         if not shutil.which("npm"):
             console.print(Panel(
-                "[red]npm is not installed.[/red]\n\n"
-                "Install Node.js from [bold cyan]https://nodejs.org[/bold cyan] then re-run "
-                f"[bold cyan]alfard connect {name}[/bold cyan]",
-                border_style="red",
+                f"[{theme.ERROR}]npm is not installed.[/{theme.ERROR}]\n\n"
+                f"Install Node.js from [bold {theme.PRIMARY}]https://nodejs.org[/bold {theme.PRIMARY}] then re-run "
+                f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
+                border_style=theme.ERROR,
             ))
             return False
         result = subprocess.run(["npm", "install", "-g", "@googleworkspace/cli"])
         if result.returncode != 0:
             console.print(Panel(
-                "[red]gws installation failed.[/red]\n\n"
+                f"[{theme.ERROR}]gws installation failed.[/{theme.ERROR}]\n\n"
                 "Run [bold]npm install -g @googleworkspace/cli[/bold] manually then retry.",
-                border_style="red",
+                border_style=theme.ERROR,
             ))
             return False
 
@@ -167,7 +168,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         console.print(Panel(
             setup_instructions,
             title="One-time Google setup (5 minutes)",
-            border_style="yellow",
+            border_style=theme.WARNING,
         ))
 
         # Step 5: wait for user to confirm they're ready
@@ -212,30 +213,30 @@ def _connect_oauth(name: str, integration: dict) -> bool:
 
         if not creds_path or not Path(creds_path).exists():
             console.print(Panel(
-                "[red]File not found.[/red]\n\nRe-run "
-                f"[bold cyan]alfard connect {name}[/bold cyan] and provide a valid path.",
-                border_style="red",
+                f"[{theme.ERROR}]File not found.[/{theme.ERROR}]\n\nRe-run "
+                f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}] and provide a valid path.",
+                border_style=theme.ERROR,
             ))
             return False
 
         creds_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(creds_path, creds_dest)
-        console.print("[green]Credentials saved.[/green]")
+        console.print(f"[{theme.SUCCESS}]Credentials saved.[/{theme.SUCCESS}]")
 
     # Step 8: OAuth login
-    console.print("\n[dim]Opening browser for Google sign-in...[/dim]")
+    console.print(f"\n[{theme.DIM}]Opening browser for Google sign-in...[/{theme.DIM}]")
     result = subprocess.run(["gws", "auth", "login"])
     if result.returncode != 0:
         console.print(Panel(
-            "[red]Google sign-in failed.[/red]\n\n"
-            "Check the error above, then re-run "
-            f"[bold cyan]alfard connect {name}[/bold cyan]",
-            border_style="red",
+            f"[{theme.ERROR}]Google sign-in failed.[/{theme.ERROR}]\n\n"
+            f"Check the error above, then re-run "
+            f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
+            border_style=theme.ERROR,
         ))
         return False
 
     # Step 9: test the connection
-    console.print("[dim]Testing connection...[/dim]")
+    console.print(f"[{theme.DIM}]Testing connection...[/{theme.DIM}]")
     test = subprocess.run(
         ["gws", "gmail", "+triage", "--max", "1"],
         capture_output=True,
@@ -243,8 +244,8 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     )
     if test.returncode != 0:
         console.print(Panel(
-            f"[red]Connection test failed.[/red]\n\n{test.stderr.strip()}",
-            border_style="red",
+            f"[{theme.ERROR}]Connection test failed.[/{theme.ERROR}]\n\n{test.stderr.strip()}",
+            border_style=theme.ERROR,
         ))
         return False
 
@@ -301,13 +302,13 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     # Step 13: success panel
     display = integration["display_name"]
     skill_line = f"\nSkill added to: {added_to}" if added_to else ""
-    run_hint = f"\nRun: [bold cyan]alfard run {added_to}[/bold cyan]" if added_to else ""
+    run_hint = f"\nRun: [bold {theme.PRIMARY}]alfard run {added_to}[/bold {theme.PRIMARY}]" if added_to else ""
     console.print(Panel(
-        f"[bold green]{display} connected.[/bold green]\n\n"
+        f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
         f"Postman can now read and manage your Gmail inbox."
         f"{skill_line}"
         f"{run_hint}",
-        border_style="green",
+        border_style=theme.SUCCESS,
     ))
     return True
 
@@ -315,7 +316,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
 @click.command()
 @click.argument("integration", required=False)
 def connect(integration: str | None):
-    """Connect an integration via MCP.
+    """Connect an external service like Notion, Gmail or GitHub.
 
     Run without arguments to see available integrations.
 
@@ -327,7 +328,7 @@ def connect(integration: str | None):
     if not integration:
         table = Table(
             title="Available integrations",
-            border_style="cyan",
+            border_style=theme.BORDER,
             show_header=True,
         )
         table.add_column("Name", style="bold")
@@ -340,20 +341,26 @@ def connect(integration: str | None):
 
         for name, info in CATALOGUE.items():
             auth_label = "API key" if info["auth"] == AUTH_APIKEY else "OAuth"
-            status = "[green]connected[/green]" if name in connected else "[dim]not connected[/dim]"
+            status = (
+                f"[{theme.SUCCESS}]connected[/{theme.SUCCESS}]"
+                if name in connected
+                else f"[{theme.DIM}]not connected[/{theme.DIM}]"
+            )
             table.add_row(name, info["description"], auth_label, status)
 
         console.print(table)
-        console.print("\nRun [bold cyan]alfard connect <name>[/bold cyan] to connect one.\n")
+        console.print(
+            f"\nRun [bold {theme.PRIMARY}]alfard connect <name>[/bold {theme.PRIMARY}] to connect one.\n"
+        )
         return
 
     integration = integration.lower().strip()
 
     if integration not in CATALOGUE:
         console.print(Panel(
-            f"[red]Unknown integration: '{integration}'[/red]\n\n"
-            "Run [bold cyan]alfard connect[/bold cyan] to see available integrations.",
-            border_style="red",
+            f"[{theme.ERROR}]Unknown integration: '{integration}'[/{theme.ERROR}]\n\n"
+            f"Run [bold {theme.PRIMARY}]alfard connect[/bold {theme.PRIMARY}] to see available integrations.",
+            border_style=theme.ERROR,
         ))
         raise SystemExit(1)
 
@@ -361,7 +368,7 @@ def connect(integration: str | None):
 
     if _already_connected(integration):
         overwrite = Prompt.ask(
-            f"[yellow]{info['display_name']} is already connected. Reconnect?[/yellow]",
+            f"[{theme.WARNING}]{info['display_name']} is already connected. Reconnect?[/{theme.WARNING}]",
             choices=["y", "n"],
             default="n",
         )

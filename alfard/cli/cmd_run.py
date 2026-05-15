@@ -14,6 +14,7 @@ from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
+from alfard.cli import theme
 
 console = Console()
 
@@ -23,7 +24,7 @@ console = Console()
 @click.option("--no-mcp", is_flag=True, default=False,
               help="Skip MCP server connections (faster startup for testing)")
 def run(agent: str, no_mcp: bool) -> None:
-    """Run an agent in an interactive chat loop.
+    """Start a chat session with an agent.
 
     AGENT is the name of the agent to run.
 
@@ -34,10 +35,10 @@ def run(agent: str, no_mcp: bool) -> None:
     # 1. Validate agent exists
     if agent not in list_agents():
         console.print(Panel(
-            f"[red]Agent '{agent}' not found.[/red]\n\n"
-            f"Run [bold cyan]alfard list[/bold cyan] to see available agents.\n"
-            f"Run [bold cyan]alfard create[/bold cyan] to create a new one.",
-            border_style="red"
+            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]\n\n"
+            f"Run [bold {theme.PRIMARY}]alfard list[/bold {theme.PRIMARY}] to see available agents.\n"
+            f"Run [bold {theme.PRIMARY}]alfard create[/bold {theme.PRIMARY}] to create a new one.",
+            border_style=theme.ERROR
         ))
         raise SystemExit(1)
 
@@ -46,8 +47,10 @@ def run(agent: str, no_mcp: bool) -> None:
         loader = AgentLoader(agent)
         system_prompt = loader.build_system_prompt()
     except Exception as e:
-        console.print(Panel(f"[red]Failed to load agent '{agent}': {e}[/red]",
-                            border_style="red"))
+        console.print(Panel(
+            f"[{theme.ERROR}]Failed to load agent '{agent}': {e}[/{theme.ERROR}]",
+            border_style=theme.ERROR
+        ))
         raise SystemExit(1)
 
     # 3. Print startup banner
@@ -61,9 +64,9 @@ def run(agent: str, no_mcp: bool) -> None:
                 break
 
     console.print(Panel(
-        f"[bold cyan]{agent}[/bold cyan]\n[dim]{first_line or 'Ready'}[/dim]",
+        f"[bold {theme.PRIMARY}]{agent}[/bold {theme.PRIMARY}]\n[{theme.DIM}]{first_line or 'Ready'}[/{theme.DIM}]",
         title="alfard",
-        border_style="cyan",
+        border_style=theme.BORDER,
         padding=(0, 2)
     ))
 
@@ -76,14 +79,14 @@ def run(agent: str, no_mcp: bool) -> None:
 
     # 5. Connect MCP servers unless --no-mcp
     if not no_mcp:
-        console.print("[dim]Connecting integrations...[/dim]")
+        console.print(f"[{theme.DIM}]Connecting integrations...[/{theme.DIM}]")
         mcp = MCPClient(registry)
         mcp.connect_all()
         connected = mcp.list_connected()
         if connected:
-            console.print(f"[dim]Connected: {', '.join(connected)}[/dim]")
+            console.print(f"[{theme.DIM}]Connected: {', '.join(connected)}[/{theme.DIM}]")
     else:
-        console.print("[dim]MCP skipped (--no-mcp)[/dim]")
+        console.print(f"[{theme.DIM}]MCP skipped (--no-mcp)[/{theme.DIM}]")
 
     # Register gws-based tools if Gmail is configured
     import shutil
@@ -92,7 +95,7 @@ def run(agent: str, no_mcp: bool) -> None:
     gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
     if shutil.which("gws") and gws_creds.exists():
         register_gmail_tools(registry)
-        console.print("[dim]Gmail tools registered.[/dim]")
+        console.print(f"[{theme.DIM}]Gmail tools registered.[/{theme.DIM}]")
 
     # 6. Build orchestrator
     orchestrator = Orchestrator(
@@ -107,19 +110,19 @@ def run(agent: str, no_mcp: bool) -> None:
 
     # 7. Interactive chat loop
     console.print(
-        "\n[dim]Type your message and press Enter. "
-        "Type [bold]exit[/bold] or [bold]quit[/bold] to stop.[/dim]\n"
+        f"\n[{theme.DIM}]Type your message and press Enter. "
+        f"Type [bold]exit[/bold] or [bold]quit[/bold] to stop.[/{theme.DIM}]\n"
     )
 
     while True:
         try:
-            user_input = Prompt.ask("[bold cyan]you[/bold cyan]")
+            user_input = Prompt.ask(f"[bold {theme.PRIMARY}]you[/bold {theme.PRIMARY}]")
         except (KeyboardInterrupt, EOFError):
-            console.print("\n[dim]Goodbye.[/dim]")
+            console.print(f"\n[{theme.DIM}]Goodbye.[/{theme.DIM}]")
             break
 
         if user_input.strip().lower() in ("exit", "quit", "q"):
-            console.print("[dim]Goodbye.[/dim]")
+            console.print(f"[{theme.DIM}]Goodbye.[/{theme.DIM}]")
             break
 
         if not user_input.strip():
@@ -132,13 +135,13 @@ def run(agent: str, no_mcp: bool) -> None:
             console.print(Markdown(response))
             console.print()
         except KeyboardInterrupt:
-            console.print("\n[dim]Interrupted.[/dim]\n")
+            console.print(f"\n[{theme.DIM}]Interrupted.[/{theme.DIM}]\n")
             orchestrator.reset()
             continue
         except Exception as e:
             console.print(Panel(
-                f"[red]Error: {e}[/red]",
-                border_style="red"
+                f"[{theme.ERROR}]Error: {e}[/{theme.ERROR}]",
+                border_style=theme.ERROR
             ))
             continue
 

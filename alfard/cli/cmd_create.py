@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from alfard.agents.loader import AGENTS_DIR
+from alfard.cli import theme
 
 console = Console()
 
@@ -16,22 +17,22 @@ def create():
     """Create a new agent interactively."""
 
     console.print(Panel(
-        "[bold cyan]Create a new agent[/bold cyan]",
-        border_style="cyan"
+        f"[bold {theme.PRIMARY}]Create a new agent[/bold {theme.PRIMARY}]",
+        border_style=theme.BORDER
     ))
 
     # Ask for agent name — lowercase, no spaces, only letters/numbers/hyphens
     while True:
         name = Prompt.ask("Agent name").strip().lower()
         if not name:
-            console.print("[red]Name cannot be empty.[/red]")
+            console.print(f"[{theme.ERROR}]Name cannot be empty.[/{theme.ERROR}]")
             continue
         if not re.match(r'^[a-z0-9-]+$', name):
-            console.print("[red]Name must be lowercase letters, numbers, or hyphens only.[/red]")
+            console.print(f"[{theme.ERROR}]Name must be lowercase letters, numbers, or hyphens only.[/{theme.ERROR}]")
             continue
         agent_dir = AGENTS_DIR / name
         if agent_dir.exists():
-            console.print(f"[red]Agent '{name}' already exists.[/red]")
+            console.print(f"[{theme.ERROR}]Agent '{name}' already exists.[/{theme.ERROR}]")
             continue
         break
 
@@ -71,12 +72,12 @@ def create():
 
     console.print()
     console.print(Panel(
-        f"[bold green]Agent '{name}' created.[/bold green]\n\n"
-        f"[dim]soul.md[/dim]    — identity and rules [bold](read-only for agent)[/bold]\n"
-        f"[dim]brain.md[/dim]   — persistent knowledge\n"
-        f"[dim]memory.md[/dim]  — session memory\n\n"
-        f"Edit soul:  [bold cyan]alfard edit {name} soul[/bold cyan]\n"
-        f"Run agent:  [bold cyan]alfard run {name}[/bold cyan]",
-        border_style="green",
+        f"[bold {theme.SUCCESS}]Agent '{name}' created.[/bold {theme.SUCCESS}]\n\n"
+        f"[{theme.DIM}]soul.md[/{theme.DIM}]    — identity and rules [bold](read-only for agent)[/bold]\n"
+        f"[{theme.DIM}]brain.md[/{theme.DIM}]   — persistent knowledge\n"
+        f"[{theme.DIM}]memory.md[/{theme.DIM}]  — session memory\n\n"
+        f"Edit soul:  [bold {theme.PRIMARY}]alfard edit {name} soul[/bold {theme.PRIMARY}]\n"
+        f"Run agent:  [bold {theme.PRIMARY}]alfard run {name}[/bold {theme.PRIMARY}]",
+        border_style=theme.SUCCESS,
         title=f"agents/{name}/"
     ))

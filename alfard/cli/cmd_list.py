@@ -4,21 +4,25 @@ import click
 from rich.console import Console
 from rich.table import Table
 from alfard.agents.loader import AGENTS_DIR, list_agents as _list_agents
+from alfard.cli import theme
 
 console = Console()
 
 
 @click.command()
 def list_agents():
-    """List all available agents."""
+    """List all your agents."""
 
     agents = _list_agents()
 
     if not agents:
-        console.print("[dim]No agents found. Run [bold cyan]alfard create[/bold cyan] to create one.[/dim]")
+        console.print(
+            f"[{theme.DIM}]No agents found. Run [bold {theme.PRIMARY}]alfard create"
+            f"[/bold {theme.PRIMARY}] to create one.[/{theme.DIM}]"
+        )
         return
 
-    table = Table(title="Agents", border_style="cyan", show_header=True)
+    table = Table(title="Agents", border_style=theme.BORDER, show_header=True)
     table.add_column("Name", style="bold")
     table.add_column("Soul", style="dim")
     table.add_column("Files")
