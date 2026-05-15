@@ -110,3 +110,25 @@ importable module files — not lambdas, not functions defined in __main__.
 This is required by Python's multiprocessing module on macOS and Windows,
 which uses spawn (not fork) and must be able to pickle and reimport the
 function in the child process.
+## Alfard build roadmap (in order)
+1. alfard log CLI command — in progress
+2. Gmail integration + gws OAuth flow
+3. Folder mounting — safe agent access to declared local folders
+4. Docker sandbox — optional stronger isolation
+5. Agent templates — pre-built soul + skill combos
+6. Full CLI polish — better UX, nicer design, complete setup flow
+7. Integration testing — GitHub, Linear, Slack, GDrive, Gmail
+8. In-chat slash commands — /clear /remember /reset /skills /status
+   Works across CLI, dashboard, Slack, WhatsApp, Telegram
+   Build a command registry that all interfaces share
+9. Dashboard — Bharat designs in Figma, then implements with FastAPI + frontend
+
+## In-chat commands spec (build later)
+/clear      — clears conversation context, starts fresh
+/remember   — saves last exchange to brain.md
+/reset      — resets memory.md for this agent
+/skills     — lists active skills for current agent
+/status     — shows connected integrations and agent info
+/help       — lists all available commands
+Commands must work identically across all interfaces.
+Command registry lives in alfard/commands/ so any interface can import it.
