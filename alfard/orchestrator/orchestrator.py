@@ -81,7 +81,22 @@ class Orchestrator:
                         continue
 
                 tool = self._registry.get(name)
-                result = self._sandbox.execute(tool, arguments)
+                # MCP tool functions use async under the hood and cannot
+                # be pickled for ProcessPoolExecutor. Run them directly.
+                # They are already isolated — the MCP server runs in its
+                # own subprocess managed by the MCP client.
+                if name.startswith(tuple(
+                    f"{s}." for s in ["notion", "github", "slack",
+                                      "linear", "gmail", "gdrive"]
+                )):
+                    try:
+                        raw_result = tool["function"](**arguments)
+                        result = {"success": True, "result": raw_result, "error": None}
+                    except Exception as exc:
+                        result = {"success": False, "result": None,
+                                  "error": f"Tool '{name}' raised {type(exc).__name__}: {exc}"}
+                else:
+                    result = self._sandbox.execute(tool, arguments)
 
                 if result["success"]:
                     raw = str(result["result"])

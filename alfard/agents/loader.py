@@ -2,8 +2,10 @@
 
 from datetime import datetime
 from pathlib import Path
+from alfard.agents.base_prompt import BASE_PROMPT
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
+SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 SOUL_FILE = "soul.md"
 BRAIN_FILE = "brain.md"
@@ -23,16 +25,39 @@ class AgentLoader:
             return ""
         return path.read_text(encoding="utf-8")
 
+    def get_agent_skills(self) -> list[str]:
+        """Return list of skill names active for this agent."""
+        skills_dir = self.agent_dir / "skills"
+        if not skills_dir.exists():
+            return []
+        return sorted(
+            p.stem for p in skills_dir.iterdir()
+            if p.suffix == ".md"
+        )
+
+    def _load_agent_skills(self) -> str:
+        """Load all skill files from this agent's skills folder."""
+        skills_dir = self.agent_dir / "skills"
+        if not skills_dir.exists():
+            return ""
+        parts = []
+        for skill_file in sorted(skills_dir.glob("*.md")):
+            parts.append(skill_file.read_text(encoding="utf-8"))
+        return "\n\n".join(parts)
+
     def build_system_prompt(self) -> str:
         sections = [
             ("# Identity", self._read_file(SOUL_FILE)),
             ("# Knowledge", self._read_file(BRAIN_FILE)),
             ("# Recent Memory", self._read_file(MEMORY_FILE)),
         ]
-        parts = []
+        parts = [BASE_PROMPT.strip()]
         for header, content in sections:
-            if content:
+            if content.strip():
                 parts.append(f"{header}\n{content}")
+        skills_content = self._load_agent_skills()
+        if skills_content:
+            parts.append(f"# Skills\n{skills_content}")
         return "\n\n".join(parts)
 
     def save_memory(self, content: str) -> None:
@@ -50,3 +75,36 @@ def list_agents() -> list[str]:
     if not AGENTS_DIR.exists():
         return []
     return sorted(p.name for p in AGENTS_DIR.iterdir() if p.is_dir())
+
+
+def add_skill(agent_name: str, skill_name: str) -> bool:
+    """Copy a skill from the global library to an agent.
+    Returns True if added, False if skill not found."""
+    skill_source = SKILLS_DIR / f"{skill_name}.md"
+    if not skill_source.exists():
+        return False
+    agent_skills_dir = AGENTS_DIR / agent_name / "skills"
+    agent_skills_dir.mkdir(exist_ok=True)
+    dest = agent_skills_dir / f"{skill_name}.md"
+    dest.write_text(
+        skill_source.read_text(encoding="utf-8"),
+        encoding="utf-8"
+    )
+    return True
+
+
+def remove_skill(agent_name: str, skill_name: str) -> bool:
+    """Remove a skill from an agent.
+    Returns True if removed, False if not found."""
+    dest = AGENTS_DIR / agent_name / "skills" / f"{skill_name}.md"
+    if not dest.exists():
+        return False
+    dest.unlink()
+    return True
+
+
+def list_available_skills() -> list[str]:
+    """Return all skill names in the global skills library."""
+    if not SKILLS_DIR.exists():
+        return []
+    return sorted(p.stem for p in SKILLS_DIR.glob("*.md"))

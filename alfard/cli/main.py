@@ -9,6 +9,7 @@ from alfard.cli.cmd_edit import edit
 from alfard.cli.cmd_list import list_agents
 from alfard.cli.cmd_log import log
 from alfard.cli.cmd_status import status
+from alfard.cli.cmd_skill import skill
 
 @click.group()
 def cli():
@@ -23,6 +24,7 @@ cli.add_command(edit)
 cli.add_command(list_agents, name="list")
 cli.add_command(log)
 cli.add_command(status)
+cli.add_command(skill)
 
 if __name__ == "__main__":
     cli()

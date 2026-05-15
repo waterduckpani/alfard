@@ -14,6 +14,23 @@ from alfard.tools.registry import ToolRegistry
 _CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
 
 
+def _resolve_env_vars(env_vars: dict) -> dict:
+    """Resolve env var values from environment.
+
+    env_vars maps subprocess key -> env var name to read from os.environ.
+    e.g. {"NOTION_TOKEN": "NOTION_TOKEN"} -> {"NOTION_TOKEN": "<actual token value>"}
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    resolved = {}
+    for key, env_var_name in env_vars.items():
+        value = os.environ.get(env_var_name, "")
+        if value:
+            resolved[key] = value
+    return resolved
+
+
 class MCPClient:
 
     def __init__(self, registry: ToolRegistry) -> None:
@@ -47,7 +64,7 @@ class MCPClient:
                 params = mcp.StdioServerParameters(
                     command=cfg["command"],
                     args=cfg.get("args", []),
-                    env=cfg.get("env_vars", {}),
+                    env=_resolve_env_vars(cfg.get("env_vars", {})),
                 )
                 return mcp.client.stdio.stdio_client(params)
             else:

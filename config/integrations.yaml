@@ -9,15 +9,24 @@ servers:
     NOTION_TOKEN: NOTION_TOKEN
   tools:
     reversible:
-    - notion_search
-    - notion_get_page
-    - notion_get_database
-    - notion_query_database
-    - notion_get_block_children
+    - API-post-search
+    - API-get-block-children
+    - API-get-user
+    - API-get-users
+    - API-get-self
+    - API-retrieve-a-page
+    - API-retrieve-a-page-property
+    - API-retrieve-a-block
+    - API-retrieve-a-database
+    - API-retrieve-a-data-source
+    - API-query-data-source
+    - API-list-data-source-templates
+    - API-retrieve-a-comment
     irreversible:
-    - notion_create_page
-    - notion_update_page
-    - notion_create_database
-    - notion_update_database
-    - notion_delete_block
-    - notion_append_block_children
+    - API-post-page
+    - API-patch-page
+    - API-post-database
+    - API-patch-database
+    - API-delete-block
+    - API-patch-block-children
+    - API-append-block-children
