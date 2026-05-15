@@ -23,11 +23,7 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
     """Register Gmail tools using gws CLI."""
 
     def gmail_list_messages(max_results: int = 10, query: str = "") -> str:
-        args = ["gmail", "users", "messages", "list",
-                "--params", json.dumps({"userId": "me",
-                                        "maxResults": max_results,
-                                        "q": query}),
-                "--format", "table"]
+        args = ["gmail", "+triage", "--max", str(max_results)]
         return _run_gws(*args)
 
     def gmail_get_message(message_id: str) -> str:
@@ -37,11 +33,8 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
                                                "format": "full"}))
 
     def gmail_search_messages(query: str, max_results: int = 10) -> str:
-        return _run_gws("gmail", "users", "messages", "list",
-                        "--params", json.dumps({"userId": "me",
-                                               "q": query,
-                                               "maxResults": max_results}),
-                        "--format", "table")
+        args = ["gmail", "+triage", "--max", str(max_results)]
+        return _run_gws(*args)
 
     def gmail_list_labels() -> str:
         return _run_gws("gmail", "users", "labels", "list",
