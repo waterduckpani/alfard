@@ -1,20 +1,23 @@
-# MCP server configurations for alfard.
-# Uncomment and fill in real values to connect servers on startup.
-#
-# servers:
-#   - name: gmail
-#     transport: http
-#     url: https://gmailmcp.googleapis.com/mcp/v1
-#     tools:
-#       reversible: [read_email, list_emails, list_labels, create_draft]
-#       irreversible: [send_email, reply, delete_email]
-#
-#   - name: github
-#     transport: stdio
-#     command: npx
-#     args: ["-y", "@modelcontextprotocol/server-github"]
-#     env_vars:
-#       GITHUB_PERSONAL_ACCESS_TOKEN: GITHUB_TOKEN
-#     tools:
-#       reversible: [get_repo, list_issues, get_pr]
-#       irreversible: [create_issue, merge_pr, push_commit, delete_branch]
+servers:
+- name: notion
+  transport: stdio
+  command: npx
+  args:
+  - -y
+  - '@notionhq/notion-mcp-server'
+  env_vars:
+    NOTION_TOKEN: NOTION_TOKEN
+  tools:
+    reversible:
+    - notion_search
+    - notion_get_page
+    - notion_get_database
+    - notion_query_database
+    - notion_get_block_children
+    irreversible:
+    - notion_create_page
+    - notion_update_page
+    - notion_create_database
+    - notion_update_database
+    - notion_delete_block
+    - notion_append_block_children

@@ -13,11 +13,12 @@ dependencies = [
     "rich",
     "fastapi",
     "uvicorn",
+    "click",
 ]
 
 [project.scripts]
+alfard = "alfard.cli.main:cli"
 alfard-setup = "setup_alfard:run_setup"
-alfard = "main:main"
 
 
 [tool.setuptools.packages.find]
