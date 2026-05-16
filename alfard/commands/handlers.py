@@ -130,7 +130,9 @@ def handle_model(context: dict) -> str:
 
 def register_all() -> None:
     """Register all built-in commands. Call once at startup."""
-    from alfard.commands.registry import register
+    from alfard.commands.registry import _commands, register
+    if _commands:
+        return
     register("/help",     "List all available commands",           handle_help)
     register("/clear",    "Clear conversation context",            handle_clear)
     register("/status",   "Show agent, integrations, turn count",  handle_status)

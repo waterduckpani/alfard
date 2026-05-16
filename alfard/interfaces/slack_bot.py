@@ -198,7 +198,7 @@ class AlfardSlackBot:
                 user = event.get("user", "")
                 # Strip the @mention from the text
                 import re
-                text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
+                text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()
                 if text:
                     threading.Thread(
                         target=self._handle_message,
