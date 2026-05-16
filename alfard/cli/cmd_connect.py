@@ -60,6 +60,160 @@ def _already_connected(name: str) -> bool:
     return any(s["name"] == name for s in data.get("servers", []))
 
 
+def _connect_slack(name: str, integration: dict) -> bool:
+    import webbrowser
+    from rich.prompt import Prompt as P
+    from rich.syntax import Syntax
+
+    console.print(Panel(
+        integration["description"],
+        title=integration["display_name"],
+        border_style=theme.BORDER
+    ))
+
+    MANIFEST = '''display_information:
+  name: alfard
+  description: Your local AI agent
+  background_color: "#2d2d2d"
+features:
+  bot_user:
+    display_name: alfard
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+      - im:history
+      - im:read
+      - im:write
+      - channels:history
+      - channels:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.im
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false'''
+
+    console.print(Panel(
+        "We will create a Slack app for you step by step.\n"
+        "This is a one-time setup — you will never need to do it again.",
+        title="One-time Slack setup (3 minutes)",
+        border_style=theme.BORDER
+    ))
+
+    # Step 1
+    console.print("\n[bold]Step 1: Create your Slack app[/bold]")
+    console.print("[dim]We will open Slack's app creation page.[/dim]")
+    console.print(
+        "\nWhen it opens:\n"
+        "  → Click [bold]Create New App[/bold]\n"
+        "  → Choose [bold]From a manifest[/bold]\n"
+        "  → Select your workspace\n"
+        "  → Click [bold]YAML[/bold] tab and paste this manifest:\n"
+    )
+    console.print(Syntax(MANIFEST, "yaml", theme="monokai"))
+    P.ask("\nPress Enter to open Slack app creation", default="")
+    webbrowser.open("https://api.slack.com/apps?new_app=1")
+    P.ask("Step 1 done — app created and installed to workspace? [Enter to continue]", default="")
+
+    # Step 2 — Bot token
+    console.print("\n[bold]Step 2: Get your Bot Token[/bold]")
+    console.print(
+        "[dim]In your new app:\n"
+        "  → Click [bold]Install App[/bold] in the left sidebar\n"
+        "  → Click [bold]Install to Workspace[/bold] and allow\n"
+        "  → Copy the [bold]Bot User OAuth Token[/bold] — starts with xoxb-[/dim]"
+    )
+    webbrowser.open("https://api.slack.com/apps")
+    bot_token = P.ask("\nPaste your Bot Token (xoxb-)", password=True).strip()
+    if not bot_token or not bot_token.startswith("xoxb-"):
+        console.print(f"[{theme.ERROR}]Invalid bot token — must start with xoxb-[/{theme.ERROR}]")
+        return False
+    _update_env("SLACK_BOT_TOKEN", bot_token)
+    console.print(f"[{theme.SUCCESS}]Bot token saved.[/{theme.SUCCESS}]")
+
+    # Step 3 — App token
+    console.print("\n[bold]Step 3: Get your App-Level Token[/bold]")
+    console.print(
+        "[dim]In your app settings:\n"
+        "  → Click [bold]Basic Information[/bold] in the left sidebar\n"
+        "  → Scroll to [bold]App-Level Tokens[/bold]\n"
+        "  → Click [bold]Generate Token and Scopes[/bold]\n"
+        "  → Name it anything (e.g. alfard-socket)\n"
+        "  → Click [bold]Add Scope[/bold] → select [bold]connections:write[/bold]\n"
+        "  → Click [bold]Generate[/bold]\n"
+        "  → Copy the token — starts with xapp-[/dim]"
+    )
+    app_token = P.ask("\nPaste your App-Level Token (xapp-)", password=True).strip()
+    if not app_token or not app_token.startswith("xapp-"):
+        console.print(f"[{theme.ERROR}]Invalid app token — must start with xapp-[/{theme.ERROR}]")
+        return False
+    _update_env("SLACK_APP_TOKEN", app_token)
+    console.print(f"[{theme.SUCCESS}]App token saved.[/{theme.SUCCESS}]")
+
+    # Step 4 — Add server to integrations.yaml
+    entry = {
+        "name": name,
+        "transport": integration["mcp_transport"],
+        "command": integration["mcp_command"],
+        "args": integration["mcp_args"],
+        "env_vars": {"SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN"},
+        "tools": {
+            "reversible": integration["reversible_tools"],
+            "irreversible": integration["irreversible_tools"],
+        }
+    }
+    data = _load_integrations()
+    data["servers"] = [s for s in data.get("servers", [])
+                       if s.get("name") != name]
+    data["servers"].append(entry)
+    _save_integrations(data)
+
+    # Step 5 — Add skill
+    from alfard.agents.loader import list_agents, add_skill
+    agents = list_agents()
+    added_to = ""
+    if agents:
+        console.print("\n[bold]Which agent should get the Slack skill?[/bold]")
+        for i, a in enumerate(agents, 1):
+            console.print(f"  {i}. {a}")
+        console.print(f"  {len(agents) + 1}. All agents")
+        choice_raw = P.ask("Enter number", default="1")
+        try:
+            choice = int(choice_raw)
+        except ValueError:
+            choice = 1
+        if choice == len(agents) + 1:
+            for a in agents:
+                add_skill(a, name)
+            added_to = "all agents"
+        elif 1 <= choice <= len(agents):
+            selected = agents[choice - 1]
+            add_skill(selected, name)
+            added_to = selected
+        else:
+            add_skill(agents[0], name)
+            added_to = agents[0]
+
+    console.print(Panel(
+        f"[bold {theme.SUCCESS}]Slack connected.[/bold {theme.SUCCESS}]\n\n"
+        f"Skill added to: {added_to}\n\n"
+        f"Start your Slack bot:\n"
+        f"  [bold]alfard slack {added_to}[/bold]",
+        border_style=theme.PANEL_SUCCESS
+    ))
+    return True
+
+
 def _connect_apikey(name: str, integration: dict) -> bool:
     console.print(Panel(
         integration["description"],
@@ -85,25 +239,6 @@ def _connect_apikey(name: str, integration: dict) -> bool:
         return False
 
     _update_env(integration["credential_env"], token.strip())
-
-    # Slack needs a second token (app-level for Socket Mode)
-    if name == "slack":
-        from rich.prompt import Prompt as P
-        console.print(
-            "\n[bold]Slack also needs an App-Level Token[/bold]\n"
-            "[dim]Generate one at api.slack.com/apps → "
-            "Basic Information → App-Level Tokens\n"
-            "Add scope: connections:write[/dim]"
-        )
-        app_token = P.ask(
-            "Paste your App-Level Token (xapp-)",
-            password=True
-        )
-        if app_token:
-            _update_env("SLACK_APP_TOKEN", app_token)
-            console.print(
-                f"[{theme.SUCCESS}]App-level token saved.[/{theme.SUCCESS}]"
-            )
 
     env_key = integration.get("mcp_env_var", integration["credential_env"])
     entry = {
@@ -396,7 +531,9 @@ def connect(integration: str | None):
         if overwrite != "y":
             return
 
-    if info["auth"] == AUTH_APIKEY:
+    if integration == "slack":
+        _connect_slack(integration, info)
+    elif info["auth"] == AUTH_APIKEY:
         _connect_apikey(integration, info)
     else:
         _connect_oauth(integration, info)
