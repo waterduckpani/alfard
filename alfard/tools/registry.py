@@ -13,6 +13,7 @@ class ToolRegistry:
         function: callable,
         reversible: bool,
         parameters: dict,
+        is_mcp: bool = False,
     ) -> None:
         if name in self._tools:
             raise ValueError(f"Tool '{name}' is already registered.")
@@ -22,6 +23,7 @@ class ToolRegistry:
             "function": function,
             "reversible": reversible,
             "parameters": parameters,
+            "is_mcp": is_mcp,
         }
 
     def get(self, name: str) -> dict:

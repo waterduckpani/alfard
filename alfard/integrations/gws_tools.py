@@ -2,6 +2,7 @@
 alfard tools using subprocess. Used when gws does not support
 MCP transport directly."""
 
+import json
 import subprocess
 from alfard.tools.registry import ToolRegistry
 
@@ -27,15 +28,23 @@ def gmail_get_message(message_id: str) -> str:
 
 
 def gmail_search_messages(query: str, max_results: int = 10) -> str:
-    return _run_gws("gmail", "+triage", "--max", str(max_results))
+    return _run_gws("gmail", "+triage", "--max", str(max_results), "--search", query)
 
 
 def gmail_list_labels() -> str:
-    return _run_gws("gmail", "+triage", "--max", "5")
+    try:
+        return _run_gws("gmail", "users", "labels", "list",
+                        "--params", json.dumps({"userId": "me"}))
+    except RuntimeError as e:
+        return f"Could not retrieve data: {e}. Try using gmail_triage instead."
 
 
 def gmail_get_thread(thread_id: str) -> str:
-    return _run_gws("gmail", "+triage", "--max", "10")
+    try:
+        return _run_gws("gmail", "users", "threads", "get",
+                        "--params", json.dumps({"userId": "me", "id": thread_id}))
+    except RuntimeError as e:
+        return f"Could not retrieve data: {e}. Try using gmail_triage instead."
 
 
 def gmail_triage(max_results: int = 10) -> str:
@@ -109,6 +118,6 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
 
     for name, desc, fn, reversible, params in tools:
         try:
-            registry.register(name, desc, fn, reversible, params)
+            registry.register(name, desc, fn, reversible, params, is_mcp=True)
         except ValueError:
             pass  # already registered

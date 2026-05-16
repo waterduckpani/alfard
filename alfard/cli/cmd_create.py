@@ -78,6 +78,6 @@ def create():
         f"[{theme.DIM}]memory.md[/{theme.DIM}]  — session memory\n\n"
         f"Edit soul:  [bold {theme.PRIMARY}]alfard edit {name} soul[/bold {theme.PRIMARY}]\n"
         f"Run agent:  [bold {theme.PRIMARY}]alfard run {name}[/bold {theme.PRIMARY}]",
-        border_style=theme.SUCCESS,
+        border_style=theme.PANEL_SUCCESS,
         title=f"agents/{name}/"
     ))

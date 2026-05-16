@@ -16,6 +16,13 @@ class AgentLoader:
     def __init__(self, agent_name: str) -> None:
         self.name = agent_name
         self.agent_dir = AGENTS_DIR / agent_name
+        # Guard against path traversal (e.g. agent_name = "../config")
+        try:
+            self.agent_dir.resolve().relative_to(AGENTS_DIR.resolve())
+        except ValueError:
+            raise ValueError(
+                f"Invalid agent name '{agent_name}': resolves outside agents directory."
+            )
         if not self.agent_dir.exists():
             raise FileNotFoundError(f"Agent directory not found: {self.agent_dir}")
 

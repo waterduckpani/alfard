@@ -30,3 +30,32 @@ servers:
     - API-delete-block
     - API-patch-block-children
     - API-append-block-children
+- name: github
+  transport: stdio
+  command: npx
+  args:
+  - -y
+  - '@modelcontextprotocol/server-github'
+  env_vars:
+    GITHUB_PERSONAL_ACCESS_TOKEN: GITHUB_TOKEN
+  tools:
+    reversible:
+    - get_repo
+    - list_repos
+    - get_issue
+    - list_issues
+    - get_pull_request
+    - list_pull_requests
+    - get_file_contents
+    - search_repositories
+    - search_code
+    - list_commits
+    irreversible:
+    - create_issue
+    - update_issue
+    - create_pull_request
+    - merge_pull_request
+    - push_files
+    - create_repository
+    - delete_file
+    - create_branch

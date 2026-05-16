@@ -105,9 +105,9 @@ def run_setup() -> None:
     from alfard.setup.dependencies import ensure_dependencies
     if not ensure_dependencies():
         console.print(Panel(
-            "[red]Setup cannot continue — missing required dependencies.[/red]\n\n"
+            f"[{theme.ERROR}]Setup cannot continue — missing required dependencies.[/{theme.ERROR}]\n\n"
             "Please install Node.js from https://nodejs.org and re-run alfard setup.",
-            border_style="red"
+            border_style=theme.PANEL_ERROR
         ))
         return
 
@@ -117,7 +117,7 @@ def run_setup() -> None:
 
     for num, name in PROVIDERS.items():
         tag = "  (local, no key needed)" if name in LOCAL_PROVIDERS else ""
-        default_marker = "  [dim](default)[/dim]" if num == "1" else ""
+        default_marker = f"  [{theme.DIM}](default)[/{theme.DIM}]" if num == "1" else ""
         console.print(f"  {num}. {name}{tag}{default_marker}")
 
     provider_choice = Prompt.ask(

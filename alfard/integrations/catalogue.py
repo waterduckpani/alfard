@@ -50,11 +50,18 @@ CATALOGUE: dict[str, dict] = {
         "auth": AUTH_APIKEY,
         "description": "Manage repos, issues, pull requests and code on GitHub.",
         "credential_env": "GITHUB_TOKEN",
-        "get_token_url": "https://github.com/settings/tokens/new",
+        "mcp_env_var": "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "get_token_url": "https://github.com/settings/personal-access-tokens/new",
         "get_token_steps": (
-            "1. Go to github.com/settings/tokens/new\n"
-            "2. Give it a name, set expiry, tick \"repo\" and \"read:user\" scopes\n"
-            "3. Click \"Generate token\" and copy it — starts with ghp_"
+            "1. Go to github.com/settings/personal-access-tokens/new\n"
+            "2. Give it a name, set expiry\n"
+            "3. Under 'Repository access' select 'All repositories'\n"
+            "4. Under 'Permissions' expand 'Repository' and set:\n"
+            "   Contents: Read-only\n"
+            "   Issues: Read and write\n"
+            "   Pull requests: Read and write\n"
+            "   Metadata: Read-only (auto-selected)\n"
+            "5. Click 'Generate token' and copy it — starts with github_pat_"
         ),
         "mcp_transport": "stdio",
         "mcp_command": "npx",

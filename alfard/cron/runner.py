@@ -16,10 +16,10 @@ from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
 
 def run_job(agent_name: str, task: str, job_name: str) -> str:
+    audit = AuditLogger()
     try:
         loader = AgentLoader(agent_name)
         registry = ToolRegistry()
-        audit = AuditLogger()
 
         gate = ApprovalGate(audit_logger=audit)
         gate.enabled = False  # no human present in scheduled runs
@@ -36,14 +36,13 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
             llm=LLMClient(),
             registry=registry,
             audit=audit,
-            gate=ApprovalGate(audit_logger=audit),
+            gate=gate,
             sandbox=SandboxExecutor(),
             credentials=CredentialsManager(),
             system_prompt=loader.build_system_prompt(),
         )
 
         response = orchestrator.run(task)
-        audit.close()
         _save_log(loader.agent_dir, job_name, task, response, error=False)
         return response
 
@@ -54,6 +53,11 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
         except Exception:
             pass
         return msg
+    finally:
+        try:
+            audit.close()
+        except Exception:
+            pass
 
 def _save_log(agent_dir: Path, job_name: str, task: str,
               content: str, error: bool) -> None:

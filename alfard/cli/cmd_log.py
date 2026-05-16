@@ -88,6 +88,7 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
     Shows what the agent has been doing — every LLM call,
     tool call, and approval gate decision.
 
+    \b
     Examples:
       alfard log                    # show last 20 events
       alfard log --last 50          # show last 50 events
@@ -102,7 +103,7 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
             f"[{theme.WARNING}]No audit log found.[/{theme.WARNING}]\n\n"
             "Run an agent first to generate log entries.\n"
             f"[{theme.DIM}]Expected path: logs/audit.jsonl[/{theme.DIM}]",
-            border_style=theme.WARNING
+            border_style=theme.PANEL_WARNING
         ))
         return
 

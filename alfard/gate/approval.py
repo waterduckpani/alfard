@@ -15,13 +15,13 @@ class CLINotifier:
 
     def present(self, tool_name: str, arguments: dict, source: str) -> str:
         content = (
-            f"[dim]Tool:       {tool_name}\n"
+            f"[{theme.DIM}]Tool:       {tool_name}\n"
             f"Arguments:  {json.dumps(arguments, indent=2)}\n"
-            f"Source:     {source}[/dim]"
+            f"Source:     {source}[/{theme.DIM}]"
         )
         rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
         while True:
-            choice = Prompt.ask("Approve? [dim]\\[y/n][/dim]").strip().lower()
+            choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
             if choice in ("y", "n"):
                 return choice
 

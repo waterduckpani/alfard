@@ -86,11 +86,19 @@ class MCPClient:
         def make_caller(server_name: str, tool_name: str):
             def caller(**kwargs):
                 async def _call():
-                    async with _make_transport_context() as (read, write):
-                        async with mcp.ClientSession(read, write) as s:
-                            await s.initialize()
-                            result = await s.call_tool(tool_name, kwargs)
-                            return result.content
+                    async def _inner():
+                        async with _make_transport_context() as (read, write):
+                            async with mcp.ClientSession(read, write) as s:
+                                await s.initialize()
+                                result = await s.call_tool(tool_name, kwargs)
+                                return result.content
+                    try:
+                        return await asyncio.wait_for(_inner(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        raise RuntimeError(
+                            f"MCP tool '{tool_name}' on server '{server_name}' "
+                            f"timed out after 30 seconds"
+                        )
                 return asyncio.run(_call())
             return caller
 
@@ -108,6 +116,7 @@ class MCPClient:
                     function=make_caller(name, tool.name),
                     reversible=is_reversible,
                     parameters=parameters,
+                    is_mcp=True,
                 )
             except ValueError as exc:
                 print(f"[mcp] warning: skipping tool '{name}.{tool.name}': {exc}")

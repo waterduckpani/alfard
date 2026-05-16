@@ -86,12 +86,13 @@ def _connect_apikey(name: str, integration: dict) -> bool:
 
     _update_env(integration["credential_env"], token.strip())
 
+    env_key = integration.get("mcp_env_var", integration["credential_env"])
     entry = {
         "name": name,
         "transport": integration["mcp_transport"],
         "command": integration["mcp_command"],
         "args": integration["mcp_args"],
-        "env_vars": {integration["credential_env"]: integration["credential_env"]},
+        "env_vars": {env_key: integration["credential_env"]},
         "tools": {
             "reversible": integration["reversible_tools"],
             "irreversible": integration["irreversible_tools"],
@@ -107,7 +108,7 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     console.print(Panel(
         f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
         f"Run [bold {theme.PRIMARY}]alfard status[/bold {theme.PRIMARY}] to confirm.",
-        border_style=theme.SUCCESS,
+        border_style=theme.PANEL_SUCCESS,
     ))
     return True
 
@@ -128,7 +129,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 f"[{theme.ERROR}]npm is not installed.[/{theme.ERROR}]\n\n"
                 f"Install Node.js from [bold {theme.PRIMARY}]https://nodejs.org[/bold {theme.PRIMARY}] then re-run "
                 f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
-                border_style=theme.ERROR,
+                border_style=theme.PANEL_ERROR,
             ))
             return False
         result = subprocess.run(["npm", "install", "-g", "@googleworkspace/cli"])
@@ -136,7 +137,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             console.print(Panel(
                 f"[{theme.ERROR}]gws installation failed.[/{theme.ERROR}]\n\n"
                 "Run [bold]npm install -g @googleworkspace/cli[/bold] manually then retry.",
-                border_style=theme.ERROR,
+                border_style=theme.PANEL_ERROR,
             ))
             return False
 
@@ -168,7 +169,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         console.print(Panel(
             setup_instructions,
             title="One-time Google setup (5 minutes)",
-            border_style=theme.WARNING,
+            border_style=theme.PANEL_WARNING,
         ))
 
         # Step 5: wait for user to confirm they're ready
@@ -215,7 +216,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             console.print(Panel(
                 f"[{theme.ERROR}]File not found.[/{theme.ERROR}]\n\nRe-run "
                 f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}] and provide a valid path.",
-                border_style=theme.ERROR,
+                border_style=theme.PANEL_ERROR,
             ))
             return False
 
@@ -231,7 +232,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             f"[{theme.ERROR}]Google sign-in failed.[/{theme.ERROR}]\n\n"
             f"Check the error above, then re-run "
             f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
-            border_style=theme.ERROR,
+            border_style=theme.PANEL_ERROR,
         ))
         return False
 
@@ -245,7 +246,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     if test.returncode != 0:
         console.print(Panel(
             f"[{theme.ERROR}]Connection test failed.[/{theme.ERROR}]\n\n{test.stderr.strip()}",
-            border_style=theme.ERROR,
+            border_style=theme.PANEL_ERROR,
         ))
         return False
 
@@ -305,10 +306,10 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     run_hint = f"\nRun: [bold {theme.PRIMARY}]alfard run {added_to}[/bold {theme.PRIMARY}]" if added_to else ""
     console.print(Panel(
         f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
-        f"Postman can now read and manage your Gmail inbox."
+        f"{display} connected successfully."
         f"{skill_line}"
         f"{run_hint}",
-        border_style=theme.SUCCESS,
+        border_style=theme.PANEL_SUCCESS,
     ))
     return True
 
@@ -320,6 +321,7 @@ def connect(integration: str | None):
 
     Run without arguments to see available integrations.
 
+    \b
     Examples:
       alfard connect notion
       alfard connect github
@@ -360,7 +362,7 @@ def connect(integration: str | None):
         console.print(Panel(
             f"[{theme.ERROR}]Unknown integration: '{integration}'[/{theme.ERROR}]\n\n"
             f"Run [bold {theme.PRIMARY}]alfard connect[/bold {theme.PRIMARY}] to see available integrations.",
-            border_style=theme.ERROR,
+            border_style=theme.PANEL_ERROR,
         ))
         raise SystemExit(1)
 

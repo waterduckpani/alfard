@@ -34,7 +34,7 @@ def edit(agent: str, file: str):
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]\n\n"
             f"Run [bold {theme.PRIMARY}]alfard list[/bold {theme.PRIMARY}] to see available agents.\n"
             f"Run [bold {theme.PRIMARY}]alfard create[/bold {theme.PRIMARY}] to create a new one.",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
 
@@ -47,7 +47,7 @@ def edit(agent: str, file: str):
             "This file defines the agent's identity and rules.\n"
             "The agent reads this file but can never modify it.\n"
             "Changes take effect on the next run.",
-            border_style=theme.WARNING,
+            border_style=theme.PANEL_WARNING,
             title="⚠ Identity file"
         ))
 

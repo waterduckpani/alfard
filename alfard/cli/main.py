@@ -11,6 +11,7 @@ from alfard.cli.cmd_log import log
 from alfard.cli.cmd_status import status
 from alfard.cli.cmd_skill import skill
 from alfard.cli.cmd_cron import cron
+from alfard.cli.cmd_disconnect import disconnect
 
 
 @click.group(invoke_without_command=True)
@@ -56,6 +57,7 @@ cli.add_command(log)
 cli.add_command(status)
 cli.add_command(skill)
 cli.add_command(cron)
+cli.add_command(disconnect)
 
 if __name__ == "__main__":
     cli()

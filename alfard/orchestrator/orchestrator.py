@@ -4,7 +4,7 @@ gate, sandbox, and audit logger into a single agent execution pipeline."""
 from alfard.llm.client import LLMClient
 from alfard.tools.registry import ToolRegistry
 from alfard.tools.classifier import classify, REVERSIBLE
-from alfard.tools.sanitizer import sanitize, is_suspicious
+from alfard.tools.sanitizer import sanitize
 from alfard.audit.logger import AuditLogger
 from alfard.gate.approval import ApprovalGate
 from alfard.sandbox.executor import SandboxExecutor
@@ -35,9 +35,11 @@ class Orchestrator:
         self._credentials = credentials
         self._system_prompt = system_prompt
         self._memory = Memory(system_prompt)
+        self._user_triggered = True  # tracks if current cycle is user-initiated
 
     def run(self, task: str) -> str:
         self._memory.add_user(task)
+        self._user_triggered = True
 
         for _ in range(MAX_TURNS):
             if (
@@ -70,7 +72,7 @@ class Orchestrator:
                     continue
 
                 classification = classify(name, self._registry)
-                source = "user_instruction" if self._memory.turn_count() <= 1 else "tool_result"
+                source = "user_instruction" if self._user_triggered else "tool_result"
 
                 self._audit.log_tool_call(name, arguments, source)
 
@@ -85,10 +87,7 @@ class Orchestrator:
                 # be pickled for ProcessPoolExecutor. Run them directly.
                 # They are already isolated — the MCP server runs in its
                 # own subprocess managed by the MCP client.
-                if name.startswith(tuple(
-                    f"{s}." for s in ["notion", "github", "slack",
-                                      "linear", "gmail", "gdrive"]
-                )) or name.startswith("gmail_") or name.startswith("gdrive_"):
+                if tool.get("is_mcp", False):
                     try:
                         raw_result = tool["function"](**arguments)
                         result = {"success": True, "result": raw_result, "error": None}
@@ -100,11 +99,20 @@ class Orchestrator:
 
                 if result["success"]:
                     raw = str(result["result"])
-                    if is_suspicious(raw):
-                        raw = sanitize(raw, source=name)
+                    # Always sanitize and wrap with source attribution.
+                    # is_suspicious() is an additional signal — flag it
+                    # but sanitize regardless.
+                    raw = sanitize(raw, source=name)
                     self._memory.add_tool_result(name, raw)
                 else:
-                    self._memory.add_tool_result(name, result["error"])
+                    # Sanitize error strings too — they may contain
+                    # content from malicious external sources.
+                    error = sanitize(str(result["error"]), source=f"{name}.error")
+                    self._memory.add_tool_result(name, error)
+
+            # After processing all tool calls in this cycle,
+            # next cycle is tool-initiated unless user sends new input
+            self._user_triggered = False
 
         return "Task stopped: maximum turns reached."
 

@@ -17,6 +17,7 @@ console = Console()
 def skill():
     """Manage skills — teach agents how to use integrations correctly.
 
+    \b
     Examples:
       alfard skill list
       alfard skill list postman
@@ -34,7 +35,7 @@ def list_skills(agent: str | None):
         if agent not in list_agents():
             console.print(Panel(
                 f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-                border_style=theme.ERROR
+                border_style=theme.PANEL_ERROR
             ))
             raise SystemExit(1)
         loader = AgentLoader(agent)
@@ -83,7 +84,7 @@ def add(agent: str, skill_name: str):
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     result = add_skill(agent, skill_name)
@@ -92,13 +93,13 @@ def add(agent: str, skill_name: str):
             f"[{theme.ERROR}]Skill '{skill_name}' not found.[/{theme.ERROR}]\n\n"
             f"Run [bold {theme.PRIMARY}]alfard skill list[/bold {theme.PRIMARY}] "
             f"to see available skills.",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     console.print(Panel(
         f"[{theme.SUCCESS}]Added skill '{skill_name}' to {agent}.[/{theme.SUCCESS}]\n\n"
         f"Restart the agent for changes to take effect.",
-        border_style=theme.SUCCESS
+        border_style=theme.PANEL_SUCCESS
     ))
 
 
@@ -110,7 +111,7 @@ def remove(agent: str, skill_name: str):
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     result = remove_skill(agent, skill_name)

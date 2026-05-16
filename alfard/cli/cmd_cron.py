@@ -55,7 +55,7 @@ def _set_enabled(agent: str, name: str, enabled: bool) -> None:
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
@@ -79,6 +79,7 @@ def _set_enabled(agent: str, name: str, enabled: bool) -> None:
 def cron():
     """Manage and run scheduled agent jobs.
 
+    \b
     Examples:
       alfard cron add postman "Check inbox" --schedule "8am"
       alfard cron list postman
@@ -89,40 +90,96 @@ def cron():
 
 
 @cron.command(name="add")
-@click.argument("agent")
-@click.argument("task")
-@click.option("--schedule", required=True, help="When to run: '8am', 'every 2h', 'daily', '0 8 * * *'")
-@click.option("--name", default=None, help="Job name (auto-generated from task if omitted)")
-def add(agent: str, task: str, schedule: str, name: str | None):
+@click.argument("agent", required=False)
+@click.argument("task", required=False)
+@click.option("--schedule", "-s", default=None,
+              help="When to run: '8am', 'every 1h', 'daily', '0 8 * * *'")
+@click.option("--name", "-n", default=None,
+              help="Job name (auto-generated if not set)")
+def add(agent: str | None, task: str | None,
+        schedule: str | None, name: str | None):
     """Add a scheduled job to an agent."""
-    if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
-        ))
-        raise SystemExit(1)
+
+    from rich.prompt import Prompt
+
+    # Interactive agent selection if not provided
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(Panel(
+                f"[{theme.ERROR}]No agents found.[/{theme.ERROR}]\n\n"
+                f"Create one first: [bold]alfard create[/bold]",
+                border_style=theme.PANEL_ERROR
+            ))
+            raise SystemExit(1)
+        console.print(f"\n[bold]Which agent?[/bold]")
+        for i, a in enumerate(agents, 1):
+            console.print(f"  {i}. {a}")
+        choice = Prompt.ask("Agent", default="1")
+        try:
+            agent = agents[int(choice) - 1]
+        except (ValueError, IndexError):
+            agent = agents[0]
+    else:
+        if agent not in list_agents():
+            console.print(Panel(
+                f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
+                border_style=theme.PANEL_ERROR
+            ))
+            raise SystemExit(1)
+
+    # Interactive task if not provided
+    if not task:
+        console.print(f"\n[bold]What should {agent} do?[/bold]")
+        console.print(f"[{theme.DIM}]Example: summarise my inbox from the last 24 hours[/{theme.DIM}]")
+        task = Prompt.ask("Task").strip()
+        if not task:
+            console.print(f"[{theme.ERROR}]Task cannot be empty.[/{theme.ERROR}]")
+            raise SystemExit(1)
+
+    # Interactive schedule if not provided
+    if not schedule:
+        console.print(f"\n[bold]When should this run?[/bold]")
+        console.print(f"[{theme.DIM}]Examples: 8am · every 2h · daily · 0 8 * * *[/{theme.DIM}]")
+        schedule = Prompt.ask("Schedule").strip()
+        if not schedule:
+            console.print(f"[{theme.ERROR}]Schedule cannot be empty.[/{theme.ERROR}]")
+            raise SystemExit(1)
+
+    # Validate schedule
     try:
         parse_schedule(schedule)
     except ValueError as e:
-        console.print(Panel(str(e), border_style=theme.ERROR))
-        raise SystemExit(1)
-    job_name = name or _slug(task)
-    jobs = _load_crons(agent)
-    if any(j["name"] == job_name for j in jobs):
         console.print(Panel(
-            f"[{theme.ERROR}]A job named '{job_name}' already exists for {agent}.[/{theme.ERROR}]\n\n"
-            f"Use a different name with [bold]--name[/bold].",
-            border_style=theme.ERROR
+            f"[{theme.ERROR}]{e}[/{theme.ERROR}]",
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
-    jobs.append({"name": job_name, "task": task, "schedule": schedule, "enabled": True})
+
+    # Auto-generate name
+    if not name:
+        name = _slug(task)
+
+    jobs = _load_crons(agent)
+    if any(j["name"] == name for j in jobs):
+        console.print(Panel(
+            f"[{theme.WARNING}]Job '{name}' already exists.[/{theme.WARNING}]\n\n"
+            f"Remove it first: [bold]alfard cron remove {agent} {name}[/bold]",
+            border_style=theme.PANEL_WARNING
+        ))
+        raise SystemExit(1)
+
+    jobs.append({"name": name, "task": task, "schedule": schedule, "enabled": True})
     _save_crons(agent, jobs)
+
     console.print(Panel(
-        f"[{theme.SUCCESS}]{theme.ICON_OK} Job '{job_name}' added to {agent}.[/{theme.SUCCESS}]\n\n"
-        f"[{theme.DIM}]Schedule:[/{theme.DIM}] {schedule}\n"
-        f"[{theme.DIM}]Task:[/{theme.DIM}] {task}\n\n"
-        f"Start the scheduler: [bold {theme.PRIMARY}]alfard cron run[/bold {theme.PRIMARY}]",
-        border_style=theme.SUCCESS
+        f"[bold {theme.SUCCESS}]Job added.[/bold {theme.SUCCESS}]\n\n"
+        f"Agent:    {agent}\n"
+        f"Task:     {task}\n"
+        f"Schedule: {schedule}\n"
+        f"Name:     {name}\n\n"
+        f"[{theme.DIM}]Start scheduler: alfard cron run[/{theme.DIM}]",
+        border_style=theme.PANEL_SUCCESS
     ))
 
 
@@ -134,7 +191,7 @@ def remove(agent: str, name: str):
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
@@ -170,7 +227,7 @@ def list_jobs(agent: str | None):
     if agent and agent not in all_agents:
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     targets = [agent] if agent else all_agents
@@ -253,7 +310,7 @@ def runs(agent: str, name: str, last: int):
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     log_dir = AGENTS_DIR / agent / "cron_logs"
@@ -293,7 +350,7 @@ def now(agent: str, name: str):
     if agent not in list_agents():
         console.print(Panel(
             f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
@@ -301,7 +358,7 @@ def now(agent: str, name: str):
     if job is None:
         console.print(Panel(
             f"[{theme.ERROR}]No job named '{name}' found for {agent}.[/{theme.ERROR}]",
-            border_style=theme.ERROR
+            border_style=theme.PANEL_ERROR
         ))
         raise SystemExit(1)
     console.print(f"[{theme.DIM}]Running '{name}' for {agent}…[/{theme.DIM}]")

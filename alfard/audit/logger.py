@@ -53,5 +53,12 @@ class AuditLogger:
             "source": source,
         })
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False  # do not suppress exceptions
+
     def close(self) -> None:
         self._fh.close()
