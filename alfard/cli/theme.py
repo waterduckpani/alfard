@@ -24,3 +24,4 @@ PANEL_SUCCESS  = "dark_sea_green4"
 PANEL_WARNING  = "dark_goldenrod"
 PANEL_ERROR    = "indian_red"
 PANEL_GATE     = "grey62"        # approval gate — calm neutral, not warning
+
