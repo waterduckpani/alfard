@@ -32,6 +32,8 @@ class ApprovalGate:
         self.audit_logger = audit_logger
         self._notifier = notifier if notifier is not None else CLINotifier()
         self.enabled = True
+        self._job_approved = False  # approved for current job
+        self._approved_server = None  # which server was approved
         try:
             with open(_CONFIG_PATH) as f:
                 cfg = yaml.safe_load(f) or {}
@@ -42,13 +44,29 @@ class ApprovalGate:
     def request(self, tool_name: str, arguments: dict, source: str) -> bool:
         if not self.enabled:
             return True
-        choice = self._notifier.present(tool_name, arguments, source)
-        result = choice == "y"
-        if self.audit_logger is not None:
-            self.audit_logger.log_gate_decision(
-                tool_name,
-                arguments,
-                decision="approved" if result else "rejected",
-                source=source,
+
+        if source == "user_instruction":
+            self._job_approved = False
+            self._approved_server = None
+
+        if self._job_approved:
+            current_server = tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]
+            if current_server == self._approved_server:
+                return True
+            self._job_approved = False
+            self._approved_server = None
+
+        decision = self._notifier.present(tool_name, arguments, source)
+        approved = decision == "y"
+
+        if approved:
+            self._job_approved = True
+            self._approved_server = tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]
+
+        if self.audit_logger:
+            self.audit_logger.log_tool_call(
+                tool_name, arguments,
+                "gate_approved" if approved else "gate_rejected"
             )
-        return result
+
+        return approved
