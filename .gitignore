@@ -35,3 +35,14 @@ config/alfard.yaml
 # macOS
 .DS_Store
 config/integrations.yaml
+# Agent personal data
+agents/*/brain.md
+agents/*/memory.md
+agents/*/crons.yaml
+agents/*/cron_logs/
+agents/*/skills/
+
+# Logs
+logs/
+
+# Keep the agents directory structure but not personal data

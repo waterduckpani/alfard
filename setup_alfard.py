@@ -101,33 +101,15 @@ def run_setup() -> None:
         padding=(1, 4),
     ))
 
-    # ── 2. DEPENDENCY CHECK — Node/npm ────────────────────────────────────────
-    if not shutil.which("node") or not shutil.which("npm"):
+    # Dependency check
+    from alfard.setup.dependencies import ensure_dependencies
+    if not ensure_dependencies():
         console.print(Panel(
-            "Node.js is needed for MCP integrations (Notion, Gmail, GitHub, Slack).\n\n"
-            "If you skip this, core agent features still work — you can install\n"
-            "Node.js later and re-run [bold]alfard setup[/bold] to enable integrations.",
-            title="Node.js required for integrations",
-            border_style=theme.WARNING,
+            "[red]Setup cannot continue — missing required dependencies.[/red]\n\n"
+            "Please install Node.js from https://nodejs.org and re-run alfard setup.",
+            border_style="red"
         ))
-        console.print(
-            f"Install from [bold {theme.PRIMARY}]https://nodejs.org[/bold {theme.PRIMARY}]"
-            " then re-run alfard setup"
-        )
-        answer = Prompt.ask("Is Node.js already installed?", choices=["y", "n"], default="n")
-        if answer == "n":
-            console.print(
-                f"[{theme.DIM}]Install Node.js and re-run alfard setup when ready.[/{theme.DIM}]"
-            )
-            sys.exit(0)
-        if not shutil.which("node") or not shutil.which("npm"):
-            console.print(Panel(
-                f"[{theme.ERROR}]Node.js still not found in PATH.[/{theme.ERROR}]\n\n"
-                "Make sure Node.js is installed and your terminal has been restarted.",
-                border_style=theme.ERROR,
-            ))
-            sys.exit(1)
-    console.print(f"[{theme.SUCCESS}]{theme.ICON_OK} Node.js found[/{theme.SUCCESS}]")
+        return
 
     # ── 3. LLM PROVIDER ───────────────────────────────────────────────────────
     console.print(f"\n[bold {theme.HEADING}]LLM Provider[/bold {theme.HEADING}]")
