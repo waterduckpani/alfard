@@ -109,9 +109,13 @@ CATALOGUE: dict[str, dict] = {
         "credential_env": "SLACK_BOT_TOKEN",
         "get_token_url": "https://api.slack.com/apps",
         "get_token_steps": (
-            "1. Go to api.slack.com/apps and click \"Create New App\" → \"From scratch\"\n"
-            "2. Add OAuth scopes: channels:read, channels:history, chat:write, users:read\n"
-            "3. Install the app to your workspace and copy the \"Bot User OAuth Token\" — starts with xoxb-"
+            "1. Go to api.slack.com/apps and click 'Create New App'\n"
+            "2. Choose 'From a manifest' and paste the alfard manifest\n"
+            "3. Install to your workspace\n"
+            "4. Copy the Bot Token (xoxb-) from OAuth & Permissions\n"
+            "5. Generate an App-Level Token (xapp-) from Basic Information\n"
+            "   → Add scope: connections:write\n"
+            "6. Paste both tokens when prompted"
         ),
         "mcp_transport": "stdio",
         "mcp_command": "npx",

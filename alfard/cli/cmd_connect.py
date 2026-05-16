@@ -86,6 +86,25 @@ def _connect_apikey(name: str, integration: dict) -> bool:
 
     _update_env(integration["credential_env"], token.strip())
 
+    # Slack needs a second token (app-level for Socket Mode)
+    if name == "slack":
+        from rich.prompt import Prompt as P
+        console.print(
+            "\n[bold]Slack also needs an App-Level Token[/bold]\n"
+            "[dim]Generate one at api.slack.com/apps → "
+            "Basic Information → App-Level Tokens\n"
+            "Add scope: connections:write[/dim]"
+        )
+        app_token = P.ask(
+            "Paste your App-Level Token (xapp-)",
+            password=True
+        )
+        if app_token:
+            _update_env("SLACK_APP_TOKEN", app_token)
+            console.print(
+                f"[{theme.SUCCESS}]App-level token saved.[/{theme.SUCCESS}]"
+            )
+
     env_key = integration.get("mcp_env_var", integration["credential_env"])
     entry = {
         "name": name,

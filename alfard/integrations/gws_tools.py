@@ -52,11 +52,14 @@ def gmail_triage(max_results: int = 10) -> str:
 
 
 def gmail_create_draft(to: str, subject: str, body: str) -> str:
-    return _run_gws("gmail", "+send",
-                    "--to", to,
-                    "--subject", subject,
-                    "--body", body,
-                    "--dry-run")
+    try:
+        return _run_gws("gmail", "+send",
+                        "--to", to,
+                        "--subject", subject,
+                        "--body", body,
+                        "--draft")
+    except RuntimeError as e:
+        return f"Could not create draft: {e}. Use gmail_send_message to send directly."
 
 
 def gmail_send_message(to: str, subject: str, body: str) -> str:

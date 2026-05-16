@@ -28,9 +28,9 @@ class CLINotifier:
 
 class ApprovalGate:
 
-    def __init__(self, audit_logger=None) -> None:
+    def __init__(self, audit_logger=None, notifier=None) -> None:
         self.audit_logger = audit_logger
-        self._notifier = CLINotifier()
+        self._notifier = notifier if notifier is not None else CLINotifier()
         self.enabled = True
         try:
             with open(_CONFIG_PATH) as f:

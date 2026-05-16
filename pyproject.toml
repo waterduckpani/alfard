@@ -15,6 +15,7 @@ dependencies = [
     "uvicorn",
     "click",
     "apscheduler>=3.10",
+    "slack-sdk",
 ]
 
 [project.scripts]
