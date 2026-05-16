@@ -65,6 +65,22 @@ def _build_orchestrator(agent_name: str,
     return orchestrator, audit, notifier
 
 
+def _to_slack_mrkdwn(text: str) -> str:
+    """Convert Markdown to Slack mrkdwn format."""
+    import re
+    # **bold** → *bold*
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    # __bold__ → *bold*
+    text = re.sub(r'__(.+?)__', r'*\1*', text)
+    # *italic* or _italic_ → _italic_
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
+    # ### heading → *heading*
+    text = re.sub(r'^#{1,3}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+    # - bullet → • bullet
+    text = re.sub(r'^- ', '• ', text, flags=re.MULTILINE)
+    return text
+
+
 class AlfardSlackBot:
     """
     Slack bot that routes DMs and @mentions to an alfard agent.
@@ -138,7 +154,7 @@ class AlfardSlackBot:
             # Post response
             self.web_client.chat_postMessage(
                 channel=channel,
-                text=response
+                text=_to_slack_mrkdwn(response)
             )
 
     def _process_request(self, client: SocketModeClient,
