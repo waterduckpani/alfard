@@ -10,6 +10,7 @@ from alfard.gate.approval import ApprovalGate
 from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from alfard.orchestrator.memory import Memory
+from alfard.commands.registry import is_command, dispatch
 
 MAX_TURNS = 20
 SYSTEM_REINJECT_EVERY = 5
@@ -36,9 +37,27 @@ class Orchestrator:
         self._system_prompt = system_prompt
         self._memory = Memory(system_prompt)
         self._user_triggered = True  # tracks if current cycle is user-initiated
+        self._loader = None  # set externally after construction
 
     def run(self, task: str) -> str:
         self._memory.add_user(task)
+
+        # Check for slash commands before hitting the LLM
+        if is_command(task):
+            context = {
+                "agent_name": getattr(self, "_agent_name", "agent"),
+                "memory": self._memory,
+                "loader": self._loader,
+                "tool_registry": self._registry,
+                "llm": self._llm,
+                "turn_count": self._memory.turn_count(),
+            }
+            result = dispatch(task, context)
+            if result is not None:
+                return result
+            # Unknown command — let LLM handle it
+            return f"Unknown command: {task}\nType /help for available commands."
+
         self._user_triggered = True
 
         for _ in range(MAX_TURNS):

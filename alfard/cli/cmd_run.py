@@ -1,6 +1,7 @@
 """Starts a named agent and enters its interactive ReAct loop."""
 
 import click
+from datetime import datetime
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -14,6 +15,7 @@ from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
+from alfard.commands.handlers import register_all
 from alfard.cli import theme
 
 console = Console()
@@ -108,6 +110,9 @@ def run(agent: str, no_mcp: bool) -> None:
             credentials=credentials,
             system_prompt=system_prompt,
         )
+        orchestrator._loader = loader
+        orchestrator._agent_name = agent
+        register_all()
 
         # 7. Interactive chat loop
         console.print(
@@ -149,14 +154,31 @@ def run(agent: str, no_mcp: bool) -> None:
         # 8. Save memory before exit
         try:
             messages = orchestrator._memory.get_messages()
-            if len(messages) > 1:
-                memory_lines = []
-                for msg in messages:
-                    if msg["role"] in ("user", "assistant") and msg.get("content"):
-                        role = "You" if msg["role"] == "user" else agent
-                        memory_lines.append(f"**{role}**: {msg['content'][:200]}")
-                if memory_lines:
-                    loader.save_memory("\n".join(memory_lines[-20:]))
+            turns = [
+                m for m in messages
+                if m["role"] in ("user", "assistant") and m.get("content")
+            ]
+            if len(turns) >= 2:
+                summary_prompt = (
+                    "Summarise this conversation in 3-5 bullet points.\n"
+                    "Focus on: facts learned, decisions made, tasks completed.\n"
+                    "Be concise. Each bullet max 20 words.\n"
+                    "Format: • bullet point\n\n"
+                    + "\n".join(
+                        f"{m['role'].upper()}: {m['content'][:300]}"
+                        for m in turns[-20:]
+                    )
+                )
+                response = orchestrator._llm.complete([
+                    {"role": "user", "content": summary_prompt}
+                ])
+                summary = response.get("content", "").strip()
+                if summary:
+                    loader.save_memory(
+                        f"# Last session — "
+                        f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}Z\n\n"
+                        f"{summary}\n"
+                    )
         except Exception:
             pass
     finally:

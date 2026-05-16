@@ -22,6 +22,7 @@ from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
 from alfard.interfaces.slack_notifier import SlackNotifier
+from alfard.commands.handlers import register_all
 
 
 def _build_orchestrator(agent_name: str,
@@ -61,6 +62,9 @@ def _build_orchestrator(agent_name: str,
         credentials=credentials,
         system_prompt=system_prompt,
     )
+    orchestrator._loader = loader
+    orchestrator._agent_name = agent_name
+    register_all()
 
     return orchestrator, audit, notifier
 
