@@ -46,3 +46,4 @@ agents/*/skills/
 logs/
 
 # Keep the agents directory structure but not personal data
+agents/*/soul.md
