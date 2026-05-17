@@ -52,6 +52,9 @@ def _build_orchestrator(agent_name: str,
     if shutil.which("gws") and gws_creds.exists():
         from alfard.integrations.gws_tools import register_gmail_tools
         register_gmail_tools(registry)
+    from alfard.integrations.gws_tools import register_gdrive_tools
+    if shutil.which("gws") and gws_creds.exists():
+        register_gdrive_tools(registry)
 
     from alfard.mounts.manager import MountManager, MountError
     from alfard.mounts.tools import register_file_tools

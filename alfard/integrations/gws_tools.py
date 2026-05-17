@@ -124,3 +124,66 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
             registry.register(name, desc, fn, reversible, params, is_mcp=True)
         except ValueError:
             pass  # already registered
+
+
+def register_gdrive_tools(registry: ToolRegistry) -> None:
+    """Register Google Drive tools using gws CLI."""
+
+    def gdrive_list_files(max_results: int = 10, query: str = "") -> str:
+        try:
+            params = {"pageSize": max_results}
+            if query:
+                params["q"] = query
+            return _run_gws("drive", "files", "list",
+                            "--params", json.dumps(params),
+                            "--format", "table")
+        except RuntimeError as e:
+            return f"Could not list files: {e}"
+
+    def gdrive_get_file(file_id: str) -> str:
+        try:
+            return _run_gws("drive", "files", "get",
+                            "--params", json.dumps({"fileId": file_id}))
+        except RuntimeError as e:
+            return f"Could not get file: {e}"
+
+    def gdrive_search(query: str, max_results: int = 10) -> str:
+        try:
+            return _run_gws("drive", "files", "list",
+                            "--params", json.dumps({
+                                "q": query,
+                                "pageSize": max_results
+                            }),
+                            "--format", "table")
+        except RuntimeError as e:
+            return f"Could not search: {e}"
+
+    tools = [
+        ("gdrive_list_files", "List files in Google Drive",
+         gdrive_list_files, True,
+         {"type": "object", "properties": {
+             "max_results": {"type": "integer"},
+             "query": {"type": "string",
+                       "description": "Drive search query"}
+         }}),
+        ("gdrive_get_file", "Get metadata for a specific Drive file",
+         gdrive_get_file, True,
+         {"type": "object", "properties": {
+             "file_id": {"type": "string",
+                         "description": "Google Drive file ID"}
+         }, "required": ["file_id"]}),
+        ("gdrive_search", "Search Google Drive files",
+         gdrive_search, True,
+         {"type": "object", "properties": {
+             "query": {"type": "string",
+                       "description": "Drive search query"},
+             "max_results": {"type": "integer"}
+         }, "required": ["query"]}),
+    ]
+
+    for name, desc, fn, reversible, params in tools:
+        try:
+            registry.register(name, desc, fn, reversible,
+                               params, is_mcp=True)
+        except ValueError:
+            pass

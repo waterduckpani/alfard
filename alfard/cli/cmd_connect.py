@@ -281,89 +281,115 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     # Step 3: skip GCP setup if credentials already exist
     creds_dest = Path.home() / ".config" / "gws" / "client_secret.json"
     if not creds_dest.exists():
-        # Step 4: print one-time GCP setup instructions
-        setup_instructions = (
-            "You need to create a free Google Cloud project to connect Gmail.\n"
-            "This is a one-time setup — you'll never need to do it again.\n\n"
-            "Step 1: Create a project\n"
-            "  → We'll open Google Cloud Console now\n"
-            "  → Click \"New Project\", name it anything (e.g. \"alfard\")\n"
-            "  → Click Create\n\n"
-            "Step 2: Enable Gmail API\n"
-            "  → We'll open the Gmail API page\n"
-            "  → Click Enable\n\n"
-            "Step 3: Configure consent screen\n"
-            "  → Go to APIs & Services → OAuth consent screen\n"
-            "  → Choose External → fill in app name \"alfard\" and your email\n"
-            "  → Click Save through all screens\n"
-            "  → Click \"Add users\" and add YOUR Gmail address as a test user\n\n"
-            "Step 4: Create credentials\n"
-            "  → Go to APIs & Services → Credentials\n"
-            "  → Click Create Credentials → OAuth client ID\n"
-            "  → Application type: Desktop app → name it \"alfard\" → Create\n"
-            "  → Click the download button (↓) to download the JSON file"
-        )
-        console.print(Panel(
-            setup_instructions,
-            title="One-time Google setup (5 minutes)",
-            border_style=theme.PANEL_WARNING,
-        ))
+        import os as _os
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv()
+        ALFARD_CLIENT_ID = _os.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
+        ALFARD_CLIENT_SECRET = _os.environ.get("ALFARD_GOOGLE_CLIENT_SECRET", "")
 
-        # Step 5: wait for user to confirm they're ready
-        Prompt.ask("Ready to start? Press Enter to open Google Cloud Console", default="")
-
-        # Step 6a: GCP console
-        webbrowser.open("https://console.cloud.google.com")
-        Prompt.ask("Step 1 done — project created? [press Enter to continue]", default="")
-
-        # Step 6b: Gmail API
-        webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
-        Prompt.ask("Step 2 done — Gmail API enabled? [press Enter to continue]", default="")
-
-        # Step 6c: OAuth consent screen
-        webbrowser.open("https://console.cloud.google.com/auth/clients")
-        console.print(
-            "\nConfigure the consent screen:\n"
-            "  → Choose External\n"
-            "  → Fill in app name [bold]alfard[/bold] and your email\n"
-            "  → Click Save through all screens\n"
-            "  → Click [bold]Add users[/bold] and add your Gmail address as a test user"
-        )
-        Prompt.ask(
-            "Step 3 done — consent screen configured and test user added? [press Enter to continue]",
-            default="",
-        )
-
-        # Step 6d: credentials
-        webbrowser.open("https://console.cloud.google.com/apis/credentials")
-        console.print(
-            "\nCreate OAuth credentials:\n"
-            "  → Click [bold]Create Credentials[/bold] → OAuth client ID\n"
-            "  → Application type: [bold]Desktop app[/bold] → name it alfard → Create\n"
-            "  → Click the [bold]download button (↓)[/bold] to download the JSON file"
-        )
-        Prompt.ask("Step 4 done — credentials JSON downloaded? [press Enter to continue]", default="")
-
-        # Step 7: get credentials path and copy to gws config
-        creds_path = Prompt.ask(
-            "\nDrag and drop your downloaded credentials JSON file here, or paste the path"
-        ).strip().strip("'\"")
-
-        if not creds_path or not Path(creds_path).exists():
+        if ALFARD_CLIENT_ID and ALFARD_CLIENT_ID != "custom":
+            # Use bundled alfard credentials — no GCP setup needed
+            import json as _json
+            client_secret_data = {
+                "installed": {
+                    "client_id": ALFARD_CLIENT_ID,
+                    "client_secret": ALFARD_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": ["http://localhost"],
+                }
+            }
+            creds_dest.parent.mkdir(parents=True, exist_ok=True)
+            creds_dest.write_text(_json.dumps(client_secret_data))
+            console.print(f"[{theme.DIM}]Google credentials configured.[/{theme.DIM}]")
+        else:
+            # Fallback: walk the user through GCP setup
+            setup_instructions = (
+                "You need to create a free Google Cloud project to connect Gmail.\n"
+                "This is a one-time setup — you'll never need to do it again.\n\n"
+                "Step 1: Create a project\n"
+                "  → We'll open Google Cloud Console now\n"
+                "  → Click \"New Project\", name it anything (e.g. \"alfard\")\n"
+                "  → Click Create\n\n"
+                "Step 2: Enable Gmail API\n"
+                "  → We'll open the Gmail API page\n"
+                "  → Click Enable\n\n"
+                "Step 3: Configure consent screen\n"
+                "  → Go to APIs & Services → OAuth consent screen\n"
+                "  → Choose External → fill in app name \"alfard\" and your email\n"
+                "  → Click Save through all screens\n"
+                "  → Click \"Add users\" and add YOUR Gmail address as a test user\n\n"
+                "Step 4: Create credentials\n"
+                "  → Go to APIs & Services → Credentials\n"
+                "  → Click Create Credentials → OAuth client ID\n"
+                "  → Application type: Desktop app → name it \"alfard\" → Create\n"
+                "  → Click the download button (↓) to download the JSON file"
+            )
             console.print(Panel(
-                f"[{theme.ERROR}]File not found.[/{theme.ERROR}]\n\nRe-run "
-                f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}] and provide a valid path.",
-                border_style=theme.PANEL_ERROR,
+                setup_instructions,
+                title="One-time Google setup (5 minutes)",
+                border_style=theme.PANEL_WARNING,
             ))
-            return False
 
-        creds_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(creds_path, creds_dest)
-        console.print(f"[{theme.SUCCESS}]Credentials saved.[/{theme.SUCCESS}]")
+            Prompt.ask("Ready to start? Press Enter to open Google Cloud Console", default="")
+
+            webbrowser.open("https://console.cloud.google.com")
+            Prompt.ask("Step 1 done — project created? [press Enter to continue]", default="")
+
+            webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
+            Prompt.ask("Step 2 done — Gmail API enabled? [press Enter to continue]", default="")
+
+            webbrowser.open("https://console.cloud.google.com/auth/clients")
+            console.print(
+                "\nConfigure the consent screen:\n"
+                "  → Choose External\n"
+                "  → Fill in app name [bold]alfard[/bold] and your email\n"
+                "  → Click Save through all screens\n"
+                "  → Click [bold]Add users[/bold] and add your Gmail address as a test user"
+            )
+            Prompt.ask(
+                "Step 3 done — consent screen configured and test user added? [press Enter to continue]",
+                default="",
+            )
+
+            webbrowser.open("https://console.cloud.google.com/apis/credentials")
+            console.print(
+                "\nCreate OAuth credentials:\n"
+                "  → Click [bold]Create Credentials[/bold] → OAuth client ID\n"
+                "  → Application type: [bold]Desktop app[/bold] → name it alfard → Create\n"
+                "  → Click the [bold]download button (↓)[/bold] to download the JSON file"
+            )
+            Prompt.ask("Step 4 done — credentials JSON downloaded? [press Enter to continue]", default="")
+
+            creds_path = Prompt.ask(
+                "\nDrag and drop your downloaded credentials JSON file here, or paste the path"
+            ).strip().strip("'\"")
+
+            if not creds_path or not Path(creds_path).exists():
+                console.print(Panel(
+                    f"[{theme.ERROR}]File not found.[/{theme.ERROR}]\n\nRe-run "
+                    f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}] and provide a valid path.",
+                    border_style=theme.PANEL_ERROR,
+                ))
+                return False
+
+            creds_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(creds_path, creds_dest)
+            console.print(f"[{theme.SUCCESS}]Credentials saved.[/{theme.SUCCESS}]")
 
     # Step 8: OAuth login
     console.print(f"\n[{theme.DIM}]Opening browser for Google sign-in...[/{theme.DIM}]")
-    result = subprocess.run(["gws", "auth", "login"])
+    import os as _os2
+    from dotenv import load_dotenv as _load_dotenv2
+    _load_dotenv2()
+    _env = _os2.environ.copy()
+    _client_id = _os2.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
+    _client_secret = _os2.environ.get("ALFARD_GOOGLE_CLIENT_SECRET", "")
+    if _client_id:
+        _env["GOOGLE_WORKSPACE_CLI_CLIENT_ID"] = _client_id
+    if _client_secret:
+        _env["GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"] = _client_secret
+    result = subprocess.run(["gws", "auth", "login"], env=_env)
     if result.returncode != 0:
         console.print(Panel(
             f"[{theme.ERROR}]Google sign-in failed.[/{theme.ERROR}]\n\n"
@@ -410,10 +436,11 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     # Step 12: add skill to agent(s)
     from alfard.agents.loader import list_agents, add_skill, AGENTS_DIR  # noqa: F401
 
+    display = integration["display_name"]
     agents = list_agents()
     added_to: str = ""
     if agents:
-        console.print("\n[bold]Which agent should get the Gmail skill?[/bold]")
+        console.print(f"\n[bold]Which agent should get the {display} skill?[/bold]")
         for i, agent_name in enumerate(agents, start=1):
             console.print(f"  {i}. {agent_name}")
         console.print(f"  {len(agents) + 1}. All agents")
@@ -438,7 +465,6 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             added_to = selected
 
     # Step 13: success panel
-    display = integration["display_name"]
     skill_line = f"\nSkill added to: {added_to}" if added_to else ""
     run_hint = f"\nRun: [bold {theme.PRIMARY}]alfard run {added_to}[/bold {theme.PRIMARY}]" if added_to else ""
     console.print(Panel(

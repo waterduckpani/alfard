@@ -99,6 +99,10 @@ def run(agent: str, no_mcp: bool) -> None:
         if shutil.which("gws") and gws_creds.exists():
             register_gmail_tools(registry)
             console.print(f"[{theme.DIM}]Gmail tools registered.[/{theme.DIM}]")
+        from alfard.integrations.gws_tools import register_gdrive_tools
+        if shutil.which("gws") and gws_creds.exists():
+            register_gdrive_tools(registry)
+            console.print(f"[{theme.DIM}]GDrive tools registered.[/{theme.DIM}]")
 
         # Register file tools if agent has mounts declared
         from alfard.mounts.manager import MountManager, MountError
