@@ -41,6 +41,7 @@ agents/*/memory.md
 agents/*/crons.yaml
 agents/*/cron_logs/
 agents/*/skills/
+agents/*/mounts.yaml
 
 # Logs
 logs/

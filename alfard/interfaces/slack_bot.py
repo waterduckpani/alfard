@@ -53,6 +53,15 @@ def _build_orchestrator(agent_name: str,
         from alfard.integrations.gws_tools import register_gmail_tools
         register_gmail_tools(registry)
 
+    from alfard.mounts.manager import MountManager, MountError
+    from alfard.mounts.tools import register_file_tools
+    try:
+        mount_manager = MountManager(loader.agent_dir)
+        if mount_manager.has_mounts():
+            register_file_tools(registry, mount_manager)
+    except MountError:
+        pass  # log but don't crash the bot
+
     orchestrator = Orchestrator(
         llm=LLMClient(),
         registry=registry,

@@ -100,6 +100,25 @@ def run(agent: str, no_mcp: bool) -> None:
             register_gmail_tools(registry)
             console.print(f"[{theme.DIM}]Gmail tools registered.[/{theme.DIM}]")
 
+        # Register file tools if agent has mounts declared
+        from alfard.mounts.manager import MountManager, MountError
+        from alfard.mounts.tools import register_file_tools
+        try:
+            mount_manager = MountManager(loader.agent_dir)
+            if mount_manager.has_mounts():
+                register_file_tools(registry, mount_manager)
+                mount_count = len(mount_manager.list_mounts())
+                console.print(
+                    f"[dim]File tools registered "
+                    f"({mount_count} mount(s)).[/dim]"
+                )
+        except MountError as e:
+            console.print(Panel(
+                f"[{theme.ERROR}]Mount error:[/{theme.ERROR}]\n\n{e}",
+                border_style=theme.PANEL_ERROR
+            ))
+            raise SystemExit(1)
+
         # 6. Build orchestrator
         orchestrator = Orchestrator(
             llm=LLMClient(),

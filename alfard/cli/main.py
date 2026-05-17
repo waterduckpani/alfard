@@ -13,6 +13,7 @@ from alfard.cli.cmd_skill import skill
 from alfard.cli.cmd_cron import cron
 from alfard.cli.cmd_disconnect import disconnect
 from alfard.cli.cmd_slack import slack
+from alfard.cli.cmd_mount import mount
 
 
 @click.group(invoke_without_command=True)
@@ -60,6 +61,7 @@ cli.add_command(skill)
 cli.add_command(cron)
 cli.add_command(disconnect)
 cli.add_command(slack)
+cli.add_command(mount)
 
 if __name__ == "__main__":
     cli()
