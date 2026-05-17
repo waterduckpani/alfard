@@ -178,6 +178,11 @@ def run_setup() -> None:
     console.print(
         f"\n[{theme.SUCCESS}]{theme.ICON_OK} Provider configured: {provider} / {model}[/{theme.SUCCESS}]"
     )
+    console.print(
+        f"\n[{theme.DIM}]alfard uses a lightweight embedding model for "
+        f"memory retrieval.\nSame API key, negligible cost "
+        f"(< $0.001 per day of normal use).[/{theme.DIM}]"
+    )
 
     # ── 4. CREATE FIRST AGENT ─────────────────────────────────────────────────
     console.print(f"\n[bold {theme.HEADING}]Create your first agent[/bold {theme.HEADING}]")

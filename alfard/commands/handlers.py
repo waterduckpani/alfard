@@ -72,24 +72,29 @@ def handle_remember(context: dict) -> str:
         return "Cannot save memory — missing context."
 
     messages = memory.get_messages()
-    # Only include user/assistant turns
     turns = [
         m for m in messages
-        if m["role"] in ("user", "assistant") and m.get("content")
+        if isinstance(m, dict)
+        and m.get("role") in ("user", "assistant")
+        and isinstance(m.get("content"), str)
     ]
 
     if len(turns) < 2:
         return "Nothing to remember yet — have a conversation first."
 
-    # Ask LLM to summarise
+    # Ask LLM to extract a memorable fact
     summary_prompt = (
-        "Summarise this conversation in 3-5 bullet points.\n"
-        "Focus on: facts learned, decisions made, tasks completed.\n"
-        "Be concise. Each bullet max 20 words.\n"
-        "Format: • bullet point\n\n"
+        "Extract the single most important fact or preference from "
+        "this conversation worth remembering permanently.\n"
+        "Write it as one clear sentence.\n"
+        "Also provide 3-5 relevant tags as comma-separated keywords.\n"
+        "Format your response exactly as:\n"
+        "FACT: <the fact>\n"
+        "TAGS: <tag1, tag2, tag3>\n\n"
         + "\n".join(
-            f"{m['role'].upper()}: {m['content'][:300]}"
-            for m in turns[-20:]
+            f"{m['role'].upper()}: {str(m['content'])[:300]}"
+            for m in turns[-10:]
+            if isinstance(m.get("content"), str)
         )
     )
 
@@ -97,15 +102,24 @@ def handle_remember(context: dict) -> str:
         response = llm.complete([
             {"role": "user", "content": summary_prompt}
         ])
-        summary = response.get("content", "").strip()
+        content = response.get("content", "").strip()
     except Exception as e:
         return f"Could not generate summary: {e}"
 
-    if not summary:
-        return "Could not generate a summary."
+    # Parse FACT and TAGS
+    fact = ""
+    tags = []
+    for line in content.split("\n"):
+        if line.startswith("FACT:"):
+            fact = line[5:].strip()
+        elif line.startswith("TAGS:"):
+            tags = [t.strip() for t in line[5:].split(",")]
 
-    loader.append_brain(summary)
-    return f"Saved to memory:\n\n{summary}"
+    if not fact:
+        return "Could not extract a memorable fact from this conversation."
+
+    loader.memory_manager.store_fact(fact, tags)
+    return f"Saved to memory:\n\n**{fact}**\nTags: {', '.join(tags)}"
 
 
 def handle_reset(context: dict) -> str:

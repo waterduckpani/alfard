@@ -3,6 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 from alfard.agents.base_prompt import BASE_PROMPT
+from alfard.memory.manager import MemoryManager
 
 AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
@@ -25,6 +26,8 @@ class AgentLoader:
             )
         if not self.agent_dir.exists():
             raise FileNotFoundError(f"Agent directory not found: {self.agent_dir}")
+        self.memory_manager = MemoryManager(self.agent_dir)
+        self.memory_manager.migrate_from_memory_md()
 
     def _read_file(self, filename: str) -> str:
         path = self.agent_dir / filename
@@ -52,20 +55,45 @@ class AgentLoader:
             parts.append(skill_file.read_text(encoding="utf-8"))
         return "\n\n".join(parts)
 
-    def build_system_prompt(self) -> str:
-        sections = [
-            ("# Identity", self._read_file(SOUL_FILE)),
-            ("# Knowledge", self._read_file(BRAIN_FILE)),
-            ("# Recent Memory", self._read_file(MEMORY_FILE)),
-        ]
-        parts = [BASE_PROMPT.strip()]
-        for header, content in sections:
-            if content.strip():
-                parts.append(f"{header}\n{content}")
-        skills_content = self._load_agent_skills()
-        if skills_content:
-            parts.append(f"# Skills\n{skills_content}")
-        return "\n\n".join(parts)
+    def build_system_prompt(self, query: str = "") -> str:
+        """Build the full system prompt for this agent.
+
+        Injects soul, brain, relevant memories, and active skills.
+        Memory is retrieved semantically based on the query.
+        """
+        parts = []
+
+        # Base prompt
+        from alfard.agents.base_prompt import BASE_PROMPT
+        parts.append(BASE_PROMPT)
+
+        # Soul
+        soul = self._read_file("soul.md")
+        if soul:
+            parts.append(f"# Agent identity\n{soul}")
+
+        # Brain (permanent facts — always injected)
+        brain = self._read_file("brain.md")
+        if brain:
+            parts.append(f"# Permanent knowledge\n{brain}")
+
+        # Memory context (semantic retrieval + recent sessions)
+        memory_context = self.memory_manager.build_memory_context(query)
+        if memory_context:
+            parts.append(memory_context)
+
+        # Skills (load all active skills)
+        skills_dir = self.agent_dir / "skills"
+        if skills_dir.exists():
+            for skill_file in sorted(skills_dir.glob("*.md")):
+                skill_content = skill_file.read_text(encoding="utf-8").strip()
+                if skill_content:
+                    skill_name = skill_file.stem
+                    parts.append(
+                        f"# {skill_name.capitalize()} skill\n{skill_content}"
+                    )
+
+        return "\n\n---\n\n".join(parts)
 
     def save_memory(self, content: str) -> None:
         path = self.agent_dir / MEMORY_FILE

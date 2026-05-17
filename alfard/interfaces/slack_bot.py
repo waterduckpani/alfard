@@ -64,6 +64,7 @@ def _build_orchestrator(agent_name: str,
     )
     orchestrator._loader = loader
     orchestrator._agent_name = agent_name
+    orchestrator._memory_manager = loader.memory_manager
     register_all()
 
     return orchestrator, audit, notifier
@@ -117,6 +118,7 @@ class AlfardSlackBot:
         # Per-channel orchestrators (one per conversation)
         self._sessions: dict[str, tuple] = {}
         self._locks: dict[str, threading.Lock] = {}
+        self._first_message: dict[str, bool] = {}
 
         # Bot's own user ID (to ignore self-messages)
         auth = self.web_client.auth_test()
@@ -132,6 +134,7 @@ class AlfardSlackBot:
                 self.agent_name, self.web_client, channel
             )
             self._locks[channel] = threading.Lock()
+            self._first_message[channel] = True
         return self._sessions[channel]
 
     def _handle_message(self, channel: str, text: str,
@@ -141,6 +144,11 @@ class AlfardSlackBot:
         lock = self._locks[channel]
 
         with lock:  # one message at a time per channel
+            if self._first_message.get(channel):
+                system_prompt = orchestrator._loader.build_system_prompt(query=text)
+                orchestrator._memory._system_prompt = system_prompt
+                self._first_message[channel] = False
+
             # Show typing indicator
             try:
                 self.web_client.chat_postMessage(

@@ -112,13 +112,51 @@ def run(agent: str, no_mcp: bool) -> None:
         )
         orchestrator._loader = loader
         orchestrator._agent_name = agent
+        orchestrator._memory_manager = loader.memory_manager
         register_all()
+
+        def write_brain_fact(fact: str, tags: str = "") -> str:
+            """Store a permanent fact about the user or their work.
+            Call when user states a preference, corrects you, or
+            shares something worth remembering permanently.
+            Tags: comma-separated keywords related to this fact."""
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+            if orchestrator._memory_manager:
+                orchestrator._facts_learned = getattr(
+                    orchestrator, '_facts_learned', 0) + 1
+                return orchestrator._memory_manager.store_fact(fact, tag_list)
+            return "Memory not available."
+
+        registry.register(
+            "write_brain_fact",
+            "Store a permanent fact about the user or their work. "
+            "Call when user states a preference, corrects you, or "
+            "shares something worth remembering.",
+            write_brain_fact,
+            True,
+            {
+                "type": "object",
+                "properties": {
+                    "fact": {
+                        "type": "string",
+                        "description": "The fact to remember, written as a clear sentence"
+                    },
+                    "tags": {
+                        "type": "string",
+                        "description": "Comma-separated keywords: e.g. 'stocky,supabase,database'"
+                    }
+                },
+                "required": ["fact"]
+            }
+        )
 
         # 7. Interactive chat loop
         console.print(
             f"\n[{theme.DIM}]Type your message and press Enter. "
             f"Type [bold]exit[/bold] or [bold]quit[/bold] to stop.[/{theme.DIM}]\n"
         )
+
+        first_message = True
 
         while True:
             try:
@@ -133,6 +171,11 @@ def run(agent: str, no_mcp: bool) -> None:
 
             if not user_input.strip():
                 continue
+
+            if first_message:
+                system_prompt = loader.build_system_prompt(query=user_input)
+                orchestrator._memory._system_prompt = system_prompt
+                first_message = False
 
             try:
                 console.print()
@@ -160,10 +203,9 @@ def run(agent: str, no_mcp: bool) -> None:
             ]
             if len(turns) >= 2:
                 summary_prompt = (
-                    "Summarise this conversation in 3-5 bullet points.\n"
-                    "Focus on: facts learned, decisions made, tasks completed.\n"
-                    "Be concise. Each bullet max 20 words.\n"
-                    "Format: • bullet point\n\n"
+                    "Summarise this conversation in 2-3 sentences.\n"
+                    "Focus on: what was accomplished, what was discussed.\n"
+                    "Be specific and concise.\n\n"
                     + "\n".join(
                         f"{m['role'].upper()}: {m['content'][:300]}"
                         for m in turns[-20:]
@@ -173,11 +215,25 @@ def run(agent: str, no_mcp: bool) -> None:
                     {"role": "user", "content": summary_prompt}
                 ])
                 summary = response.get("content", "").strip()
+
+                all_text = " ".join(
+                    m["content"][:100] for m in turns
+                    if isinstance(m, dict) and isinstance(m.get("content"), str)
+                ).lower()
+                topics = []
+                for keyword in ["notion", "gmail", "github", "slack",
+                                "gdrive", "linear", "stocky", "alfard"]:
+                    if keyword in all_text:
+                        topics.append(keyword)
+
+                facts_learned = getattr(orchestrator, '_facts_learned', 0)
+
                 if summary:
-                    loader.save_memory(
-                        f"# Last session — "
-                        f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}Z\n\n"
-                        f"{summary}\n"
+                    loader.memory_manager.save_session(
+                        summary=summary,
+                        topics=topics,
+                        turns=len(turns) // 2,
+                        facts_learned=facts_learned,
                     )
         except Exception:
             pass

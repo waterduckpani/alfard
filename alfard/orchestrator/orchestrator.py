@@ -38,6 +38,8 @@ class Orchestrator:
         self._memory = Memory(system_prompt)
         self._user_triggered = True  # tracks if current cycle is user-initiated
         self._loader = None  # set externally after construction
+        self._facts_learned = 0
+        self._memory_manager = None  # set externally
 
     def run(self, task: str) -> str:
         self._memory.add_user(task)
