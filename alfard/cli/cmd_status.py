@@ -65,6 +65,13 @@ def status():
         if gws_installed and gws_creds.exists():
             itab.add_row("gmail", "gws", "gws gmail +triage")
             itab.add_row("gdrive", "gws", "gws drive files list")
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        slack_bot = os.environ.get("SLACK_BOT_TOKEN")
+        slack_app = os.environ.get("SLACK_APP_TOKEN")
+        if slack_bot and slack_app:
+            itab.add_row("slack-bot", "websocket", "socket mode")
         console.print(itab)
     else:
         console.print(

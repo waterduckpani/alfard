@@ -160,25 +160,7 @@ settings:
     _update_env("SLACK_APP_TOKEN", app_token)
     console.print(f"[{theme.SUCCESS}]App token saved.[/{theme.SUCCESS}]")
 
-    # Step 4 — Add server to integrations.yaml
-    entry = {
-        "name": name,
-        "transport": integration["mcp_transport"],
-        "command": integration["mcp_command"],
-        "args": integration["mcp_args"],
-        "env_vars": {"SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN"},
-        "tools": {
-            "reversible": integration["reversible_tools"],
-            "irreversible": integration["irreversible_tools"],
-        }
-    }
-    data = _load_integrations()
-    data["servers"] = [s for s in data.get("servers", [])
-                       if s.get("name") != name]
-    data["servers"].append(entry)
-    _save_integrations(data)
-
-    # Step 5 — Add skill
+    # Step 4 — Add skill
     from alfard.agents.loader import list_agents, add_skill
     agents = list_agents()
     added_to = ""
@@ -208,7 +190,8 @@ settings:
         f"[bold {theme.SUCCESS}]Slack connected.[/bold {theme.SUCCESS}]\n\n"
         f"Skill added to: {added_to}\n\n"
         f"Start your Slack bot:\n"
-        f"  [bold]alfard slack {added_to}[/bold]",
+        f"  [bold]alfard slack {added_to}[/bold]\n\n"
+        f"[{theme.DIM}]DM @alfard in Slack to start chatting.[/{theme.DIM}]",
         border_style=theme.PANEL_SUCCESS
     ))
     return True
