@@ -21,24 +21,27 @@ def handle_clear(context: dict) -> str:
 
 def handle_status(context: dict) -> str:
     agent_name = context.get("agent_name", "unknown")
-    turn_count = context.get("turn_count", 0)
     registry = context.get("tool_registry")
 
     lines = [f"**Agent:** {agent_name}"]
-    lines.append(f"**Turns this session:** {turn_count}")
 
     if registry:
         tools = registry.all_tools()
         mcp_tools = [t for t in tools if t.get("is_mcp")]
         native_tools = [t for t in tools if not t.get("is_mcp")]
+        KNOWN_INTEGRATIONS = {
+            "notion", "github", "slack", "linear",
+            "gmail", "gdrive", "drive"
+        }
         if mcp_tools:
             servers = sorted(set(
                 t["name"].split(".")[0] for t in mcp_tools
                 if "." in t["name"]
             ))
-            gws_tools = [t for t in mcp_tools if "." not in t["name"]]
             gws_services = sorted(set(
-                t["name"].split("_")[0] for t in gws_tools
+                t["name"].split("_")[0] for t in mcp_tools
+                if "." not in t["name"]
+                and t["name"].split("_")[0] in KNOWN_INTEGRATIONS
             ))
             all_services = servers + gws_services
             if all_services:

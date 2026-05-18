@@ -12,12 +12,19 @@ def register_file_tools(registry: ToolRegistry,
 
     def file_read(path: str) -> str:
         """Read a file's contents."""
+        MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB
         try:
             resolved = mount_manager.check_read(path)
             if not resolved.exists():
                 return f"File not found: {path}"
             if not resolved.is_file():
                 return f"Not a file: {path}"
+            size = resolved.stat().st_size
+            if size > MAX_FILE_SIZE:
+                return (
+                    f"File too large to read: {path} "
+                    f"({size // 1024}KB). Maximum is 1MB."
+                )
             return resolved.read_text(encoding="utf-8")
         except MountError as e:
             return str(e)

@@ -3,26 +3,15 @@ channel mentions using Socket Mode. Approval gate requests appear
 as interactive Slack messages."""
 
 import os
+import time
 import threading
-import shutil
-from pathlib import Path
 from dotenv import load_dotenv
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.socket_mode.request import SocketModeRequest
 
-from alfard.agents.loader import AgentLoader, list_agents
-from alfard.llm.client import LLMClient
-from alfard.tools.registry import ToolRegistry
-from alfard.audit.logger import AuditLogger
-from alfard.gate.approval import ApprovalGate
-from alfard.sandbox.executor import SandboxExecutor
-from alfard.integrations.credentials import CredentialsManager
-from alfard.integrations.mcp_client import MCPClient
-from alfard.orchestrator.orchestrator import Orchestrator
-from alfard.interfaces.slack_notifier import SlackNotifier
-from alfard.commands.handlers import register_all
+SESSION_TIMEOUT_HOURS = 4
 
 
 def _build_orchestrator(agent_name: str,
@@ -30,55 +19,18 @@ def _build_orchestrator(agent_name: str,
                         channel: str) -> tuple:
     """
     Build a full orchestrator wired to a SlackNotifier approval gate.
-    Returns (orchestrator, audit).
+    Returns (orchestrator, audit, notifier).
     """
-    loader = AgentLoader(agent_name)
-    system_prompt = loader.build_system_prompt()
+    from alfard.orchestrator.builder import build_orchestrator
+    from alfard.interfaces.slack_notifier import SlackNotifier
 
-    registry = ToolRegistry()
-    audit = AuditLogger()
-
-    # Build approval gate with Slack notifier
     notifier = SlackNotifier(web_client, channel)
-    gate = ApprovalGate(audit_logger=audit, notifier=notifier)
-
-    sandbox = SandboxExecutor()
-    credentials = CredentialsManager()
-
-    mcp = MCPClient(registry)
-    mcp.connect_all()
-
-    gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
-    if shutil.which("gws") and gws_creds.exists():
-        from alfard.integrations.gws_tools import register_gmail_tools
-        register_gmail_tools(registry)
-    from alfard.integrations.gws_tools import register_gdrive_tools
-    if shutil.which("gws") and gws_creds.exists():
-        register_gdrive_tools(registry)
-
-    from alfard.mounts.manager import MountManager, MountError
-    from alfard.mounts.tools import register_file_tools
-    try:
-        mount_manager = MountManager(loader.agent_dir)
-        if mount_manager.has_mounts():
-            register_file_tools(registry, mount_manager)
-    except MountError:
-        pass  # log but don't crash the bot
-
-    orchestrator = Orchestrator(
-        llm=LLMClient(),
-        registry=registry,
-        audit=audit,
-        gate=gate,
-        sandbox=sandbox,
-        credentials=credentials,
-        system_prompt=system_prompt,
+    orchestrator, audit, loader, registry = build_orchestrator(
+        agent_name=agent_name,
+        notifier=notifier,
+        connect_mcp=True,
+        gate_enabled=True,
     )
-    orchestrator._loader = loader
-    orchestrator._agent_name = agent_name
-    orchestrator._memory_manager = loader.memory_manager
-    register_all()
-
     return orchestrator, audit, notifier
 
 
@@ -131,6 +83,7 @@ class AlfardSlackBot:
         self._sessions: dict[str, tuple] = {}
         self._locks: dict[str, threading.Lock] = {}
         self._first_message: dict[str, bool] = {}
+        self._session_last_active: dict[str, float] = {}
 
         # Bot's own user ID (to ignore self-messages)
         auth = self.web_client.auth_test()
@@ -147,11 +100,31 @@ class AlfardSlackBot:
             )
             self._locks[channel] = threading.Lock()
             self._first_message[channel] = True
+            self._session_last_active[channel] = time.time()
         return self._sessions[channel]
+
+    def _evict_stale_sessions(self) -> None:
+        """Close and remove sessions that have been idle too long."""
+        cutoff = time.time() - (SESSION_TIMEOUT_HOURS * 3600)
+        stale = [
+            ch for ch, ts in self._session_last_active.items()
+            if ts < cutoff
+        ]
+        for ch in stale:
+            try:
+                _, audit, _ = self._sessions.pop(ch)
+                audit.close()
+            except Exception:
+                pass
+            self._locks.pop(ch, None)
+            self._first_message.pop(ch, None)
+            self._session_last_active.pop(ch, None)
 
     def _handle_message(self, channel: str, text: str,
                         user: str) -> None:
         """Process a message in a thread so Slack doesn't time out."""
+        self._session_last_active[channel] = time.time()
+        self._evict_stale_sessions()
         orchestrator, audit, notifier = self._get_session(channel)
         lock = self._locks[channel]
 
@@ -173,7 +146,11 @@ class AlfardSlackBot:
             try:
                 response = orchestrator.run(text)
             except Exception as e:
-                response = f"Something went wrong: {e}"
+                import logging
+                logging.getLogger("alfard.slack").error(
+                    f"Error in _handle_message: {e}", exc_info=True
+                )
+                response = "Something went wrong. Please try again."
 
             # Post response
             self.web_client.chat_postMessage(
@@ -276,7 +253,6 @@ class AlfardSlackBot:
         print("[slack] connected. Send a DM to @alfard to start.")
         print("[slack] press Ctrl+C to stop.")
 
-        import time
         try:
             while True:
                 time.sleep(1)

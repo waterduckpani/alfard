@@ -7,18 +7,27 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 from alfard.agents.loader import AgentLoader, list_agents
-from alfard.llm.client import LLMClient
-from alfard.tools.registry import ToolRegistry
-from alfard.audit.logger import AuditLogger
-from alfard.gate.approval import ApprovalGate
-from alfard.sandbox.executor import SandboxExecutor
-from alfard.integrations.credentials import CredentialsManager
-from alfard.integrations.mcp_client import MCPClient
-from alfard.orchestrator.orchestrator import Orchestrator
-from alfard.commands.handlers import register_all
+from alfard.orchestrator.builder import build_orchestrator
 from alfard.cli import theme
 
 console = Console()
+
+
+class _WriteBrainFact:
+    def __init__(self):
+        self._manager = None
+
+    def set_manager(self, manager):
+        self._manager = manager
+
+    def __call__(self, fact: str, tags: str = "") -> str:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        if self._manager:
+            return self._manager.store_fact(fact, tag_list)
+        return "Memory not available."
+
+
+_write_brain_fact = _WriteBrainFact()
 
 
 @click.command()
@@ -72,105 +81,47 @@ def run(agent: str, no_mcp: bool) -> None:
         padding=(0, 2)
     ))
 
-    # 4. Wire up all components
-    registry = ToolRegistry()
-    audit = AuditLogger()
+    audit = None
     try:
-        gate = ApprovalGate(audit_logger=audit)
-        sandbox = SandboxExecutor()
-        credentials = CredentialsManager()
+        with console.status("[dim]Connecting integrations...[/dim]"):
+            orchestrator, audit, loader, registry = build_orchestrator(
+                agent_name=agent,
+                connect_mcp=not no_mcp,
+                gate_enabled=True,
+            )
 
-        # 5. Connect MCP servers unless --no-mcp
-        if not no_mcp:
-            console.print(f"[{theme.DIM}]Connecting integrations...[/{theme.DIM}]")
-            mcp = MCPClient(registry)
-            mcp.connect_all()
-            connected = mcp.list_connected()
-            if connected:
-                console.print(f"[{theme.DIM}]Connected: {', '.join(connected)}[/{theme.DIM}]")
-        else:
-            console.print(f"[{theme.DIM}]MCP skipped (--no-mcp)[/{theme.DIM}]")
+        connected = [
+            name for name, info in orchestrator._registry._tools.items()
+            if info.get("is_mcp") and "." in name
+        ]
+        servers = sorted(set(n.split(".")[0] for n in connected))
+        if servers:
+            console.print(f"[{theme.DIM}]Connected: {', '.join(servers)}[/{theme.DIM}]")
 
-        # Register gws-based tools if Gmail is configured
-        import shutil
-        from pathlib import Path
-        from alfard.integrations.gws_tools import register_gmail_tools
-        gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
-        if shutil.which("gws") and gws_creds.exists():
-            register_gmail_tools(registry)
-            console.print(f"[{theme.DIM}]Gmail tools registered.[/{theme.DIM}]")
-        from alfard.integrations.gws_tools import register_gdrive_tools
-        if shutil.which("gws") and gws_creds.exists():
-            register_gdrive_tools(registry)
-            console.print(f"[{theme.DIM}]GDrive tools registered.[/{theme.DIM}]")
-
-        # Register file tools if agent has mounts declared
-        from alfard.mounts.manager import MountManager, MountError
-        from alfard.mounts.tools import register_file_tools
-        try:
-            mount_manager = MountManager(loader.agent_dir)
-            if mount_manager.has_mounts():
-                register_file_tools(registry, mount_manager)
-                mount_count = len(mount_manager.list_mounts())
-                console.print(
-                    f"[dim]File tools registered "
-                    f"({mount_count} mount(s)).[/dim]"
-                )
-        except MountError as e:
-            console.print(Panel(
-                f"[{theme.ERROR}]Mount error:[/{theme.ERROR}]\n\n{e}",
-                border_style=theme.PANEL_ERROR
-            ))
-            raise SystemExit(1)
-
-        # 6. Build orchestrator
-        orchestrator = Orchestrator(
-            llm=LLMClient(),
-            registry=registry,
-            audit=audit,
-            gate=gate,
-            sandbox=sandbox,
-            credentials=credentials,
-            system_prompt=system_prompt,
-        )
-        orchestrator._loader = loader
-        orchestrator._agent_name = agent
-        orchestrator._memory_manager = loader.memory_manager
-        register_all()
-
-        def write_brain_fact(fact: str, tags: str = "") -> str:
-            """Store a permanent fact about the user or their work.
-            Call when user states a preference, corrects you, or
-            shares something worth remembering permanently.
-            Tags: comma-separated keywords related to this fact."""
-            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-            if orchestrator._memory_manager:
-                orchestrator._facts_learned = getattr(
-                    orchestrator, '_facts_learned', 0) + 1
-                return orchestrator._memory_manager.store_fact(fact, tag_list)
-            return "Memory not available."
+        _write_brain_fact.set_manager(loader.memory_manager)
 
         registry.register(
             "write_brain_fact",
             "Store a permanent fact about the user or their work. "
             "Call when user states a preference, corrects you, or "
             "shares something worth remembering.",
-            write_brain_fact,
+            _write_brain_fact,
             True,
             {
                 "type": "object",
                 "properties": {
                     "fact": {
                         "type": "string",
-                        "description": "The fact to remember, written as a clear sentence"
+                        "description": "The fact to remember"
                     },
                     "tags": {
                         "type": "string",
-                        "description": "Comma-separated keywords: e.g. 'stocky,supabase,database'"
+                        "description": "Comma-separated keywords"
                     }
                 },
                 "required": ["fact"]
-            }
+            },
+            is_mcp=True
         )
 
         # 7. Interactive chat loop
@@ -258,7 +209,10 @@ def run(agent: str, no_mcp: bool) -> None:
                         turns=len(turns) // 2,
                         facts_learned=facts_learned,
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            console.print(
+                f"[dim]Note: could not save session memory: {e}[/dim]"
+            )
     finally:
-        audit.close()
+        if audit is not None:
+            audit.close()

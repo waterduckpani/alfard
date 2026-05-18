@@ -25,6 +25,7 @@ def main():
         result = client.complete(messages)
         logger = AuditLogger()
         logger.log_llm_call(client.provider_name, client.model, len(messages), result)
+
         logger.close()
         console.print(result["content"])
 

@@ -1,6 +1,7 @@
 """SQLite vector store — stores facts with embeddings and
 tags for semantic retrieval. No external vector DB needed."""
 
+import os
 import sqlite3
 import json
 import time
@@ -36,6 +37,7 @@ class VectorStore:
                 )
             """)
             conn.commit()
+        os.chmod(self.db_path, 0o600)
 
     def store(self, fact: str, tags: list[str] | None = None) -> int:
         """

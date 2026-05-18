@@ -18,6 +18,7 @@ class SlackNotifier:
         self.channel = channel
         self._pending: dict[str, threading.Event] = {}
         self._decisions: dict[str, bool] = {}
+        self._lock = threading.Lock()
 
     def present(self, tool_name: str, arguments: dict,
                 source: str) -> str:
@@ -31,7 +32,8 @@ class SlackNotifier:
 
         action_id = str(uuid.uuid4())
         event = threading.Event()
-        self._pending[action_id] = event
+        with self._lock:
+            self._pending[action_id] = event
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
         args_text = json.dumps(arguments, indent=2)
@@ -97,9 +99,11 @@ class SlackNotifier:
 
     def resolve(self, action_id: str, approved: bool) -> None:
         """Called by the bot when a button is clicked."""
-        if action_id in self._pending:
-            self._decisions[action_id] = approved
-            self._pending[action_id].set()
+        with self._lock:
+            if action_id in self._pending:
+                self._decisions[action_id] = approved
+                self._pending[action_id].set()
 
     def _cleanup(self, action_id: str) -> None:
-        self._pending.pop(action_id, None)
+        with self._lock:
+            self._pending.pop(action_id, None)

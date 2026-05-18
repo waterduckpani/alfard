@@ -56,9 +56,15 @@ def get_embedding(text: str) -> list[float]:
     }
     api_key = os.environ.get(env_map.get(provider, "OPENROUTER_API_KEY"), "none")
 
-    client = OpenAI(base_url=base_url, api_key=api_key)
-    response = client.embeddings.create(model=model, input=text)
-    return response.data[0].embedding
+    try:
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        response = client.embeddings.create(model=model, input=text)
+        return response.data[0].embedding
+    except Exception as e:
+        raise RuntimeError(
+            f"Embedding API call failed ({provider}/{model}): {e}\n"
+            f"Check your API key and network connection."
+        ) from e
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

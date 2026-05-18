@@ -3,6 +3,8 @@ agent memory. Handles facts (vector store) and session
 summaries (JSONL). Used by AgentLoader and Orchestrator."""
 
 import json
+import os
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -78,10 +80,19 @@ class MemoryManager:
         # Keep only last MAX_SESSIONS
         sessions = sessions[-self.MAX_SESSIONS:]
 
-        # Write back
-        with open(self.sessions_path, "w", encoding="utf-8") as f:
+        # Write back atomically
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=self.sessions_path.parent,
+            delete=False,
+            suffix=".tmp",
+            encoding="utf-8"
+        ) as tmp:
             for s in sessions:
-                f.write(json.dumps(s) + "\n")
+                tmp.write(json.dumps(s) + "\n")
+            tmp_path = tmp.name
+
+        os.replace(tmp_path, self.sessions_path)
 
     def get_recent_sessions(self, n: int = 3) -> list[dict]:
         """Return the n most recent session summaries."""
@@ -121,7 +132,9 @@ class MemoryManager:
                     f"[{s['date']}] {s['summary']}"
                 )
             sections.append(
-                "## Recent sessions\n" + "\n".join(session_lines)
+                "[SOURCE: memory.sessions]\n"
+                "## Recent sessions\n" + "\n".join(session_lines) +
+                "\n[END SOURCE]"
             )
 
         # Relevant facts from vector store
@@ -130,7 +143,9 @@ class MemoryManager:
             if facts:
                 fact_lines = [f"- {f}" for f in facts]
                 sections.append(
-                    "## Relevant memory\n" + "\n".join(fact_lines)
+                    "[SOURCE: memory.facts]\n"
+                    "## Relevant memory\n" + "\n".join(fact_lines) +
+                    "\n[END SOURCE]"
                 )
 
         if not sections:
