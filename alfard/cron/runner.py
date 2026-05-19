@@ -2,6 +2,7 @@
 session with no human present. Approval gate is disabled."""
 
 import shutil
+import yaml
 from pathlib import Path
 from datetime import datetime
 
@@ -15,10 +16,35 @@ from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
 
+
+def _inject_skills(agent_dir: Path, agent_name: str, job_name: str, task: str) -> str:
+    """Prepend linked skill contents to the task prompt if any are configured."""
+    jobs_path = agent_dir.parent / agent_name / "crons.yaml"
+    if not jobs_path.exists():
+        return task
+    with open(jobs_path) as f:
+        data = yaml.safe_load(f) or {}
+    job = next((j for j in data.get("jobs", []) if j["name"] == job_name), None)
+    if not job:
+        return task
+    linked_skills = job.get("linked_skills") or []
+    if not linked_skills:
+        return task
+    parts = []
+    for skill_name in linked_skills:
+        skill_file = agent_dir / "skills" / f"{skill_name}.md"
+        if skill_file.exists():
+            parts.append(skill_file.read_text(encoding="utf-8").strip())
+    if not parts:
+        return task
+    return "\n\n".join(parts) + "\n\n---\n\n" + task
+
+
 def run_job(agent_name: str, task: str, job_name: str) -> str:
     audit = AuditLogger()
     try:
         loader = AgentLoader(agent_name)
+        task = _inject_skills(loader.agent_dir, agent_name, job_name, task)
         registry = ToolRegistry()
 
         gate = ApprovalGate(audit_logger=audit)

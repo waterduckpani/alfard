@@ -9,10 +9,13 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from alfard.agents.loader import list_agents, AGENTS_DIR
+from alfard.agents.loader import list_agents, AgentLoader, AGENTS_DIR
 from alfard.cron.parser import parse_schedule
 from alfard.cli.theme import p, c, console, capabilities
-from alfard.cli.components import dot, error_block, alfard_table, alfard_input, alfard_select, alfard_confirm
+from alfard.cli.components import (
+    dot, error_block, alfard_table,
+    alfard_input, alfard_select, alfard_multiselect, alfard_confirm,
+)
 
 CRONS_FILE = "crons.yaml"
 
@@ -50,6 +53,85 @@ def _last_run(agent: str, job_name: str) -> tuple[str, str]:
     m = re.search(r"_(\d{8}_\d{6})", fname)
     ts = m.group(1).replace("_", " ") if m else "?"
     return ts, status
+
+
+def _parse_time(time_str: str) -> tuple[int, int]:
+    """Parse '8am', '14:30', '9:30pm' → (hour, minute). Raises ValueError on bad input."""
+    s = time_str.strip().lower()
+    m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", s)
+    if not m:
+        raise ValueError(f"unrecognised time: {time_str!r}. Try '8am' or '14:30'.")
+    hour = int(m.group(1))
+    minute = int(m.group(2)) if m.group(2) else 0
+    meridiem = m.group(3)
+    if meridiem == "pm" and hour != 12:
+        hour += 12
+    elif meridiem == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"invalid time value: {time_str!r}")
+    return hour, minute
+
+
+_DOW = {
+    "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4,
+    "Friday": 5, "Saturday": 6, "Sunday": 0,
+}
+
+
+def _collect_schedule() -> str | None:
+    """Interactive schedule picker. Returns a 5-field cron expression or None if cancelled."""
+    schedule_type = alfard_select("when should this run?", [
+        "every few hours",
+        "daily",
+        "weekly",
+        "advanced",
+    ])
+    if not schedule_type:
+        return None
+
+    if schedule_type == "every few hours":
+        choice = alfard_select("how often?", ["1h", "2h", "4h", "6h", "12h"])
+        if not choice:
+            return None
+        n = int(choice.rstrip("h"))
+        return f"0 */{n} * * *"
+
+    if schedule_type == "daily":
+        time_str = alfard_input("what time?", hint="e.g. 8am · 14:30").strip()
+        if not time_str:
+            return None
+        try:
+            hour, minute = _parse_time(time_str)
+        except ValueError as e:
+            console.print(f"  [{p.err}]{e}[/]")
+            return None
+        return f"{minute} {hour} * * *"
+
+    if schedule_type == "weekly":
+        day = alfard_select("which day?", list(_DOW.keys()))
+        if not day:
+            return None
+        time_str = alfard_input("what time?", hint="e.g. 8am · 14:30").strip()
+        if not time_str:
+            return None
+        try:
+            hour, minute = _parse_time(time_str)
+        except ValueError as e:
+            console.print(f"  [{p.err}]{e}[/]")
+            return None
+        return f"{minute} {hour} * * {_DOW[day]}"
+
+    # advanced
+    expr = alfard_input("cron expression", hint="e.g. 0 8 * * * · 30 9 * * 1-5").strip()
+    if not expr:
+        return None
+    try:
+        parse_schedule(expr)
+    except ValueError as e:
+        console.print(f"  [{p.err}]{e}[/]")
+        return None
+    return expr
 
 
 def _set_enabled(agent: str, name: str, enabled: bool) -> None:
@@ -99,6 +181,7 @@ def cron(ctx: click.Context):
         action = alfard_select("what would you like to do?", [
             "list jobs",
             "add a job",
+            "remove a job",
             "view job status",
             "run scheduler",
             questionary.Separator(),
@@ -111,6 +194,31 @@ def cron(ctx: click.Context):
             ctx.invoke(list_jobs)
         elif action == "add a job":
             ctx.invoke(add)
+        elif action == "remove a job":
+            agents_with_jobs = [a for a in list_agents() if _load_crons(a)]
+            if not agents_with_jobs:
+                console.print(f"[{p.fg_faint}]no scheduled jobs found.[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                agent = (
+                    alfard_select("which agent?", agents_with_jobs)
+                    if len(agents_with_jobs) > 1
+                    else agents_with_jobs[0]
+                )
+                if agent:
+                    while True:
+                        jobs = _load_crons(agent)
+                        if not jobs:
+                            break
+                        name = alfard_select(
+                            "which job to remove?",
+                            [j["name"] for j in jobs] + ["← done"],
+                        )
+                        if not name or name == "← done":
+                            break
+                        _save_crons(agent, [j for j in jobs if j["name"] != name])
+                        console.print(f"{dot('ok')} [{p.fg_dim}]removed '{name}' from {agent}.[/]")
+            continue
         elif action == "view job status":
             ctx.invoke(status)
         elif action == "run scheduler":
@@ -121,67 +229,39 @@ def cron(ctx: click.Context):
 
 @cron.command(name="add")
 @click.argument("agent", required=False)
-@click.argument("task", required=False)
-@click.option("--schedule", "-s", default=None,
-              help="When to run: '8am', 'every 1h', 'daily', '0 8 * * *'")
-@click.option("--name", "-n", default=None,
-              help="Job name (auto-generated if not set)")
-def add(agent: str | None, task: str | None,
-        schedule: str | None, name: str | None):
+def add(agent: str | None):
     """Add a scheduled job to an agent."""
 
-    if not agent:
-        agents = list_agents()
-        if not agents:
-            console.print(error_block(
-                agent="alfard cron",
-                state="failed",
-                headline="no agents found.",
-                explanation="create one first: alfard create",
-            ))
-            raise SystemExit(1)
-        agent = alfard_select("which agent?", agents, default=agents[0]) or agents[0]
-    else:
-        if agent not in list_agents():
-            console.print(error_block(
-                agent="alfard cron",
-                state="failed",
-                headline=f"agent '{agent}' not found.",
-                explanation="",
-            ))
-            raise SystemExit(1)
-
-    if not task:
-        task = alfard_input(
-            f"what should {agent} do?",
-            hint="e.g. summarise my inbox from the last 24 hours",
-        ).strip()
-        if not task:
-            console.print(f"  [{p.err}]task cannot be empty.[/]")
-            raise SystemExit(1)
-
-    if not schedule:
-        schedule = alfard_input(
-            "when should this run?",
-            hint="e.g. 8am · every 2h · daily · 0 8 * * *",
-        ).strip()
-        if not schedule:
-            console.print(f"  [{p.err}]schedule cannot be empty.[/]")
-            raise SystemExit(1)
-
-    try:
-        parse_schedule(schedule)
-    except ValueError as e:
+    # Step 1: Agent
+    agents = list_agents()
+    if not agents:
         console.print(error_block(
             agent="alfard cron",
             state="failed",
-            headline=str(e),
+            headline="no agents found.",
+            explanation="create one first: alfard create",
+        ))
+        raise SystemExit(1)
+    if not agent:
+        agent = alfard_select("which agent?", agents, default=agents[0]) or agents[0]
+    elif agent not in agents:
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
             explanation="",
         ))
         raise SystemExit(1)
 
-    if not name:
-        name = _slug(task)
+    # Step 2: Job name
+    job_name_raw = alfard_input(
+        "job name",
+        hint="e.g. morning inbox summary",
+    ).strip()
+    if not job_name_raw:
+        console.print(f"  [{p.err}]job name cannot be empty.[/]")
+        raise SystemExit(1)
+    name = _slug(job_name_raw)
 
     jobs = _load_crons(agent)
     if any(j["name"] == name for j in jobs):
@@ -193,15 +273,54 @@ def add(agent: str | None, task: str | None,
         ))
         raise SystemExit(1)
 
-    jobs.append({"name": name, "task": task, "schedule": schedule, "enabled": True})
-    _save_crons(agent, jobs)
+    # Step 3: Task
+    task = alfard_input(
+        "describe the task in detail",
+        hint="what to fetch, what to do with it, and what the output should be",
+    ).strip()
+    if not task:
+        console.print(f"  [{p.err}]task cannot be empty.[/]")
+        raise SystemExit(1)
 
-    console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]\n")
-    console.print(f"  [{p.fg_faint}]{'agent':<10}[/] [{p.fg_em}]{agent}[/]")
-    console.print(f"  [{p.fg_faint}]{'task':<10}[/] [{p.fg_em}]{task}[/]")
-    console.print(f"  [{p.fg_faint}]{'schedule':<10}[/] [{p.fg_em}]{schedule}[/]")
-    console.print(f"  [{p.fg_faint}]{'name':<10}[/] [{p.fg_em}]{name}[/]")
-    console.print(f"\n[{p.fg_faint}]start scheduler: alfard cron run[/]")
+    # Step 4: Skills (optional)
+    loader = AgentLoader(agent)
+    available_skills = loader.get_agent_skills()
+    linked_skills: list[str] = []
+    if available_skills:
+        linked_skills = alfard_multiselect(
+            "which skills should this job use? (optional — space to toggle, enter to confirm)",
+            available_skills,
+        )
+
+    # Step 5: Schedule
+    cron_expr = _collect_schedule()
+    if not cron_expr:
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
+
+    # Step 6: Confirm
+    console.print()
+    console.print(f"  [{p.fg_faint}]{'name':<12}[/] [{p.fg_em}]{name}[/]")
+    console.print(f"  [{p.fg_faint}]{'task':<12}[/] [{p.fg_em}]{task}[/]")
+    if linked_skills:
+        console.print(f"  [{p.fg_faint}]{'skills':<12}[/] [{p.fg_em}]{', '.join(linked_skills)}[/]")
+    console.print(f"  [{p.fg_faint}]{'schedule':<12}[/] [{p.fg_em}]{cron_expr}[/]")
+    console.print()
+
+    if not alfard_confirm("add this job?"):
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
+
+    jobs.append({
+        "name": name,
+        "task": task,
+        "schedule": cron_expr,
+        "linked_skills": linked_skills,
+        "enabled": True,
+    })
+    _save_crons(agent, jobs)
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]")
+    console.print(f"[{p.fg_faint}]start scheduler: alfard cron run[/]")
 
 
 @cron.command(name="remove")
