@@ -69,8 +69,9 @@ def disconnect(integration: str | None):
     info = CATALOGUE[integration]
     display = info["display_name"]
 
+    console.print(f"\n{dot('warn')} [{p.warn}]{display}[/]")
     if not alfard_confirm(
-        f"disconnect {display}? this removes it from all agents.",
+        "disconnect? this removes it from all agents.",
         default=False,
     ):
         console.print(f"[{p.fg_dim}]cancelled.[/]")
@@ -131,9 +132,6 @@ def disconnect(integration: str | None):
         )
 
     if removed_anything:
-        console.print(f"\n{dot('ok')} [{p.fg_dim}]{display} disconnected.[/]")
-        console.print(f"[{p.fg_faint}]run alfard status to confirm.[/]")
+        console.print(f"\n{dot('ok')} [{p.fg_em}]{display}[/] [{p.fg_dim}]disconnected.[/]")
     else:
-        console.print(
-            f"[{p.fg_dim}]{display} was not connected.[/]"
-        )
+        console.print(f"[{p.fg_dim}]{display} was not connected.[/]")

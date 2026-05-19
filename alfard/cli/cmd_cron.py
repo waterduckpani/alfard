@@ -4,10 +4,14 @@ import re
 import yaml
 import click
 from pathlib import Path
+from rich import box
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 from alfard.agents.loader import list_agents, AGENTS_DIR
 from alfard.cron.parser import parse_schedule
-from alfard.cli.theme import p, c, console
+from alfard.cli.theme import p, c, console, capabilities
 from alfard.cli.components import dot, error_block, alfard_table, alfard_input, alfard_select, alfard_confirm
 
 CRONS_FILE = "crons.yaml"
@@ -293,6 +297,7 @@ def disable(agent: str | None, name: str | None):
 @click.argument("agent", required=False)
 def list_jobs(agent: str | None):
     """List scheduled jobs for one agent or all agents."""
+    border = p.rule if capabilities.truecolor else "dim"
     all_agents = list_agents()
     if agent and agent not in all_agents:
         console.print(error_block(
@@ -304,36 +309,39 @@ def list_jobs(agent: str | None):
         raise SystemExit(1)
     targets = [agent] if agent else all_agents
     any_jobs = False
+
     for ag in targets:
         jobs = _load_crons(ag)
+
         if not jobs:
+            if agent:
+                content: Table | Text = Text.from_markup(
+                    f"[{p.fg_faint}]no jobs. add one: alfard cron add {ag} <task>[/]"
+                )
+                console.print(Panel(content, title=f"[{p.fg_dim}]{ag}[/]",
+                                    box=box.ROUNDED, border_style=border, padding=(0, 1)))
             continue
+
         any_jobs = True
-        console.print(f"\n[{p.fg_dim}]scheduled jobs — {ag}[/]")
-        rows = []
+        tbl = Table(box=None, show_header=False, padding=(0, 1), expand=False)
+        tbl.add_column(no_wrap=True)
+        tbl.add_column(no_wrap=True)
+        tbl.add_column(no_wrap=True)
+
         for j in jobs:
-            enabled_str = (
-                c("ok", "yes") if j.get("enabled", True) else c("fg_faint", "no")
+            enabled = j.get("enabled", True)
+            status_dot = dot("ok") if enabled else dot("queued")
+            name_markup = c("fg_em", j["name"]) if enabled else c("fg_faint", j["name"])
+            tbl.add_row(
+                Text.from_markup(status_dot),
+                Text.from_markup(name_markup),
+                Text.from_markup(c("fg_dim", j.get("schedule", ""))),
             )
-            task_str = j.get("task", "")
-            if len(task_str) > 55:
-                task_str = task_str[:52] + "..."
-            rows.append({
-                "name": j["name"],
-                "schedule": j.get("schedule", ""),
-                "enabled": enabled_str,
-                "task": task_str,
-            })
-        console.print(alfard_table(
-            [
-                {"header": "name", "key": "name"},
-                {"header": "schedule", "key": "schedule"},
-                {"header": "enabled", "key": "enabled"},
-                {"header": "task", "key": "task"},
-            ],
-            rows,
-        ))
-    if not any_jobs:
+
+        console.print(Panel(tbl, title=f"[{p.fg_dim}]{ag}[/]",
+                            box=box.ROUNDED, border_style=border, padding=(0, 1)))
+
+    if not any_jobs and not agent:
         console.print(
             f"[{p.fg_dim}]no scheduled jobs found.[/]\n"
             f"[{p.fg_faint}]add one: alfard cron add <agent> <task> --schedule <when>[/]"

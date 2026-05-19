@@ -4,7 +4,12 @@ import click
 import yaml
 from pathlib import Path
 from alfard.cli.theme import p, c, console
-from alfard.cli.components import dot, error_block, alfard_table, alfard_select, alfard_input, alfard_confirm
+from rich import box
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from alfard.cli.theme import capabilities
+from alfard.cli.components import dot, error_block, alfard_select, alfard_input, alfard_confirm
 from alfard.agents.loader import list_agents, AGENTS_DIR
 
 MOUNTS_FILE = "mounts.yaml"
@@ -218,43 +223,42 @@ def remove(agent: str | None, path: str | None):
 @click.argument("agent", required=False)
 def list_mounts(agent: str | None):
     """List folder mounts for an agent or all agents."""
+    border = p.rule if capabilities.truecolor else "dim"
     agents = [agent] if agent else list_agents()
     any_mounts = False
 
     for a in agents:
         data = _load_mounts(a)
         mounts = data.get("mounts", [])
+
         if not mounts:
+            if agent:
+                content: Table | Text = Text.from_markup(
+                    f"[{p.fg_faint}]no mounts. add one: alfard mount add {a} <path>[/]"
+                )
+                console.print(Panel(content, title=f"[{p.fg_dim}]{a}[/]",
+                                    box=box.ROUNDED, border_style=border, padding=(0, 1)))
             continue
+
         any_mounts = True
+        tbl = Table(box=None, show_header=False, padding=(0, 1), expand=False)
+        tbl.add_column(no_wrap=True)
+        tbl.add_column(no_wrap=True)
+        tbl.add_column(no_wrap=True)
 
-        rows = []
         for m in mounts:
-            mount_path = Path(m["path"]).expanduser()
-            exists_str = (
-                c("ok", "ok") if mount_path.exists() else c("err", "missing")
-            )
             access = m.get("access", "readonly")
-            access_str = (
-                c("ok", "read+write") if access == "readwrite" else c("fg_dim", "read only")
+            mode = "read+write" if access == "readwrite" else "read only"
+            tbl.add_row(
+                Text.from_markup(dot("ok")),
+                Text.from_markup(c("fg_em", m["path"])),
+                Text.from_markup(c("fg_faint", mode)),
             )
-            rows.append({
-                "path": m["path"],
-                "access": access_str,
-                "exists": exists_str,
-            })
 
-        console.print(f"\n[{p.fg_dim}]mounts — {a}[/]")
-        console.print(alfard_table(
-            [
-                {"header": "path", "key": "path"},
-                {"header": "access", "key": "access"},
-                {"header": "exists", "key": "exists"},
-            ],
-            rows,
-        ))
+        console.print(Panel(tbl, title=f"[{p.fg_dim}]{a}[/]",
+                            box=box.ROUNDED, border_style=border, padding=(0, 1)))
 
-    if not any_mounts:
+    if not any_mounts and not agent:
         console.print(
             f"[{p.fg_dim}]no mounts configured.[/]\n"
             f"[{p.fg_faint}]add one: alfard mount add <agent> <path>[/]"
