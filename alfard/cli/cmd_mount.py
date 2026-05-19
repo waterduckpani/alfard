@@ -3,14 +3,10 @@
 import click
 import yaml
 from pathlib import Path
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.prompt import Prompt
-from alfard.cli import theme
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_table, alfard_select, alfard_input, alfard_confirm
 from alfard.agents.loader import list_agents, AGENTS_DIR
 
-console = Console()
 MOUNTS_FILE = "mounts.yaml"
 
 
@@ -28,8 +24,9 @@ def _save_mounts(agent_name: str, data: dict) -> None:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
-@click.group()
-def mount():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def mount(ctx: click.Context):
     """Manage folder mounts for agents.
 
     Mounts give agents access to specific folders on your machine.
@@ -42,53 +39,116 @@ def mount():
       alfard mount list postman
       alfard mount remove postman ~/Documents/work
     """
-    pass
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import questionary
+
+    while True:
+        console.clear()
+        console.print(f"\n[{p.fg_em}]manage mounts[/]\n")
+        action = alfard_select("what would you like to do?", [
+            "list mounts",
+            "add a mount",
+            "remove a mount",
+            questionary.Separator(),
+            "← back",
+        ])
+        if not action or action == "← back":
+            return
+
+        if action == "list mounts":
+            ctx.invoke(list_mounts)
+        elif action == "add a mount":
+            agents = list_agents()
+            if not agents:
+                console.print(f"[{p.err}]no agents found. run alfard create first.[/]")
+                continue
+            agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
+            if not agent:
+                continue
+            path = alfard_input("folder path", hint="e.g. ~/Documents/work").strip()
+            if not path:
+                continue
+            access = alfard_select("access level?", ["readonly", "readwrite"], default="readonly")
+            if not access:
+                continue
+            ctx.invoke(add, agent=agent, path=path, access=access)
+        elif action == "remove a mount":
+            agents = list_agents()
+            if not agents:
+                console.print(f"[{p.err}]no agents found.[/]")
+                continue
+            agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
+            if not agent:
+                continue
+            data = _load_mounts(agent)
+            mounts = [m["path"] for m in data.get("mounts", [])]
+            if not mounts:
+                console.print(f"[{p.fg_faint}]{agent} has no mounts.[/]")
+                continue
+            path = alfard_select("which mount to remove?", mounts)
+            if not path:
+                continue
+            ctx.invoke(remove, agent=agent, path=path)
 
 
 @mount.command(name="add")
-@click.argument("agent")
-@click.argument("path")
+@click.argument("agent", required=False)
+@click.argument("path", required=False)
 @click.option("--access", "-a",
               type=click.Choice(["readonly", "readwrite"]),
               default="readonly",
               help="Access level: readonly or readwrite (default: readonly)")
-def add(agent: str, path: str, access: str):
+def add(agent: str | None, path: str | None, access: str):
     """Mount a folder for an agent."""
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(f"[{p.err}]no agents found. run alfard create first.[/]")
+            raise SystemExit(1)
+        agent = alfard_select("which agent?", agents)
+        if not agent:
+            return
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard mount",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
 
-    # Resolve and validate path
+    if not path:
+        path = alfard_input("folder path", hint="e.g. ~/Documents/work").strip()
+        if not path:
+            return
+
     resolved = Path(path).expanduser().resolve()
     if not resolved.exists():
-        console.print(Panel(
-            f"[{theme.ERROR}]Path does not exist: {path}[/{theme.ERROR}]\n\n"
-            f"Create the folder first:\n"
-            f"  mkdir -p {resolved}",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard mount",
+            state="failed",
+            headline=f"path does not exist: {path}",
+            explanation=f"create the folder first: mkdir -p {resolved}",
         ))
         raise SystemExit(1)
 
     if not resolved.is_dir():
-        console.print(Panel(
-            f"[{theme.ERROR}]Path is not a directory: {path}[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard mount",
+            state="failed",
+            headline=f"path is not a directory: {path}",
+            explanation="",
         ))
         raise SystemExit(1)
 
     data = _load_mounts(agent)
+    stored_path = str(Path(path).expanduser())
     existing_paths = [m["path"] for m in data.get("mounts", [])]
 
-    # Normalise path for storage
-    stored_path = str(Path(path).expanduser())
-
     if stored_path in existing_paths:
-        console.print(
-            f"[{theme.WARNING}]Already mounted: {path}[/{theme.WARNING}]"
-        )
+        console.print(f"  [{p.warn}]already mounted: {path}[/]")
         raise SystemExit(1)
 
     data.setdefault("mounts", []).append({
@@ -97,28 +157,45 @@ def add(agent: str, path: str, access: str):
     })
     _save_mounts(agent, data)
 
-    access_icon = "✓ read+write" if access == "readwrite" else "· read only"
-
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]Mount added.[/bold {theme.SUCCESS}]\n\n"
-        f"Agent:   {agent}\n"
-        f"Path:    {resolved}\n"
-        f"Access:  {access_icon}\n\n"
-        f"[{theme.DIM}]The agent can now access files in this folder.[/{theme.DIM}]",
-        border_style=theme.PANEL_SUCCESS
-    ))
+    access_label = "read+write" if access == "readwrite" else "read only"
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]mount added.[/]\n")
+    console.print(f"  [{p.fg_faint}]{'agent':<8}[/] [{p.fg_em}]{agent}[/]")
+    console.print(f"  [{p.fg_faint}]{'path':<8}[/] [{p.fg_em}]{resolved}[/]")
+    console.print(f"  [{p.fg_faint}]{'access':<8}[/] [{p.fg_dim}]{access_label}[/]")
+    console.print(f"\n[{p.fg_faint}]the agent can now access files in this folder.[/]")
 
 
 @mount.command(name="remove")
-@click.argument("agent")
-@click.argument("path")
-def remove(agent: str, path: str):
+@click.argument("agent", required=False)
+@click.argument("path", required=False)
+def remove(agent: str | None, path: str | None):
     """Remove a folder mount from an agent."""
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(f"[{p.err}]no agents found.[/]")
+            raise SystemExit(1)
+        agent = alfard_select("which agent?", agents)
+        if not agent:
+            return
     if agent not in list_agents():
-        console.print(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]"
-        )
+        console.print(error_block(
+            agent="alfard mount",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
+        ))
         raise SystemExit(1)
+
+    if not path:
+        data = _load_mounts(agent)
+        mounts = [m["path"] for m in data.get("mounts", [])]
+        if not mounts:
+            console.print(f"[{p.fg_faint}]{agent} has no mounts.[/]")
+            return
+        path = alfard_select("which mount to remove?", mounts)
+        if not path:
+            return
 
     stored_path = str(Path(path).expanduser())
     data = _load_mounts(agent)
@@ -129,15 +206,11 @@ def remove(agent: str, path: str):
     ]
 
     if len(data["mounts"]) == original:
-        console.print(
-            f"[{theme.WARNING}]Mount not found: {path}[/{theme.WARNING}]"
-        )
+        console.print(f"  [{p.warn}]mount not found: {path}[/]")
         raise SystemExit(1)
 
     _save_mounts(agent, data)
-    console.print(
-        f"[{theme.SUCCESS}]✓ Removed mount: {path}[/{theme.SUCCESS}]"
-    )
+    console.print(f"{dot('ok')} [{p.fg_dim}]removed mount: {path}[/]")
 
 
 @mount.command(name="list")
@@ -154,34 +227,34 @@ def list_mounts(agent: str | None):
             continue
         any_mounts = True
 
-        table = Table(
-            title=f"Mounts — {a}",
-            border_style=theme.BORDER,
-            show_header=True,
-        )
-        table.add_column("Path", style="bold")
-        table.add_column("Access")
-        table.add_column("Exists")
-
+        rows = []
         for m in mounts:
-            p = Path(m["path"]).expanduser()
-            exists = (
-                f"[{theme.SUCCESS}]✓[/{theme.SUCCESS}]"
-                if p.exists()
-                else f"[{theme.ERROR}]✗ missing[/{theme.ERROR}]"
+            mount_path = Path(m["path"]).expanduser()
+            exists_str = (
+                c("ok", "ok") if mount_path.exists() else c("err", "missing")
             )
             access = m.get("access", "readonly")
             access_str = (
-                f"[{theme.SUCCESS}]read+write[/{theme.SUCCESS}]"
-                if access == "readwrite"
-                else f"[{theme.DIM}]read only[/{theme.DIM}]"
+                c("ok", "read+write") if access == "readwrite" else c("fg_dim", "read only")
             )
-            table.add_row(m["path"], access_str, exists)
+            rows.append({
+                "path": m["path"],
+                "access": access_str,
+                "exists": exists_str,
+            })
 
-        console.print(table)
+        console.print(f"\n[{p.fg_dim}]mounts — {a}[/]")
+        console.print(alfard_table(
+            [
+                {"header": "path", "key": "path"},
+                {"header": "access", "key": "access"},
+                {"header": "exists", "key": "exists"},
+            ],
+            rows,
+        ))
 
     if not any_mounts:
         console.print(
-            f"[{theme.DIM}]No mounts configured. "
-            f"Add one: alfard mount add <agent> <path>[/{theme.DIM}]"
+            f"[{p.fg_dim}]no mounts configured.[/]\n"
+            f"[{p.fg_faint}]add one: alfard mount add <agent> <path>[/]"
         )

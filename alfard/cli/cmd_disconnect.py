@@ -1,23 +1,41 @@
 """CLI command to disconnect an integration from alfard."""
 
+import re
+import os
 import click
+from alfard.cli.help_formatter import AlfardCommand
 import yaml
-import shutil
 from pathlib import Path
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from alfard.cli import theme
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_confirm, alfard_select
 from alfard.integrations.catalogue import CATALOGUE
 from alfard.agents.loader import list_agents, AGENTS_DIR
 
-console = Console()
 _ENV_PATH = Path(__file__).parent.parent.parent / ".env"
 _INTEGRATIONS_PATH = Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
 
-@click.command()
-@click.argument("integration")
-def disconnect(integration: str):
+
+def _connected_integrations() -> list[str]:
+    connected = []
+    if _INTEGRATIONS_PATH.exists():
+        with open(_INTEGRATIONS_PATH) as f:
+            data = yaml.safe_load(f) or {}
+        connected.extend(s.get("name", "") for s in data.get("servers", []) if s.get("name"))
+    gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
+    if gws_creds.exists():
+        for name in ("gmail", "gdrive"):
+            if name not in connected:
+                connected.append(name)
+    from dotenv import load_dotenv
+    load_dotenv()
+    if os.environ.get("SLACK_BOT_TOKEN") and "slack" not in connected:
+        connected.append("slack")
+    return connected
+
+
+@click.command(cls=AlfardCommand)
+@click.argument("integration", required=False)
+def disconnect(integration: str | None):
     """Disconnect an integration and remove it from all agents.
 
     Removes the integration from integrations.yaml, clears the
@@ -28,28 +46,34 @@ def disconnect(integration: str):
       alfard disconnect notion
       alfard disconnect gmail
     """
+    if not integration:
+        connected = _connected_integrations()
+        if not connected:
+            console.print(f"[{p.fg_faint}]no integrations connected.[/]")
+            return
+        integration = alfard_select("which integration to disconnect?", connected)
+        if not integration:
+            return
+
     integration = integration.lower().strip()
 
     if integration not in CATALOGUE:
-        console.print(Panel(
-            f"[{theme.ERROR}]Unknown integration: '{integration}'[/{theme.ERROR}]\n\n"
-            f"Run [bold]alfard connect[/bold] to see connected integrations.",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard disconnect",
+            state="failed",
+            headline=f"unknown integration: '{integration}'",
+            explanation="run alfard connect to see connected integrations.",
         ))
         raise SystemExit(1)
 
     info = CATALOGUE[integration]
     display = info["display_name"]
 
-    # Confirm
-    confirm = Prompt.ask(
-        f"Disconnect [bold]{display}[/bold]? "
-        f"This removes it from all agents. [y/n]",
-        choices=["y", "n"],
-        default="n"
-    )
-    if confirm != "y":
-        console.print(f"[{theme.DIM}]Cancelled.[/{theme.DIM}]")
+    if not alfard_confirm(
+        f"disconnect {display}? this removes it from all agents.",
+        default=False,
+    ):
+        console.print(f"[{p.fg_dim}]cancelled.[/]")
         return
 
     removed_anything = False
@@ -66,14 +90,13 @@ def disconnect(integration: str):
         if len(data["servers"]) < original_count:
             with open(_INTEGRATIONS_PATH, "w") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-            console.print(f"[{theme.DIM}]✓ Removed from integrations.yaml[/{theme.DIM}]")
+            console.print(f"  {dot('ok')} [{p.fg_dim}]removed from integrations.yaml[/]")
             removed_anything = True
 
     # 2. Remove credential from .env
     credential_env = info.get("credential_env", "")
     if credential_env and _ENV_PATH.exists():
         content = _ENV_PATH.read_text(encoding="utf-8")
-        import re
         pattern = re.compile(
             rf"^{re.escape(credential_env)}=.*$\n?", re.MULTILINE
         )
@@ -81,7 +104,7 @@ def disconnect(integration: str):
         if new_content != content:
             _ENV_PATH.write_text(new_content, encoding="utf-8")
             console.print(
-                f"[{theme.DIM}]✓ Removed {credential_env} from .env[/{theme.DIM}]"
+                f"  {dot('ok')} [{p.fg_dim}]removed {credential_env} from .env[/]"
             )
             removed_anything = True
 
@@ -95,27 +118,22 @@ def disconnect(integration: str):
 
     if skill_removed_from:
         console.print(
-            f"[{theme.DIM}]✓ Skill removed from: "
-            f"{', '.join(skill_removed_from)}[/{theme.DIM}]"
+            f"  {dot('ok')} [{p.fg_dim}]skill removed from: "
+            f"{', '.join(skill_removed_from)}[/]"
         )
         removed_anything = True
 
     # 4. Special handling for gws-based integrations
-    # Do NOT delete gws credentials — user may still need them for gdrive
-    # Just inform them
     if integration in ("gmail", "gdrive"):
         console.print(
-            f"[{theme.DIM}]Note: gws credentials kept at ~/.config/gws/\n"
-            f"To fully remove Google auth run: rm -rf ~/.config/gws[/{theme.DIM}]"
+            f"[{p.fg_dim}]note: gws credentials kept at ~/.config/gws/[/]\n"
+            f"[{p.fg_faint}]to fully remove google auth run: rm -rf ~/.config/gws[/]"
         )
 
     if removed_anything:
-        console.print(Panel(
-            f"[bold {theme.SUCCESS}]{display} disconnected.[/bold {theme.SUCCESS}]\n\n"
-            f"Run [bold]alfard status[/bold] to confirm.",
-            border_style=theme.PANEL_SUCCESS
-        ))
+        console.print(f"\n{dot('ok')} [{p.fg_dim}]{display} disconnected.[/]")
+        console.print(f"[{p.fg_faint}]run alfard status to confirm.[/]")
     else:
         console.print(
-            f"[{theme.DIM}]{display} was not connected.[/{theme.DIM}]"
+            f"[{p.fg_dim}]{display} was not connected.[/]"
         )

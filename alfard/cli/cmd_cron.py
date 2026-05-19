@@ -4,15 +4,12 @@ import re
 import yaml
 import click
 from pathlib import Path
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich.markdown import Markdown
 from alfard.agents.loader import list_agents, AGENTS_DIR
 from alfard.cron.parser import parse_schedule
-from alfard.cli import theme
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_table, alfard_input, alfard_select, alfard_confirm
 
-console = Console()
 CRONS_FILE = "crons.yaml"
 
 
@@ -53,9 +50,11 @@ def _last_run(agent: str, job_name: str) -> tuple[str, str]:
 
 def _set_enabled(agent: str, name: str, enabled: bool) -> None:
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
@@ -66,17 +65,16 @@ def _set_enabled(agent: str, name: str, enabled: bool) -> None:
             found = True
             break
     if not found:
-        console.print(f"[{theme.WARNING}]No job named '{name}' found for {agent}.[/{theme.WARNING}]")
+        console.print(f"  [{p.warn}]no job named '{name}' found for {agent}.[/]")
         return
     _save_crons(agent, jobs)
     word = "enabled" if enabled else "disabled"
-    icon = theme.ICON_OK if enabled else theme.ICON_FAIL
-    color = theme.SUCCESS if enabled else theme.DIM
-    console.print(f"[{color}]{icon} Job '{name}' {word}.[/{color}]")
+    console.print(f"{dot('ok')} [{p.fg_dim}]job '{name}' {word}.[/]")
 
 
-@click.group()
-def cron():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cron(ctx: click.Context):
     """Manage and run scheduled agent jobs.
 
     \b
@@ -86,7 +84,33 @@ def cron():
       alfard cron status
       alfard cron run
     """
-    pass
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import questionary
+
+    while True:
+        console.clear()
+        console.print(f"\n[{p.fg_em}]manage cron jobs[/]\n")
+        action = alfard_select("what would you like to do?", [
+            "list jobs",
+            "add a job",
+            "view job status",
+            "run scheduler",
+            questionary.Separator(),
+            "← back",
+        ])
+        if not action or action == "← back":
+            return
+
+        if action == "list jobs":
+            ctx.invoke(list_jobs)
+        elif action == "add a job":
+            ctx.invoke(add)
+        elif action == "view job status":
+            ctx.invoke(status)
+        elif action == "run scheduler":
+            ctx.invoke(run)
 
 
 @cron.command(name="add")
@@ -100,122 +124,166 @@ def add(agent: str | None, task: str | None,
         schedule: str | None, name: str | None):
     """Add a scheduled job to an agent."""
 
-    from rich.prompt import Prompt
-
-    # Interactive agent selection if not provided
     if not agent:
         agents = list_agents()
         if not agents:
-            console.print(Panel(
-                f"[{theme.ERROR}]No agents found.[/{theme.ERROR}]\n\n"
-                f"Create one first: [bold]alfard create[/bold]",
-                border_style=theme.PANEL_ERROR
+            console.print(error_block(
+                agent="alfard cron",
+                state="failed",
+                headline="no agents found.",
+                explanation="create one first: alfard create",
             ))
             raise SystemExit(1)
-        console.print(f"\n[bold]Which agent?[/bold]")
-        for i, a in enumerate(agents, 1):
-            console.print(f"  {i}. {a}")
-        choice = Prompt.ask("Agent", default="1")
-        try:
-            agent = agents[int(choice) - 1]
-        except (ValueError, IndexError):
-            agent = agents[0]
+        agent = alfard_select("which agent?", agents, default=agents[0]) or agents[0]
     else:
         if agent not in list_agents():
-            console.print(Panel(
-                f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-                border_style=theme.PANEL_ERROR
+            console.print(error_block(
+                agent="alfard cron",
+                state="failed",
+                headline=f"agent '{agent}' not found.",
+                explanation="",
             ))
             raise SystemExit(1)
 
-    # Interactive task if not provided
     if not task:
-        console.print(f"\n[bold]What should {agent} do?[/bold]")
-        console.print(f"[{theme.DIM}]Example: summarise my inbox from the last 24 hours[/{theme.DIM}]")
-        task = Prompt.ask("Task").strip()
+        task = alfard_input(
+            f"what should {agent} do?",
+            hint="e.g. summarise my inbox from the last 24 hours",
+        ).strip()
         if not task:
-            console.print(f"[{theme.ERROR}]Task cannot be empty.[/{theme.ERROR}]")
+            console.print(f"  [{p.err}]task cannot be empty.[/]")
             raise SystemExit(1)
 
-    # Interactive schedule if not provided
     if not schedule:
-        console.print(f"\n[bold]When should this run?[/bold]")
-        console.print(f"[{theme.DIM}]Examples: 8am · every 2h · daily · 0 8 * * *[/{theme.DIM}]")
-        schedule = Prompt.ask("Schedule").strip()
+        schedule = alfard_input(
+            "when should this run?",
+            hint="e.g. 8am · every 2h · daily · 0 8 * * *",
+        ).strip()
         if not schedule:
-            console.print(f"[{theme.ERROR}]Schedule cannot be empty.[/{theme.ERROR}]")
+            console.print(f"  [{p.err}]schedule cannot be empty.[/]")
             raise SystemExit(1)
 
-    # Validate schedule
     try:
         parse_schedule(schedule)
     except ValueError as e:
-        console.print(Panel(
-            f"[{theme.ERROR}]{e}[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=str(e),
+            explanation="",
         ))
         raise SystemExit(1)
 
-    # Auto-generate name
     if not name:
         name = _slug(task)
 
     jobs = _load_crons(agent)
     if any(j["name"] == name for j in jobs):
-        console.print(Panel(
-            f"[{theme.WARNING}]Job '{name}' already exists.[/{theme.WARNING}]\n\n"
-            f"Remove it first: [bold]alfard cron remove {agent} {name}[/bold]",
-            border_style=theme.PANEL_WARNING
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"job '{name}' already exists.",
+            explanation=f"remove it first: alfard cron remove {agent} {name}",
         ))
         raise SystemExit(1)
 
     jobs.append({"name": name, "task": task, "schedule": schedule, "enabled": True})
     _save_crons(agent, jobs)
 
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]Job added.[/bold {theme.SUCCESS}]\n\n"
-        f"Agent:    {agent}\n"
-        f"Task:     {task}\n"
-        f"Schedule: {schedule}\n"
-        f"Name:     {name}\n\n"
-        f"[{theme.DIM}]Start scheduler: alfard cron run[/{theme.DIM}]",
-        border_style=theme.PANEL_SUCCESS
-    ))
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]\n")
+    console.print(f"  [{p.fg_faint}]{'agent':<10}[/] [{p.fg_em}]{agent}[/]")
+    console.print(f"  [{p.fg_faint}]{'task':<10}[/] [{p.fg_em}]{task}[/]")
+    console.print(f"  [{p.fg_faint}]{'schedule':<10}[/] [{p.fg_em}]{schedule}[/]")
+    console.print(f"  [{p.fg_faint}]{'name':<10}[/] [{p.fg_em}]{name}[/]")
+    console.print(f"\n[{p.fg_faint}]start scheduler: alfard cron run[/]")
 
 
 @cron.command(name="remove")
-@click.argument("agent")
-@click.argument("name")
-def remove(agent: str, name: str):
+@click.argument("agent", required=False)
+@click.argument("name", required=False)
+def remove(agent: str | None, name: str | None):
     """Remove a scheduled job from an agent."""
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(error_block(
+                agent="alfard cron",
+                state="failed",
+                headline="no agents found.",
+                explanation="create one first: alfard create",
+            ))
+            raise SystemExit(1)
+        agent = alfard_select("which agent?", agents)
+        if not agent:
+            return
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
+    if not name:
+        job_names = [j["name"] for j in jobs]
+        if not job_names:
+            console.print(f"[{p.fg_faint}]{agent} has no scheduled jobs.[/]")
+            return
+        name = alfard_select("which job to remove?", job_names)
+        if not name:
+            return
     new_jobs = [j for j in jobs if j["name"] != name]
     if len(new_jobs) == len(jobs):
-        console.print(f"[{theme.WARNING}]No job named '{name}' found for {agent}.[/{theme.WARNING}]")
+        console.print(f"  [{p.warn}]no job named '{name}' found for {agent}.[/]")
         return
     _save_crons(agent, new_jobs)
-    console.print(f"[{theme.SUCCESS}]{theme.ICON_OK} Removed job '{name}' from {agent}.[/{theme.SUCCESS}]")
+    console.print(f"{dot('ok')} [{p.fg_dim}]removed job '{name}' from {agent}.[/]")
+
+
+def _pick_agent_and_job(cmd: str) -> tuple[str, str] | tuple[None, None]:
+    agents = list_agents()
+    if not agents:
+        console.print(error_block(
+            agent=f"alfard cron {cmd}",
+            state="failed",
+            headline="no agents found.",
+            explanation="create one first: alfard create",
+        ))
+        return None, None
+    agent = alfard_select("which agent?", agents)
+    if not agent:
+        return None, None
+    jobs = _load_crons(agent)
+    job_names = [j["name"] for j in jobs]
+    if not job_names:
+        console.print(f"[{p.fg_faint}]{agent} has no scheduled jobs.[/]")
+        return None, None
+    name = alfard_select("which job?", job_names)
+    return agent, name
 
 
 @cron.command(name="enable")
-@click.argument("agent")
-@click.argument("name")
-def enable(agent: str, name: str):
+@click.argument("agent", required=False)
+@click.argument("name", required=False)
+def enable(agent: str | None, name: str | None):
     """Enable a scheduled job."""
+    if not agent or not name:
+        agent, name = _pick_agent_and_job("enable")
+        if not agent or not name:
+            return
     _set_enabled(agent, name, True)
 
 
 @cron.command(name="disable")
-@click.argument("agent")
-@click.argument("name")
-def disable(agent: str, name: str):
+@click.argument("agent", required=False)
+@click.argument("name", required=False)
+def disable(agent: str | None, name: str | None):
     """Disable a scheduled job (keeps it in crons.yaml)."""
+    if not agent or not name:
+        agent, name = _pick_agent_and_job("disable")
+        if not agent or not name:
+            return
     _set_enabled(agent, name, False)
 
 
@@ -225,9 +293,11 @@ def list_jobs(agent: str | None):
     """List scheduled jobs for one agent or all agents."""
     all_agents = list_agents()
     if agent and agent not in all_agents:
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
     targets = [agent] if agent else all_agents
@@ -237,131 +307,151 @@ def list_jobs(agent: str | None):
         if not jobs:
             continue
         any_jobs = True
-        table = Table(
-            title=f"Scheduled jobs — {ag}",
-            border_style=theme.BORDER,
-            show_header=True
-        )
-        table.add_column("Name", style="bold")
-        table.add_column("Schedule")
-        table.add_column("Enabled")
-        table.add_column("Task")
+        console.print(f"\n[{p.fg_dim}]scheduled jobs — {ag}[/]")
+        rows = []
         for j in jobs:
             enabled_str = (
-                f"[{theme.SUCCESS}]yes[/{theme.SUCCESS}]"
-                if j.get("enabled", True)
-                else f"[{theme.DIM}]no[/{theme.DIM}]"
+                c("ok", "yes") if j.get("enabled", True) else c("fg_faint", "no")
             )
             task_str = j.get("task", "")
             if len(task_str) > 55:
                 task_str = task_str[:52] + "..."
-            table.add_row(j["name"], j.get("schedule", ""), enabled_str, task_str)
-        console.print(table)
+            rows.append({
+                "name": j["name"],
+                "schedule": j.get("schedule", ""),
+                "enabled": enabled_str,
+                "task": task_str,
+            })
+        console.print(alfard_table(
+            [
+                {"header": "name", "key": "name"},
+                {"header": "schedule", "key": "schedule"},
+                {"header": "enabled", "key": "enabled"},
+                {"header": "task", "key": "task"},
+            ],
+            rows,
+        ))
     if not any_jobs:
         console.print(
-            f"[{theme.DIM}]No scheduled jobs found.[/{theme.DIM}]\n"
-            f"Add one: [bold {theme.PRIMARY}]alfard cron add <agent> <task> --schedule <when>"
-            f"[/bold {theme.PRIMARY}]"
+            f"[{p.fg_dim}]no scheduled jobs found.[/]\n"
+            f"[{p.fg_faint}]add one: alfard cron add <agent> <task> --schedule <when>[/]"
         )
 
 
 @cron.command(name="status")
 def status():
     """Show status of all scheduled jobs across all agents."""
-    table = Table(
-        title="Cron job status",
-        border_style=theme.BORDER,
-        show_header=True
-    )
-    table.add_column("Agent", style="bold")
-    table.add_column("Name")
-    table.add_column("Schedule")
-    table.add_column("Enabled")
-    table.add_column("Last run")
-    any_jobs = False
+    rows = []
     for ag in list_agents():
         for j in _load_crons(ag):
-            any_jobs = True
             enabled_str = (
-                f"[{theme.SUCCESS}]yes[/{theme.SUCCESS}]"
-                if j.get("enabled", True)
-                else f"[{theme.DIM}]no[/{theme.DIM}]"
+                c("ok", "yes") if j.get("enabled", True) else c("fg_faint", "no")
             )
             ts, run_status = _last_run(ag, j["name"])
             if run_status == "error":
-                last_str = f"[{theme.ERROR}]{ts} (error)[/{theme.ERROR}]"
+                last_str = c("err", f"{ts} (error)")
             elif run_status == "ok":
-                last_str = f"[{theme.SUCCESS}]{ts}[/{theme.SUCCESS}]"
+                last_str = c("ok", ts)
             else:
-                last_str = f"[{theme.DIM}]{ts}[/{theme.DIM}]"
-            table.add_row(ag, j["name"], j.get("schedule", ""), enabled_str, last_str)
-    if not any_jobs:
-        console.print(f"[{theme.DIM}]No scheduled jobs found.[/{theme.DIM}]")
+                last_str = c("fg_faint", ts)
+            rows.append({
+                "agent": ag,
+                "name": j["name"],
+                "schedule": j.get("schedule", ""),
+                "enabled": enabled_str,
+                "last_run": last_str,
+            })
+    if not rows:
+        console.print(f"[{p.fg_dim}]no scheduled jobs found.[/]")
         return
-    console.print(table)
+    console.print(alfard_table(
+        [
+            {"header": "agent", "key": "agent"},
+            {"header": "name", "key": "name"},
+            {"header": "schedule", "key": "schedule"},
+            {"header": "enabled", "key": "enabled"},
+            {"header": "last run", "key": "last_run"},
+        ],
+        rows,
+    ))
 
 
 @cron.command(name="runs")
-@click.argument("agent")
-@click.argument("name")
+@click.argument("agent", required=False)
+@click.argument("name", required=False)
 @click.option("--last", default=10, show_default=True, help="Number of recent runs to show")
-def runs(agent: str, name: str, last: int):
+def runs(agent: str | None, name: str | None, last: int):
     """Show run history for a specific job."""
+    if not agent or not name:
+        picked_agent, picked_name = _pick_agent_and_job("runs")
+        if not picked_agent or not picked_name:
+            return
+        agent = picked_agent
+        name = picked_name
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
     log_dir = AGENTS_DIR / agent / "cron_logs"
     if not log_dir.exists():
-        console.print(f"[{theme.DIM}]No run logs found for {agent}/{name}.[/{theme.DIM}]")
+        console.print(f"[{p.fg_dim}]no run logs found for {agent}/{name}.[/]")
         return
     files = sorted(log_dir.glob(f"{name}_*.md"), reverse=True)[:last]
     if not files:
-        console.print(f"[{theme.DIM}]No run logs found for job '{name}' in {agent}.[/{theme.DIM}]")
+        console.print(f"[{p.fg_dim}]no run logs found for job '{name}' in {agent}.[/]")
         return
-    table = Table(
-        title=f"Run history — {agent}/{name} (last {last})",
-        border_style=theme.BORDER,
-        show_header=True
-    )
-    table.add_column("Timestamp")
-    table.add_column("Status")
-    table.add_column("File")
+    rows = []
     for f in files:
         is_error = "_ERROR" in f.name
         m = re.search(r"_(\d{8}_\d{6})", f.name)
         ts = m.group(1).replace("_", " ") if m else "?"
-        status_str = (
-            f"[{theme.ERROR}]error[/{theme.ERROR}]"
-            if is_error
-            else f"[{theme.SUCCESS}]ok[/{theme.SUCCESS}]"
-        )
-        table.add_row(ts, status_str, f.name)
-    console.print(table)
+        status_str = c("err", "error") if is_error else c("ok", "ok")
+        rows.append({"timestamp": ts, "status": status_str, "file": f.name})
+    console.print(f"\n[{p.fg_dim}]run history — {agent}/{name} (last {last})[/]")
+    console.print(alfard_table(
+        [
+            {"header": "timestamp", "key": "timestamp"},
+            {"header": "status", "key": "status"},
+            {"header": "file", "key": "file"},
+        ],
+        rows,
+    ))
 
 
 @cron.command(name="now")
-@click.argument("agent")
-@click.argument("name")
-def now(agent: str, name: str):
+@click.argument("agent", required=False)
+@click.argument("name", required=False)
+def now(agent: str | None, name: str | None):
     """Run a specific scheduled job immediately."""
+    if not agent or not name:
+        picked_agent, picked_name = _pick_agent_and_job("now")
+        if not picked_agent or not picked_name:
+            return
+        agent = picked_agent
+        name = picked_name
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
     jobs = _load_crons(agent)
     job = next((j for j in jobs if j["name"] == name), None)
     if job is None:
-        console.print(Panel(
-            f"[{theme.ERROR}]No job named '{name}' found for {agent}.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard cron",
+            state="failed",
+            headline=f"no job named '{name}' found for {agent}.",
+            explanation="",
         ))
         raise SystemExit(1)
-    console.print(f"[{theme.DIM}]Running '{name}' for {agent}…[/{theme.DIM}]")
+    console.print(f"[{p.fg_dim}]running '{name}' for {agent}...[/]")
     from alfard.cron.runner import run_job
     response = run_job(agent, job["task"], name)
     console.print(Markdown(response))

@@ -3,12 +3,10 @@
 import os
 import subprocess
 import click
-from rich.console import Console
-from rich.panel import Panel
-from alfard.agents.loader import AGENTS_DIR
-from alfard.cli import theme
-
-console = Console()
+from alfard.cli.help_formatter import AlfardCommand
+from alfard.agents.loader import AGENTS_DIR, list_agents
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, alfard_select
 
 FILE_MAP = {
     "soul": "soul.md",
@@ -17,10 +15,10 @@ FILE_MAP = {
 }
 
 
-@click.command()
-@click.argument("agent")
-@click.argument("file", type=click.Choice(["soul", "brain", "memory"]))
-def edit(agent: str, file: str):
+@click.command(cls=AlfardCommand)
+@click.argument("agent", required=False)
+@click.argument("file", required=False, type=click.Choice(["soul", "brain", "memory"]))
+def edit(agent: str | None, file: str | None):
     """Edit an agent's soul, brain or memory files.
 
     AGENT is the agent name. FILE is one of: soul, brain, memory.
@@ -28,28 +26,38 @@ def edit(agent: str, file: str):
     Example: alfard edit postman soul
     """
 
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(
+                f"[{p.fg_faint}]no agents found. run alfard create first.[/]"
+            )
+            return
+        agent = alfard_select("which agent?", agents)
+        if not agent:
+            return
+
     agent_dir = AGENTS_DIR / agent
     if not agent_dir.exists():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]\n\n"
-            f"Run [bold {theme.PRIMARY}]alfard list[/bold {theme.PRIMARY}] to see available agents.\n"
-            f"Run [bold {theme.PRIMARY}]alfard create[/bold {theme.PRIMARY}] to create a new one.",
-            border_style=theme.PANEL_ERROR
-        ))
+        console.print(
+            f"[{p.err}]agent '{agent}' not found.[/]\n"
+            f"[{p.fg_faint}]run alfard list to see available agents.[/]"
+        )
         raise SystemExit(1)
+
+    if not file:
+        file = alfard_select("which file?", ["soul", "brain", "memory"])
+        if not file:
+            return
 
     filename = FILE_MAP[file]
     filepath = agent_dir / filename
 
     if file == "soul":
-        console.print(Panel(
-            f"[bold {theme.WARNING}]You are editing soul.md[/bold {theme.WARNING}]\n\n"
-            "This file defines the agent's identity and rules.\n"
-            "The agent reads this file but can never modify it.\n"
-            "Changes take effect on the next run.",
-            border_style=theme.PANEL_WARNING,
-            title="⚠ Identity file"
-        ))
+        console.print(
+            f"[{p.warn}]editing soul.md — this file defines the agent's identity and rules.[/]\n"
+            f"[{p.fg_dim}]the agent reads this file but can never modify it. changes take effect on the next run.[/]\n"
+        )
 
     if not filepath.exists():
         filepath.write_text(f"# {agent} — {file}\n\n", encoding="utf-8")
@@ -70,11 +78,11 @@ def edit(agent: str, file: str):
 
     try:
         subprocess.run(editor_cmd, check=True)
-        console.print(f"[{theme.SUCCESS}]Saved:[/{theme.SUCCESS}] agents/{agent}/{filename}")
+        console.print(f"{dot('ok')} [{p.fg_dim}]saved: agents/{agent}/{filename}[/]")
     except FileNotFoundError:
         console.print(
-            f"[{theme.ERROR}]Editor '{editor}' not found.[/{theme.ERROR}] "
-            f"Set your $EDITOR environment variable or edit the file directly:\n"
-            f"[{theme.DIM}]{filepath}[/{theme.DIM}]"
+            f"[{p.err}]editor '{editor}' not found.[/] "
+            f"[{p.fg_dim}]set your $EDITOR environment variable or edit the file directly:[/]\n"
+            f"[{p.fg_faint}]{filepath}[/]"
         )
         raise SystemExit(1)

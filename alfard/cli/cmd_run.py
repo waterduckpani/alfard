@@ -1,16 +1,14 @@
 """Starts a named agent and enters its interactive ReAct loop."""
 
 import click
+from alfard.cli.help_formatter import AlfardCommand
 from datetime import datetime
-from rich.console import Console
-from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 from alfard.agents.loader import AgentLoader, list_agents
 from alfard.orchestrator.builder import build_orchestrator
-from alfard.cli import theme
-
-console = Console()
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_spinner, alfard_select
 
 
 class _WriteBrainFact:
@@ -30,11 +28,11 @@ class _WriteBrainFact:
 _write_brain_fact = _WriteBrainFact()
 
 
-@click.command()
-@click.argument("agent")
+@click.command(cls=AlfardCommand)
+@click.argument("agent", required=False)
 @click.option("--no-mcp", is_flag=True, default=False,
               help="Skip MCP server connections (faster startup for testing)")
-def run(agent: str, no_mcp: bool) -> None:
+def run(agent: str | None, no_mcp: bool) -> None:
     """Start a chat session with an agent.
 
     AGENT is the name of the agent to run.
@@ -43,28 +41,42 @@ def run(agent: str, no_mcp: bool) -> None:
       alfard run postman
     """
 
-    # 1. Validate agent exists
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(
+                f"[{p.fg_faint}]no agents found. run alfard create first.[/]"
+            )
+            return
+        agent = alfard_select("which agent?", agents)
+        if not agent:
+            return
+
     if agent not in list_agents():
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]\n\n"
-            f"Run [bold {theme.PRIMARY}]alfard list[/bold {theme.PRIMARY}] to see available agents.\n"
-            f"Run [bold {theme.PRIMARY}]alfard create[/bold {theme.PRIMARY}] to create a new one.",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard run",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
+            next_actions=[
+                {"cmd": "alfard list", "desc": "see available agents"},
+                {"cmd": "alfard create", "desc": "create a new one"},
+            ],
         ))
         raise SystemExit(1)
 
-    # 2. Load agent
     try:
         loader = AgentLoader(agent)
         system_prompt = loader.build_system_prompt()
     except Exception as e:
-        console.print(Panel(
-            f"[{theme.ERROR}]Failed to load agent '{agent}': {e}[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard run",
+            state="failed",
+            headline=f"failed to load agent '{agent}'.",
+            explanation=str(e),
         ))
         raise SystemExit(1)
 
-    # 3. Print startup banner
     soul_path = loader.agent_dir / "soul.md"
     first_line = ""
     if soul_path.exists():
@@ -74,21 +86,35 @@ def run(agent: str, no_mcp: bool) -> None:
                 first_line = stripped[:80]
                 break
 
-    console.print(Panel(
-        f"[bold {theme.PRIMARY}]{agent}[/bold {theme.PRIMARY}]\n[{theme.DIM}]{first_line or 'Ready'}[/{theme.DIM}]",
-        title="alfard",
-        border_style=theme.BORDER,
-        padding=(0, 2)
-    ))
+    console.print(f"\n[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
 
     audit = None
     try:
-        with console.status("[dim]Connecting integrations...[/dim]"):
-            orchestrator, audit, loader, registry = build_orchestrator(
-                agent_name=agent,
-                connect_mcp=not no_mcp,
-                gate_enabled=True,
-            )
+        try:
+            with alfard_spinner("connecting integrations...", color="ok") as _s:
+                orchestrator, audit, loader, registry = build_orchestrator(
+                    agent_name=agent,
+                    connect_mcp=not no_mcp,
+                    gate_enabled=True,
+                )
+        except RuntimeError as e:
+            msg = str(e)
+            if "requires env var" in msg and "is not set" in msg:
+                import re
+                m = re.search(r"env var '([^']+)'", msg)
+                var = m.group(1) if m else "the required API key"
+                console.print(error_block(
+                    agent="alfard run",
+                    state="failed",
+                    headline="missing API key.",
+                    explanation=f"{var} is not set. add it to your .env file.",
+                    next_actions=[
+                        {"cmd": f"echo '{var}=your_key' >> .env", "desc": "add the key"},
+                        {"cmd": "alfard setup", "desc": "re-run setup to reconfigure"},
+                    ],
+                ))
+                raise SystemExit(1)
+            raise
 
         connected = [
             name for name, info in orchestrator._registry._tools.items()
@@ -96,7 +122,7 @@ def run(agent: str, no_mcp: bool) -> None:
         ]
         servers = sorted(set(n.split(".")[0] for n in connected))
         if servers:
-            console.print(f"[{theme.DIM}]Connected: {', '.join(servers)}[/{theme.DIM}]")
+            console.print(f"[{p.fg_dim}]connected: {', '.join(servers)}[/]")
 
         _write_brain_fact.set_manager(loader.memory_manager)
 
@@ -124,23 +150,21 @@ def run(agent: str, no_mcp: bool) -> None:
             is_mcp=True
         )
 
-        # 7. Interactive chat loop
         console.print(
-            f"\n[{theme.DIM}]Type your message and press Enter. "
-            f"Type [bold]exit[/bold] or [bold]quit[/bold] to stop.[/{theme.DIM}]\n"
+            f"[{p.fg_faint}]type your message and press enter. type exit or quit to stop.[/]\n"
         )
 
         first_message = True
 
         while True:
             try:
-                user_input = Prompt.ask(f"[bold {theme.PRIMARY}]you[/bold {theme.PRIMARY}]")
+                user_input = Prompt.ask(f"[{p.fg_em}]you[/]")
             except (KeyboardInterrupt, EOFError):
-                console.print(f"\n[{theme.DIM}]Goodbye.[/{theme.DIM}]")
+                console.print(f"\n[{p.fg_dim}]goodbye.[/]")
                 break
 
             if user_input.strip().lower() in ("exit", "quit", "q"):
-                console.print(f"[{theme.DIM}]Goodbye.[/{theme.DIM}]")
+                console.print(f"[{p.fg_dim}]goodbye.[/]")
                 break
 
             if not user_input.strip():
@@ -154,17 +178,19 @@ def run(agent: str, no_mcp: bool) -> None:
             try:
                 console.print()
                 response = orchestrator.run(user_input)
-                console.print(f"[bold]{agent}[/bold]")
+                console.print(f"[{p.fg_em}]{agent}[/]")
                 console.print(Markdown(response))
                 console.print()
             except KeyboardInterrupt:
-                console.print(f"\n[{theme.DIM}]Interrupted.[/{theme.DIM}]\n")
+                console.print(f"\n[{p.fg_dim}]interrupted.[/]\n")
                 orchestrator.reset()
                 continue
             except Exception as e:
-                console.print(Panel(
-                    f"[{theme.ERROR}]Error: {e}[/{theme.ERROR}]",
-                    border_style=theme.PANEL_ERROR
+                console.print(error_block(
+                    agent=agent,
+                    state="failed",
+                    headline=str(e),
+                    explanation="",
                 ))
                 continue
 
@@ -211,7 +237,7 @@ def run(agent: str, no_mcp: bool) -> None:
                     )
         except Exception as e:
             console.print(
-                f"[dim]Note: could not save session memory: {e}[/dim]"
+                f"[{p.fg_faint}]note: could not save session memory: {e}[/]"
             )
     finally:
         if audit is not None:
