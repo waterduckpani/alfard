@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 14px 8px 14px; }
+.tok { display:flex; flex-direction:column; align-items:center; gap:12px; }
+.tok .box {
+  width: 140px; height: 72px;
+  background: var(--surface);
+  border-radius: var(--r-2);
+  border: 1px solid var(--border);
+}
+.tok .lbl { font: var(--t-label); color: var(--ink-300); }
+.tok .desc { font: 400 11.5px/1.3 var(--font-body); color: var(--ink-100); text-align:center; }
+
+.r-default { box-shadow: 0 0 0 3px rgba(20,19,15,0.12); border-color: var(--ink-400); }
+.r-strong  { box-shadow: 0 0 0 3px rgba(20,19,15,0.22); border-color: var(--ink-400); }
+.r-err     { box-shadow: 0 0 0 3px rgba(184,92,92,0.22); border-color: #B85C5C; }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Focus rings — quiet, contrast-based</div>
+  <div class="grid">
+    <div class="tok"><div class="box r-default"></div><div class="lbl">ring</div><div class="desc">default focus</div></div>
+    <div class="tok"><div class="box r-strong"></div><div class="lbl">ring-strong</div><div class="desc">primary CTA focus</div></div>
+    <div class="tok"><div class="box r-err"></div><div class="lbl">ring-err</div><div class="desc">invalid input</div></div>
+  </div>
+  <div style="font:var(--t-small); color:var(--fg-2); padding: 0 4px;">
+    Focus rings are ink-tinted, not color-tinted. The product is intentionally low-saturation, so a quiet ring at <span class="mono" style="color:var(--ink-300)">rgba(20,19,15,0.12)</span> is enough.
+  </div>
+</div>
+</body></html>

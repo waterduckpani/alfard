@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.row { display:flex; align-items:flex-start; gap: 16px; }
+.row .lbl { width: 90px; font: var(--t-mono-sm); color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.06em; padding-top: 6px; }
+
+.composer {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+.composer.focused {
+  border-color: var(--ink-400);
+  box-shadow: var(--shadow-1), 0 0 0 3px rgba(20,19,15,0.1);
+}
+.composer .text {
+  font: 400 14.5px/1.5 var(--font-body); color: var(--ink-300); min-height: 38px;
+}
+.composer .text.placeholder { color: var(--ink-50); }
+.composer .text .caret {
+  display: inline-block; width: 1.5px; height: 17px; background: var(--ink-400);
+  vertical-align: -3px; margin-left: 1px;
+  animation: blink 1.05s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.composer .ctrls {
+  display:flex; align-items:center; justify-content:space-between;
+  border-top: 1px solid var(--border); padding-top: 10px;
+}
+.composer .left { display:flex; gap: 8px; }
+.composer .right { display:flex; align-items:center; gap:10px; }
+.chip {
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 5px 10px; border-radius: var(--r-1);
+  background: var(--paper-100); border:1px solid var(--border);
+  color: var(--ink-200); font: var(--t-mono-sm);
+}
+.chip svg { width: 12px; height: 12px; }
+.send {
+  background: var(--ink-400); color: var(--paper-50);
+  font: 540 13px/1 var(--font-display);
+  padding: 9px 14px; border-radius: var(--r-2); border: 1px solid var(--ink-400);
+  display:inline-flex; gap:6px; align-items:center;
+}
+.kbd { font: 540 11px/1 var(--font-display); background: var(--paper-100); padding: 3px 6px; border-radius: 6px; border:1px solid var(--border); color: var(--ink-100); }
+
+.thinking {
+  display: inline-flex; gap: 4px; align-items: center;
+  font: var(--t-mono-sm); color: #4A6383;
+}
+.thinking .d { width: 6px; height: 6px; border-radius: 50%; background: #6F8AA8; }
+.thinking .d:nth-child(2) { animation: bounce 1.2s -0.2s infinite ease-in-out; }
+.thinking .d:nth-child(3) { animation: bounce 1.2s -0.1s infinite ease-in-out; }
+.thinking .d:nth-child(4) { animation: bounce 1.2s 0s infinite ease-in-out; }
+@keyframes bounce { 0%,100% { opacity: 0.3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Composer — agent prompt surface</div>
+  <div class="row">
+    <div class="lbl">Idle</div>
+    <div class="composer">
+      <div class="text placeholder">What would you like Alfard to do?</div>
+      <div class="ctrls">
+        <div class="left">
+          <div class="chip"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>attach</div>
+          <div class="chip">claude-opus-4</div>
+        </div>
+        <div class="right">
+          <span style="font:var(--t-mono-sm); color:var(--ink-50)"><span class="kbd">⌘</span> <span class="kbd">↵</span></span>
+          <button class="send">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="lbl">Streaming</div>
+    <div class="composer focused">
+      <div class="text">Summarize the last 24h of agent failures and group by root cause<span class="caret"></span></div>
+      <div class="ctrls">
+        <div class="left">
+          <div class="chip"><svg viewBox="0 0 12 12" fill="none"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/></svg>logs-2026-05-17.csv</div>
+        </div>
+        <div class="right">
+          <span class="thinking"><span class="d"></span><span class="d"></span><span class="d"></span>alfard is thinking</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

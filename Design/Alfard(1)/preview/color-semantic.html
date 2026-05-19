@@ -1,0 +1,67 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.tok {
+  border: 1px solid var(--border); border-radius: var(--r-3); overflow:hidden;
+  background: var(--surface); display:flex; flex-direction:column;
+  box-shadow: var(--shadow-1);
+}
+.tok .top { height: 78px; display:flex; align-items:center; justify-content:center; }
+.tok .pill {
+  padding: 5px 12px; border-radius: var(--r-pill);
+  font: 540 12px/1 var(--font-display);
+  display:inline-flex; align-items:center; gap:7px;
+  border:1px solid;
+}
+.dot { width:6px; height:6px; border-radius:50%; }
+.tok .b { padding: 10px 12px; display:flex; flex-direction:column; gap:2px; border-top:1px solid var(--border); background: var(--surface); }
+.tok .n { font: var(--t-label); color: var(--fg); }
+.tok .h { font: 400 10.5px/1.2 var(--font-mono); color: var(--fg-3); text-transform:uppercase; }
+
+.bg-ok    { background: #ECF0E2; }
+.bg-warn  { background: #F6EED8; }
+.bg-err   { background: #F4E1DE; }
+.bg-info  { background: #E3EAF1; }
+
+.txt-ok   { color: #4A6B3F; border-color: #C9D5B4; }
+.txt-warn { color: #8A6A22; border-color: #E5D29B; }
+.txt-err  { color: #8C3F3F; border-color: #E0B7B0; }
+.txt-info { color: #4A6383; border-color: #C0CEDE; }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Semantic — muted, earthy</div>
+  <div class="grid">
+    <div class="tok">
+      <div class="top bg-ok">
+        <span class="pill bg-ok txt-ok"><span class="dot" style="background:#6B8E5A"></span>complete</span>
+      </div>
+      <div class="b"><div class="n">positive · sage</div><div class="h">ok · 6B8E5A</div></div>
+    </div>
+    <div class="tok">
+      <div class="top bg-warn">
+        <span class="pill bg-warn txt-warn"><span class="dot" style="background:#C89B4A"></span>waiting</span>
+      </div>
+      <div class="b"><div class="n">wait · amber</div><div class="h">warn · C89B4A</div></div>
+    </div>
+    <div class="tok">
+      <div class="top bg-err">
+        <span class="pill bg-err txt-err"><span class="dot" style="background:#B85C5C"></span>failed</span>
+      </div>
+      <div class="b"><div class="n">negative · terracotta</div><div class="h">err · B85C5C</div></div>
+    </div>
+    <div class="tok">
+      <div class="top bg-info">
+        <span class="pill bg-info txt-info"><span class="dot" style="background:#6F8AA8"></span>thinking</span>
+      </div>
+      <div class="b"><div class="n">info · slate blue</div><div class="h">info · 6F8AA8</div></div>
+    </div>
+  </div>
+  <div style="font: var(--t-small); color: var(--fg-2); padding-top: 4px;">
+    Each semantic color comes with a soft background, a foreground for text, and a 1px border tone. Used only in pills, badges, and status icons — never as full surfaces.
+  </div>
+</div>
+</body></html>

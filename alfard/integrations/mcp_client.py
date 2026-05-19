@@ -1,17 +1,83 @@
 """MCP client — connects to configured MCP servers and registers their tools with the tool registry."""
 
 import asyncio
+import json
 import pathlib
 from typing import Any
 
 import mcp
 import mcp.client.stdio
 import mcp.client.streamable_http
+import mcp.types
 import yaml
 
 from alfard.tools.registry import ToolRegistry
 
 _CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
+
+
+def _rank_notion_search(content: list, query: str) -> list:
+    """Re-rank notion.API-post-search results for reliable database ID resolution.
+
+    Filters archived entries, requires exact name match (case-insensitive),
+    prefers database over page, then most-recently-edited. Returns content with
+    an empty results list and an alfard_note if no exact match is found, so the
+    agent knows to ask the user for clarification rather than using a bad ID.
+    """
+    if not content or not query:
+        return content
+
+    raw_text = next((b.text for b in content if hasattr(b, "text")), None)
+    if raw_text is None:
+        return content
+
+    try:
+        data = json.loads(raw_text)
+    except (json.JSONDecodeError, TypeError):
+        return content
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        return content
+
+    query_norm = query.strip().lower()
+
+    def _title(r: dict) -> str:
+        if r.get("object") == "database":
+            return "".join(b.get("plain_text", "") for b in r.get("title", []))
+        if r.get("object") == "page":
+            props = r.get("properties", {})
+            title_prop = props.get("title") or props.get("Name") or {}
+            return "".join(b.get("plain_text", "") for b in title_prop.get("title", []))
+        return ""
+
+    exact = [
+        r for r in results
+        if not r.get("archived", False) and _title(r).strip().lower() == query_norm
+    ]
+
+    if not exact:
+        data["results"] = []
+        data["alfard_note"] = (
+            f"No Notion database or page named exactly '{query}' was found. "
+            "Ask the user to confirm the correct name."
+        )
+    else:
+        # Stable two-pass sort: most-recently-edited first, then databases before pages.
+        exact.sort(key=lambda r: r.get("last_edited_time", ""), reverse=True)
+        exact.sort(key=lambda r: 0 if r.get("object") == "database" else 1)
+        data["results"] = exact
+
+    new_text = json.dumps(data)
+    new_content: list = []
+    replaced = False
+    for block in content:
+        if not replaced and hasattr(block, "text"):
+            new_content.append(mcp.types.TextContent(type="text", text=new_text))
+            replaced = True
+        else:
+            new_content.append(block)
+    return new_content
 
 
 def _resolve_env_vars(env_vars: dict) -> dict:
@@ -85,13 +151,23 @@ class MCPClient:
 
         def make_caller(server_name: str, tool_name: str):
             def caller(**kwargs):
+                # Normalise notion.API-post-page: wrap bare UUID string parent
+                # into the object form Notion's API requires.
+                if tool_name == "API-post-page" and server_name == "notion":
+                    parent = kwargs.get("parent")
+                    if isinstance(parent, str):
+                        kwargs["parent"] = {"database_id": parent}
+
                 async def _call():
                     async def _inner():
                         async with _make_transport_context() as (read, write):
                             async with mcp.ClientSession(read, write) as s:
                                 await s.initialize()
                                 result = await s.call_tool(tool_name, kwargs)
-                                return result.content
+                                content = result.content
+                                if server_name == "notion" and tool_name == "API-post-search":
+                                    content = _rank_notion_search(content, kwargs.get("query", ""))
+                                return content
                     try:
                         return await asyncio.wait_for(_inner(), timeout=30.0)
                     except asyncio.TimeoutError:

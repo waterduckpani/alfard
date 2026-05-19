@@ -1,0 +1,70 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.section { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; align-items:center; }
+.lbl { width: 86px; font: var(--t-mono-sm); color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  font: 540 12px/1 var(--font-display);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot.live {
+  background: #6B8E5A;
+  box-shadow: 0 0 0 0 rgba(107,142,90,0.55);
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(107,142,90,0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(107,142,90,0); }
+}
+
+.p-live    { background: #ECF0E2; color: #4A6B3F; border-color: #C9D5B4; }
+.p-think   { background: #E3EAF1; color: #4A6383; border-color: #C0CEDE; }
+.p-ok      { background: #ECF0E2; color: #4A6B3F; border-color: #C9D5B4; }
+.p-warn    { background: #F6EED8; color: #8A6A22; border-color: #E5D29B; }
+.p-err     { background: #F4E1DE; color: #8C3F3F; border-color: #E0B7B0; }
+.p-idle    { background: var(--paper-100); color: var(--ink-100); border-color: var(--border); }
+.p-queued  { background: var(--paper-100); color: var(--ink-200); border-color: var(--border); }
+
+.tag {
+  font: 540 11.5px/1 var(--font-display);
+  padding: 4px 9px;
+  border-radius: var(--r-1);
+  background: var(--paper-100);
+  color: var(--ink-200);
+  border: 1px solid var(--border);
+}
+.tag.accent { background: var(--ink-400); color: var(--paper-50); border-color: var(--ink-400); }
+.tag.mono { font-family: var(--font-mono); font-weight: 400; font-size: 11px; }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Status pills — agent lifecycle</div>
+  <div class="section">
+    <div class="lbl">Agent</div>
+    <span class="pill p-live"><span class="dot live"></span>running</span>
+    <span class="pill p-think"><span class="dot" style="background:#6F8AA8"></span>thinking</span>
+    <span class="pill p-ok"><span class="dot" style="background:#6B8E5A"></span>complete</span>
+    <span class="pill p-warn"><span class="dot" style="background:#C89B4A"></span>needs approval</span>
+    <span class="pill p-err"><span class="dot" style="background:#B85C5C"></span>failed</span>
+    <span class="pill p-queued"><span class="dot" style="background:#908A7E"></span>queued</span>
+    <span class="pill p-idle"><span class="dot" style="background:#B8B2A1"></span>idle</span>
+  </div>
+  <div class="section">
+    <div class="lbl">Tags</div>
+    <span class="tag">prod</span>
+    <span class="tag accent">@you</span>
+    <span class="tag">trigger · webhook</span>
+    <span class="tag mono">v3.2.1</span>
+    <span class="tag">retry · 2/3</span>
+    <span class="tag mono">us-east-1</span>
+  </div>
+</div>
+</body></html>

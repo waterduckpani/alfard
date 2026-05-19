@@ -132,3 +132,6 @@ function in the child process.
 /help       — lists all available commands
 Commands must work identically across all interfaces.
 Command registry lives in alfard/commands/ so any interface can import it.
+
+## Design system
+The full alfard design system lives in design/. Read design/SKILL.md first, then design/README.md before touching any dashboard UI. The canonical dashboard shell is design/ui_kits/alfard/index.html — fork it, don't reinvent it. All CSS tokens are in design/colors_and_type.css. Both logo SVGs are in design/ui_kits/alfard/. Fonts load from Fontshare, icons from Lucide 0.453.0 CDN.

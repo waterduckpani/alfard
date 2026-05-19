@@ -43,10 +43,7 @@ class Orchestrator:
 
     def run(self, task: str) -> str:
         self._memory.add_user(task)
-
-        # Reset job approval for new user turn
-        if hasattr(self._gate, '_job_approved'):
-            self._gate._job_approved = False
+        self._gate.reset_job()
 
         # Check for slash commands before hitting the LLM
         if is_command(task):

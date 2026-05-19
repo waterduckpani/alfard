@@ -41,13 +41,13 @@ class ApprovalGate:
         except FileNotFoundError:
             pass
 
+    def reset_job(self) -> None:
+        self._job_approved = False
+        self._approved_server = None
+
     def request(self, tool_name: str, arguments: dict, source: str) -> bool:
         if not self.enabled:
             return True
-
-        if source == "user_instruction":
-            self._job_approved = False
-            self._approved_server = None
 
         if self._job_approved:
             current_server = tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]

@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row { display: grid; grid-template-columns: 120px 1fr; gap: 20px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.row:last-child { border:0; }
+.meta { font: var(--t-mono-sm); color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.06em; }
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.spec { color: var(--ink-300); }
+.s-display { font: 700 56px/1.04 var(--font-display); letter-spacing: -0.03em; }
+.s-h1 { font: 700 36px/1.1 var(--font-display); letter-spacing: -0.02em; }
+.s-h2 { font: 600 26px/1.18 var(--font-display); letter-spacing: -0.015em; }
+.s-h3 { font: 600 18px/1.3 var(--font-display); letter-spacing: -0.005em; }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Display & headings — Satoshi</div>
+  <div class="row">
+    <div class="meta">display<br/>56 · 700</div>
+    <div class="spec s-display">A calmer way to run agents.</div>
+  </div>
+  <div class="row">
+    <div class="meta">h1<br/>36 · 700</div>
+    <div class="spec s-h1">Good morning, Sarah.</div>
+  </div>
+  <div class="row">
+    <div class="meta">h2<br/>26 · 600</div>
+    <div class="spec s-h2">Today · 12 runs in progress</div>
+  </div>
+  <div class="row">
+    <div class="meta">h3<br/>18 · 600</div>
+    <div class="spec s-h3">Outbound research workflow</div>
+  </div>
+</div>
+</body></html>

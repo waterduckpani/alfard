@@ -1,0 +1,85 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="_base.css"/>
+<style>
+.row-label { font: var(--t-eyebrow); text-transform:uppercase; letter-spacing:0.16em; color:var(--fg-3); }
+.split { display:grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items:stretch; }
+.col {
+  border: 1px solid var(--border);
+  border-radius: var(--r-4);
+  overflow: hidden;
+}
+.col .label {
+  padding: 10px 16px;
+  font: var(--t-label);
+  border-bottom: 1px solid var(--border);
+}
+.col.light .label { background: #FBFAF7; color: #232220; }
+.col.dark .label  { background: #131210; color: #F4EFE2; border-color: #2C2A26; }
+.col.dark { border-color: #2C2A26; }
+
+.body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.col.light .body { background: #FBFAF7; }
+.col.dark  .body { background: #131210; }
+
+.preview-card {
+  border-radius: var(--r-3); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.col.light .preview-card { background: #FFFFFF; border:1px solid #E5E1D7; }
+.col.dark  .preview-card { background: #1B1A18; border:1px solid #2C2A26; }
+
+.t-head {  font: 600 16px/1.2 var(--font-display); letter-spacing:-0.01em; }
+.col.light .t-head { color: #14130F; }
+.col.dark  .t-head { color: #F4EFE2; }
+
+.t-body {  font: 400 13px/1.5 var(--font-body); }
+.col.light .t-body { color: #6E6960; }
+.col.dark  .t-body { color: #A6A198; }
+
+.row { display:flex; gap: 8px; align-items:center; }
+.btn-acc { font: 540 12px/1 var(--font-display); padding: 7px 11px; border-radius: var(--r-2); }
+.col.light .btn-acc { background:#14130F; color:#FBFAF7; }
+.col.dark .btn-acc { background:#F4EFE2; color:#131210; }
+.dot-live { width:7px; height:7px; border-radius:50%; background:#6B8E5A; }
+.col.dark .dot-live { background:#8AA876; }
+.lbl-meta { font:400 11px/1 var(--font-mono); }
+.col.light .lbl-meta { color:#908A7E; }
+.col.dark .lbl-meta { color:#7F7B72; }
+</style></head>
+<body>
+<div class="card">
+  <div class="row-label">Theme — light primary, dark secondary</div>
+  <div class="split">
+    <div class="col light">
+      <div class="label">LIGHT · default</div>
+      <div class="body">
+        <div class="preview-card">
+          <div class="t-head">researcher · ag_8f2</div>
+          <div class="t-body">Crawling 14 sources on Q3 competitor pricing. Found 8 references so far.</div>
+          <div class="row" style="justify-content:space-between;">
+            <span class="row" style="gap:6px;"><span class="dot-live"></span><span class="lbl-meta">streaming · 4,221 tok</span></span>
+            <span class="btn-acc">Open</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col dark">
+      <div class="label">DARK · opt-in</div>
+      <div class="body">
+        <div class="preview-card">
+          <div class="t-head">researcher · ag_8f2</div>
+          <div class="t-body">Crawling 14 sources on Q3 competitor pricing. Found 8 references so far.</div>
+          <div class="row" style="justify-content:space-between;">
+            <span class="row" style="gap:6px;"><span class="dot-live"></span><span class="lbl-meta">streaming · 4,221 tok</span></span>
+            <span class="btn-acc">Open</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="font: var(--t-small); color: var(--fg-2); padding-top:2px;">
+    Activated via <code class="mono" style="background:var(--paper-200); padding:1px 6px; border-radius:5px; color:var(--ink-300); font-size:12px;">[data-theme="dark"]</code> on <code class="mono" style="background:var(--paper-200); padding:1px 6px; border-radius:5px; color:var(--ink-300); font-size:12px;">&lt;html&gt;</code>. All tokens reroute. Same shapes, same radii.
+  </div>
+</div>
+</body></html>
