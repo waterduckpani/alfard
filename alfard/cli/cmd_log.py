@@ -1,17 +1,15 @@
 """Displays the audit log — LLM calls, tool calls, and gate decisions."""
 
 import click
+from alfard.cli.help_formatter import AlfardCommand
 import json
 import time
 from pathlib import Path
 from datetime import datetime
-from rich.console import Console
-from rich.panel import Panel
 from rich.text import Text
 import yaml
-from alfard.cli import theme
-
-console = Console()
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
 
@@ -38,44 +36,44 @@ def _format_event(event: dict) -> Text:
     event_type = event.get("type", "unknown")
 
     if event_type == "llm_call":
-        text.append(f"{timestamp} ", style=theme.DIM)
-        text.append("LLM  ", style="bold blue")
-        text.append(f"{event.get('provider')} / {event.get('model')} ", style=theme.DIM)
-        text.append(f"→ {event.get('response_type', '?')}", style=theme.BORDER)
-        text.append(f"  [{event.get('message_count', 0)} messages]", style=theme.DIM)
+        text.append(f"{timestamp} ", style=p.fg_faint)
+        text.append("llm  ", style=f"bold {p.info}")
+        text.append(f"{event.get('provider')} / {event.get('model')} ", style=p.fg_dim)
+        text.append(f"→ {event.get('response_type', '?')}", style=p.rule)
+        text.append(f"  [{event.get('message_count', 0)} messages]", style=p.fg_dim)
 
     elif event_type == "tool_call":
-        text.append(f"{timestamp} ", style=theme.DIM)
-        text.append("TOOL ", style=f"bold {theme.WARNING}")
-        text.append(f"{event.get('tool_name')} ", style="bold")
+        text.append(f"{timestamp} ", style=p.fg_faint)
+        text.append("tool ", style=f"bold {p.warn}")
+        text.append(f"{event.get('tool_name')} ", style=f"bold {p.fg_em}")
         source = event.get("source", "unknown")
-        source_style = theme.SUCCESS if source == "user_instruction" else theme.ERROR
+        source_style = p.ok if source == "user_instruction" else p.err
         text.append(f"[{source}]", style=source_style)
 
     elif event_type == "gate_decision":
-        text.append(f"{timestamp} ", style=theme.DIM)
+        text.append(f"{timestamp} ", style=p.fg_faint)
         decision = event.get("decision", "unknown")
         if decision == "approved":
-            text.append("GATE ", style=f"bold {theme.SUCCESS}")
-            text.append(f"{event.get('tool_name')} ", style="bold")
-            text.append("approved", style=theme.SUCCESS)
+            text.append("gate ", style=f"bold {p.ok}")
+            text.append(f"{event.get('tool_name')} ", style=f"bold {p.fg_em}")
+            text.append("approved", style=p.ok)
         else:
-            text.append("GATE ", style=f"bold {theme.ERROR}")
-            text.append(f"{event.get('tool_name')} ", style="bold")
-            text.append("rejected", style=theme.ERROR)
+            text.append("gate ", style=f"bold {p.err}")
+            text.append(f"{event.get('tool_name')} ", style=f"bold {p.fg_em}")
+            text.append("rejected", style=p.err)
         source = event.get("source", "unknown")
-        source_style = theme.SUCCESS if source == "user_instruction" else theme.ERROR
+        source_style = p.ok if source == "user_instruction" else p.err
         text.append(f" [{source}]", style=source_style)
 
     else:
-        text.append(f"{timestamp} ", style=theme.DIM)
-        text.append(f"{event_type.upper()} ", style="bold")
-        text.append(str(event), style=theme.DIM)
+        text.append(f"{timestamp} ", style=p.fg_faint)
+        text.append(f"{event_type.upper()} ", style=f"bold {p.fg_em}")
+        text.append(str(event), style=p.fg_dim)
 
     return text
 
 
-@click.command()
+@click.command(cls=AlfardCommand)
 @click.argument("agent", required=False)
 @click.option("--last", "-n", default=20, help="Show last N events (default: 20)")
 @click.option("--tail", "-f", is_flag=True, default=False,
@@ -99,12 +97,11 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
     log_path = _get_log_path()
 
     if not log_path or not log_path.exists():
-        console.print(Panel(
-            f"[{theme.WARNING}]No audit log found.[/{theme.WARNING}]\n\n"
-            "Run an agent first to generate log entries.\n"
-            f"[{theme.DIM}]Expected path: logs/audit.jsonl[/{theme.DIM}]",
-            border_style=theme.PANEL_WARNING
-        ))
+        console.print(
+            f"[{p.warn}]no audit log found.[/]\n"
+            f"[{p.fg_dim}]run an agent first to generate log entries.[/]\n"
+            f"[{p.fg_faint}]expected path: logs/audit.jsonl[/]"
+        )
         return
 
     def read_events(filter_type: str | None = None) -> list[dict]:
@@ -125,7 +122,7 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
 
     if tail:
         console.print(
-            f"[{theme.DIM}]Following {log_path.name} — press Ctrl+C to stop[/{theme.DIM}]\n"
+            f"[{p.fg_dim}]following {log_path.name} — press ctrl+c to stop[/]\n"
         )
         try:
             with open(log_path, encoding="utf-8") as f:
@@ -144,26 +141,26 @@ def log(agent: str | None, last: int, tail: bool, event_type: str | None):
                     else:
                         time.sleep(0.2)
         except KeyboardInterrupt:
-            console.print(f"\n[{theme.DIM}]Stopped.[/{theme.DIM}]")
+            console.print(f"\n[{p.fg_dim}]stopped.[/]")
         return
 
     events = read_events(event_type)
 
     if not events:
-        console.print(f"[{theme.DIM}]No log entries found.[/{theme.DIM}]")
+        console.print(f"[{p.fg_dim}]no log entries found.[/]")
         return
 
     events = events[-last:]
 
     console.print(
-        f"\n[{theme.DIM}]Showing last {len(events)} events from "
-        f"{log_path.name}[/{theme.DIM}]\n"
+        f"\n[{p.fg_dim}]showing last {len(events)} events from "
+        f"{log_path.name}[/]\n"
     )
 
     for event in events:
         console.print(_format_event(event))
 
     console.print(
-        f"\n[{theme.DIM}]Total: {len(events)} events shown. "
-        f"Run with --tail to follow live.[/{theme.DIM}]\n"
+        f"\n[{p.fg_faint}]total: {len(events)} events shown. "
+        f"run with --tail to follow live.[/]\n"
     )

@@ -3,44 +3,42 @@
 import re
 from pathlib import Path
 import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from alfard.agents.loader import AGENTS_DIR
-from alfard.cli import theme
+from alfard.cli.help_formatter import AlfardCommand
+import questionary
+from alfard.agents.loader import (
+    AGENTS_DIR, list_agents, list_available_skills, add_skill,
+)
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, alfard_input, alfard_select, alfard_multiselect
 
-console = Console()
 
-
-@click.command()
+@click.command(cls=AlfardCommand)
 def create():
     """Create a new agent interactively."""
 
-    console.print(Panel(
-        f"[bold {theme.PRIMARY}]Create a new agent[/bold {theme.PRIMARY}]",
-        border_style=theme.BORDER
-    ))
+    console.print(f"\n[{p.fg_em}]create a new agent[/]\n")
 
-    # Ask for agent name — lowercase, no spaces, only letters/numbers/hyphens
     while True:
-        name = Prompt.ask("Agent name").strip().lower()
+        name = alfard_input(
+            "agent name",
+            hint="lowercase, hyphens ok, e.g. my-agent   ·   leave blank to go back",
+        ).strip().lower()
         if not name:
-            console.print(f"[{theme.ERROR}]Name cannot be empty.[/{theme.ERROR}]")
-            continue
+            return
         if not re.match(r'^[a-z0-9-]+$', name):
-            console.print(f"[{theme.ERROR}]Name must be lowercase letters, numbers, or hyphens only.[/{theme.ERROR}]")
+            console.print(f"  [{p.err}]name must be lowercase letters, numbers, or hyphens only.[/]")
             continue
         agent_dir = AGENTS_DIR / name
         if agent_dir.exists():
-            console.print(f"[{theme.ERROR}]Agent '{name}' already exists.[/{theme.ERROR}]")
+            console.print(f"  [{p.err}]agent '{name}' already exists.[/]")
             continue
         break
 
-    description = Prompt.ask("What does this agent do?").strip()
+    description = alfard_input("what does this agent do?").strip()
 
-    personality = Prompt.ask(
-        "Personality or tone (e.g. concise, professional, friendly)",
-        default="helpful and concise"
+    personality = alfard_input(
+        "personality or tone",
+        default="helpful and concise",
     ).strip()
 
     agent_dir.mkdir(parents=True, exist_ok=True)
@@ -70,14 +68,56 @@ def create():
         encoding="utf-8"
     )
 
+    # Step 1 — copy skills from an existing agent
+    copied_skills: set[str] = set()
+    agents_with_skills = [
+        a for a in list_agents()
+        if a != name and (AGENTS_DIR / a / "skills").exists()
+        and any((AGENTS_DIR / a / "skills").glob("*.md"))
+    ]
+    if agents_with_skills:
+        console.print()
+        source = alfard_select(
+            "copy skills from an existing agent? (optional)",
+            ["skip"] + agents_with_skills,
+            default="skip",
+        )
+        if source and source != "skip":
+            src_skills_dir = AGENTS_DIR / source / "skills"
+            dest_skills_dir = agent_dir / "skills"
+            dest_skills_dir.mkdir(exist_ok=True)
+            for skill_file in sorted(src_skills_dir.glob("*.md")):
+                (dest_skills_dir / skill_file.name).write_text(
+                    skill_file.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+                copied_skills.add(skill_file.stem)
+
+    # Step 2 — add skills from the global library
+    available = list_available_skills()
+    if available:
+        choices = []
+        for s in available:
+            if s in copied_skills:
+                choices.append(questionary.Choice(
+                    s, value=s, checked=True, disabled="copied above"
+                ))
+            else:
+                choices.append(questionary.Choice(s, value=s))
+        console.print()
+        selected = alfard_multiselect(
+            "add skills from the library:",
+            choices,
+        )
+        if selected:
+            for s in selected:
+                if s not in copied_skills:
+                    add_skill(name, s)
+
     console.print()
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]Agent '{name}' created.[/bold {theme.SUCCESS}]\n\n"
-        f"[{theme.DIM}]soul.md[/{theme.DIM}]    — identity and rules [bold](read-only for agent)[/bold]\n"
-        f"[{theme.DIM}]brain.md[/{theme.DIM}]   — persistent knowledge\n"
-        f"[{theme.DIM}]memory.md[/{theme.DIM}]  — session memory\n\n"
-        f"Edit soul:  [bold {theme.PRIMARY}]alfard edit {name} soul[/bold {theme.PRIMARY}]\n"
-        f"Run agent:  [bold {theme.PRIMARY}]alfard run {name}[/bold {theme.PRIMARY}]",
-        border_style=theme.PANEL_SUCCESS,
-        title=f"agents/{name}/"
-    ))
+    console.print(f"{dot('ok')} [{p.fg_dim}]alfard created {name}.[/]\n")
+    console.print(f"[{p.fg_faint}]agents/{name}/[/]")
+    console.print(f"  [{p.fg_dim}]soul.md[/]    — defines who your agent is")
+    console.print(f"  [{p.fg_dim}]brain.md[/]   — permanent knowledge you give the agent")
+    console.print(f"  [{p.fg_dim}]memory.md[/]  — managed automatically; do not edit by hand")
+    console.print(f"\n  [{p.fg_em}]alfard edit {name} soul[/]    [{p.fg_faint}]open soul.md now[/]")
+    console.print(f"  [{p.fg_em}]alfard run {name}[/]          [{p.fg_faint}]start chatting[/]")

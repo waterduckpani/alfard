@@ -3,19 +3,17 @@
 import re
 import os
 import subprocess
+import sys
 import shutil
 import webbrowser
 import click
+from alfard.cli.help_formatter import AlfardCommand
 import yaml
 from pathlib import Path
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.table import Table
 from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY, AUTH_OAUTH
-from alfard.cli import theme
-
-console = Console()
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_input, alfard_select, alfard_confirm
+from alfard.cli.ui_helpers import render_integration_table
 
 _ENV_PATH = Path(__file__).parent.parent.parent / ".env"
 _INTEGRATIONS_PATH = Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
@@ -60,16 +58,50 @@ def _already_connected(name: str) -> bool:
     return any(s["name"] == name for s in data.get("servers", []))
 
 
-def _connect_slack(name: str, integration: dict) -> bool:
-    import webbrowser
-    from rich.prompt import Prompt as P
-    from rich.syntax import Syntax
+def copy_to_clipboard(text: str) -> bool:
+    """Returns True if clipboard copy succeeded."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            return True
+        elif sys.platform == "linux":
+            subprocess.run(["xclip", "-selection", "clipboard"],
+                           input=text.encode(), check=True)
+            return True
+    except Exception:
+        return False
+    return False
 
-    console.print(Panel(
-        integration["description"],
-        title=integration["display_name"],
-        border_style=theme.BORDER
-    ))
+
+def _ask_agent_assignment(display: str) -> tuple[str, str]:
+    """Return (agent_name_or_'all agents', added_to_label)."""
+    from alfard.agents.loader import list_agents, add_skill
+    agents = list_agents()
+    added_to: str = ""
+    if not agents:
+        return "", ""
+
+    choices = agents + ["all agents"]
+    choice = alfard_select(
+        f"which agent should get the {display} skill?",
+        choices,
+        default=agents[0],
+    ) or agents[0]
+
+    if choice == "all agents":
+        for a in agents:
+            add_skill(a, display.lower().replace(" ", ""))
+        added_to = "all agents"
+    else:
+        add_skill(choice, display.lower().replace(" ", ""))
+        added_to = choice
+
+    return choice, added_to
+
+
+def _connect_slack(name: str, integration: dict) -> bool:
+    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
 
     MANIFEST = '''display_information:
   name: alfard
@@ -103,122 +135,112 @@ settings:
   socket_mode_enabled: true
   token_rotation_enabled: false'''
 
-    console.print(Panel(
-        "We will create a Slack app for you step by step.\n"
-        "This is a one-time setup — you will never need to do it again.",
-        title="One-time Slack setup (3 minutes)",
-        border_style=theme.BORDER
-    ))
+    console.print(f"[{p.fg_dim}]one-time slack setup — about 3 minutes.[/]\n")
 
-    # Step 1
-    console.print("\n[bold]Step 1: Create your Slack app[/bold]")
-    console.print("[dim]We will open Slack's app creation page.[/dim]")
+    console.print(f"[{p.fg_faint}]app manifest:[/]")
+    console.print(f"[{p.fg_dim}]{MANIFEST}[/]\n")
+    copied = copy_to_clipboard(MANIFEST)
+    if copied:
+        console.print(f"{dot('ok')} [{p.fg_dim}]manifest copied to clipboard.[/]")
+    else:
+        console.print(f"[{p.fg_dim}]copy the manifest above manually.[/]")
+
+    console.print(f"\n[{p.fg_em}]step 1 of 3 — create a new slack app[/]")
+    console.print(f"[{p.fg_dim}]opening api.slack.com.[/]")
     console.print(
-        "\nWhen it opens:\n"
-        "  → Click [bold]Create New App[/bold]\n"
-        "  → Choose [bold]From a manifest[/bold]\n"
-        "  → Select your workspace\n"
-        "  → Click [bold]YAML[/bold] tab and paste this manifest:\n"
+        f"[{p.fg_faint}]  choose 'from an app manifest'\n"
+        f"  select your workspace\n"
+        f"  paste the manifest (already in your clipboard)\n"
+        f"  click 'next', then 'create'[/]"
     )
-    console.print(Syntax(MANIFEST, "yaml", theme="monokai"))
-    P.ask("\nPress Enter to open Slack app creation", default="")
     webbrowser.open("https://api.slack.com/apps?new_app=1")
-    P.ask("Step 1 done — app created and installed to workspace? [Enter to continue]", default="")
+    alfard_input("press enter once the app is created", default="")
 
-    # Step 2 — Bot token
-    console.print("\n[bold]Step 2: Get your Bot Token[/bold]")
+    console.print(f"\n[{p.fg_em}]step 2 of 3 — install to your workspace[/]")
     console.print(
-        "[dim]In your new app:\n"
-        "  → Click [bold]Install App[/bold] in the left sidebar\n"
-        "  → Click [bold]Install to Workspace[/bold] and allow\n"
-        "  → Copy the [bold]Bot User OAuth Token[/bold] — starts with xoxb-[/dim]"
+        f"[{p.fg_faint}]  click 'install app' in the left sidebar\n"
+        f"  click 'install to workspace'\n"
+        f"  click 'allow'[/]"
     )
-    webbrowser.open("https://api.slack.com/apps")
-    bot_token = P.ask("\nPaste your Bot Token (xoxb-)", password=True).strip()
+    alfard_input("press enter once the app is installed", default="")
+
+    console.print(f"\n[{p.fg_em}]step 3 of 3 — copy your bot token[/]")
+    console.print(
+        f"[{p.fg_faint}]  go to 'oauth & permissions' in the left sidebar\n"
+        f"  copy the 'bot user oauth token' (starts with xoxb-)[/]"
+    )
+    bot_token = alfard_input("bot token", password=True).strip()
     if not bot_token or not bot_token.startswith("xoxb-"):
-        console.print(f"[{theme.ERROR}]Invalid bot token — must start with xoxb-[/{theme.ERROR}]")
+        console.print(f"  [{p.err}]invalid bot token — must start with xoxb-[/]")
         return False
     _update_env("SLACK_BOT_TOKEN", bot_token)
-    console.print(f"[{theme.SUCCESS}]Bot token saved.[/{theme.SUCCESS}]")
+    console.print(f"{dot('ok')} [{p.fg_dim}]bot token saved.[/]")
 
-    # Step 3 — App token
-    console.print("\n[bold]Step 3: Get your App-Level Token[/bold]")
+    console.print(f"\n[{p.fg_em}]app-level token[/]")
     console.print(
-        "[dim]In your app settings:\n"
-        "  → Click [bold]Basic Information[/bold] in the left sidebar\n"
-        "  → Scroll to [bold]App-Level Tokens[/bold]\n"
-        "  → Click [bold]Generate Token and Scopes[/bold]\n"
-        "  → Name it anything (e.g. alfard-socket)\n"
-        "  → Click [bold]Add Scope[/bold] → select [bold]connections:write[/bold]\n"
-        "  → Click [bold]Generate[/bold]\n"
-        "  → Copy the token — starts with xapp-[/dim]"
+        f"[{p.fg_faint}]  click basic information in the left sidebar\n"
+        f"  scroll to app-level tokens\n"
+        f"  click generate token and scopes\n"
+        f"  name it anything (e.g. alfard-socket)\n"
+        f"  click add scope → select connections:write\n"
+        f"  click generate\n"
+        f"  copy the token — starts with xapp-[/]"
     )
-    app_token = P.ask("\nPaste your App-Level Token (xapp-)", password=True).strip()
+    app_token = alfard_input("app-level token (xapp-)", password=True).strip()
     if not app_token or not app_token.startswith("xapp-"):
-        console.print(f"[{theme.ERROR}]Invalid app token — must start with xapp-[/{theme.ERROR}]")
+        console.print(f"  [{p.err}]invalid app token — must start with xapp-[/]")
         return False
     _update_env("SLACK_APP_TOKEN", app_token)
-    console.print(f"[{theme.SUCCESS}]App token saved.[/{theme.SUCCESS}]")
+    console.print(f"{dot('ok')} [{p.fg_dim}]app token saved.[/]")
 
-    # Step 4 — Add skill
     from alfard.agents.loader import list_agents, add_skill
     agents = list_agents()
     added_to = ""
     if agents:
-        console.print("\n[bold]Which agent should get the Slack skill?[/bold]")
-        for i, a in enumerate(agents, 1):
-            console.print(f"  {i}. {a}")
-        console.print(f"  {len(agents) + 1}. All agents")
-        choice_raw = P.ask("Enter number", default="1")
-        try:
-            choice = int(choice_raw)
-        except ValueError:
-            choice = 1
-        if choice == len(agents) + 1:
+        choices = agents + ["all agents"]
+        choice = alfard_select(
+            "which agent should get the slack skill?",
+            choices,
+            default=agents[0],
+        ) or agents[0]
+
+        if choice == "all agents":
             for a in agents:
                 add_skill(a, name)
             added_to = "all agents"
-        elif 1 <= choice <= len(agents):
-            selected = agents[choice - 1]
-            add_skill(selected, name)
-            added_to = selected
         else:
-            add_skill(agents[0], name)
-            added_to = agents[0]
+            add_skill(choice, name)
+            added_to = choice
 
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]Slack connected.[/bold {theme.SUCCESS}]\n\n"
-        f"Skill added to: {added_to}\n\n"
-        f"Start your Slack bot:\n"
-        f"  [bold]alfard slack {added_to}[/bold]\n\n"
-        f"[{theme.DIM}]DM @alfard in Slack to start chatting.[/{theme.DIM}]",
-        border_style=theme.PANEL_SUCCESS
-    ))
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]slack connected.[/]")
+    if added_to and added_to.strip():
+        console.print(f"[{p.fg_faint}]skill added to: {added_to.strip()}[/]")
+        console.print(f"\n  [{p.fg_em}]alfard slack {added_to.strip()}[/]")
+    else:
+        console.print(f"\n  [{p.fg_dim}]create an agent first: alfard create[/]")
+    console.print(f"[{p.fg_faint}]dm @alfard in slack to start chatting.[/]")
     return True
 
 
 def _connect_apikey(name: str, integration: dict) -> bool:
-    console.print(Panel(
-        integration["description"],
-        title=integration["display_name"],
-        border_style=theme.BORDER,
-    ))
+    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
 
-    console.print("\n[bold]How to get your token:[/bold]")
+    console.print(f"[{p.fg_dim}]how to get your token:[/]")
     for line in integration["get_token_steps"].splitlines():
-        console.print(line)
+        console.print(f"[{p.fg_faint}]{line}[/]")
 
     url = integration.get("get_token_url", "")
     if url:
-        console.print(f"\n[bold {theme.PRIMARY}]{url}[/bold {theme.PRIMARY}]")
+        console.print(f"\n[{p.cyan}]{url}[/]")
         webbrowser.open(url)
 
-    token = Prompt.ask(
-        f"\nPaste your {integration['display_name']} token",
+    token = alfard_input(
+        f"{integration['display_name']} token",
         password=True,
     )
     if not token.strip():
-        console.print(f"[{theme.ERROR}]No token entered. Aborting.[/{theme.ERROR}]")
+        console.print(f"  [{p.err}]no token entered. aborting.[/]")
         return False
 
     _update_env(integration["credential_env"], token.strip())
@@ -242,43 +264,35 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     _save_integrations(data)
 
     display = integration["display_name"]
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
-        f"Run [bold {theme.PRIMARY}]alfard status[/bold {theme.PRIMARY}] to confirm.",
-        border_style=theme.PANEL_SUCCESS,
-    ))
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]{display} connected.[/]")
+    console.print(f"[{p.fg_faint}]run alfard status to confirm.[/]")
     return True
 
 
 def _connect_oauth(name: str, integration: dict) -> bool:
-    # Step 1: welcome panel
-    console.print(Panel(
-        integration["description"],
-        title=integration["display_name"],
-        border_style=theme.BORDER,
-    ))
+    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
 
-    # Step 2: ensure gws is installed
     if not shutil.which("gws"):
-        console.print("[bold]Installing gws (Google Workspace CLI)...[/bold]")
+        console.print(f"[{p.fg_dim}]installing gws (google workspace cli)...[/]")
         if not shutil.which("npm"):
-            console.print(Panel(
-                f"[{theme.ERROR}]npm is not installed.[/{theme.ERROR}]\n\n"
-                f"Install Node.js from [bold {theme.PRIMARY}]https://nodejs.org[/bold {theme.PRIMARY}] then re-run "
-                f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
-                border_style=theme.PANEL_ERROR,
+            console.print(error_block(
+                agent="alfard connect",
+                state="failed",
+                headline="npm is not installed.",
+                explanation=f"install node.js from nodejs.org then re-run: alfard connect {name}",
             ))
             return False
         result = subprocess.run(["npm", "install", "-g", "@googleworkspace/cli"])
         if result.returncode != 0:
-            console.print(Panel(
-                f"[{theme.ERROR}]gws installation failed.[/{theme.ERROR}]\n\n"
-                "Run [bold]npm install -g @googleworkspace/cli[/bold] manually then retry.",
-                border_style=theme.PANEL_ERROR,
+            console.print(error_block(
+                agent="alfard connect",
+                state="failed",
+                headline="gws installation failed.",
+                explanation="run: npm install -g @googleworkspace/cli manually then retry.",
             ))
             return False
 
-    # Step 3: skip GCP setup if credentials already exist
     creds_dest = Path.home() / ".config" / "gws" / "client_secret.json"
     if not creds_dest.exists():
         import os as _os
@@ -288,7 +302,6 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         ALFARD_CLIENT_SECRET = _os.environ.get("ALFARD_GOOGLE_CLIENT_SECRET", "")
 
         if ALFARD_CLIENT_ID and ALFARD_CLIENT_ID != "custom":
-            # Use bundled alfard credentials — no GCP setup needed
             import json as _json
             client_secret_data = {
                 "installed": {
@@ -301,84 +314,74 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             }
             creds_dest.parent.mkdir(parents=True, exist_ok=True)
             creds_dest.write_text(_json.dumps(client_secret_data))
-            console.print(f"[{theme.DIM}]Google credentials configured.[/{theme.DIM}]")
+            console.print(f"[{p.fg_dim}]google credentials configured.[/]")
         else:
-            # Fallback: walk the user through GCP setup
-            setup_instructions = (
-                "You need to create a free Google Cloud project to connect Gmail.\n"
-                "This is a one-time setup — you'll never need to do it again.\n\n"
-                "Step 1: Create a project\n"
-                "  → We'll open Google Cloud Console now\n"
-                "  → Click \"New Project\", name it anything (e.g. \"alfard\")\n"
-                "  → Click Create\n\n"
-                "Step 2: Enable Gmail API\n"
-                "  → We'll open the Gmail API page\n"
-                "  → Click Enable\n\n"
-                "Step 3: Configure consent screen\n"
-                "  → Go to APIs & Services → OAuth consent screen\n"
-                "  → Choose External → fill in app name \"alfard\" and your email\n"
-                "  → Click Save through all screens\n"
-                "  → Click \"Add users\" and add YOUR Gmail address as a test user\n\n"
-                "Step 4: Create credentials\n"
-                "  → Go to APIs & Services → Credentials\n"
-                "  → Click Create Credentials → OAuth client ID\n"
-                "  → Application type: Desktop app → name it \"alfard\" → Create\n"
-                "  → Click the download button (↓) to download the JSON file"
+            console.print(f"[{p.fg_dim}]one-time google setup — about 5 minutes.[/]\n")
+            console.print(
+                f"[{p.fg_faint}]step 1: create a project\n"
+                f"  open google cloud console\n"
+                f"  click new project, name it anything (e.g. alfard)\n"
+                f"  click create\n\n"
+                f"step 2: enable gmail api\n"
+                f"  open the gmail api page\n"
+                f"  click enable\n\n"
+                f"step 3: configure consent screen\n"
+                f"  go to apis & services → oauth consent screen\n"
+                f"  choose external, fill in app name alfard and your email\n"
+                f"  click save through all screens\n"
+                f"  click add users and add your gmail address as a test user\n\n"
+                f"step 4: create credentials\n"
+                f"  go to apis & services → credentials\n"
+                f"  click create credentials → oauth client id\n"
+                f"  application type: desktop app → name it alfard → create\n"
+                f"  click the download button to download the json file[/]"
             )
-            console.print(Panel(
-                setup_instructions,
-                title="One-time Google setup (5 minutes)",
-                border_style=theme.PANEL_WARNING,
-            ))
 
-            Prompt.ask("Ready to start? Press Enter to open Google Cloud Console", default="")
-
+            alfard_input("press enter to open google cloud console", default="")
             webbrowser.open("https://console.cloud.google.com")
-            Prompt.ask("Step 1 done — project created? [press Enter to continue]", default="")
+            alfard_input("step 1 done — project created? press enter to continue", default="")
 
             webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
-            Prompt.ask("Step 2 done — Gmail API enabled? [press Enter to continue]", default="")
+            alfard_input("step 2 done — gmail api enabled? press enter to continue", default="")
 
             webbrowser.open("https://console.cloud.google.com/auth/clients")
             console.print(
-                "\nConfigure the consent screen:\n"
-                "  → Choose External\n"
-                "  → Fill in app name [bold]alfard[/bold] and your email\n"
-                "  → Click Save through all screens\n"
-                "  → Click [bold]Add users[/bold] and add your Gmail address as a test user"
+                f"\n[{p.fg_dim}]configure the consent screen:[/]\n"
+                f"[{p.fg_faint}]  choose external\n"
+                f"  fill in app name alfard and your email\n"
+                f"  click save through all screens\n"
+                f"  click add users and add your gmail address as a test user[/]"
             )
-            Prompt.ask(
-                "Step 3 done — consent screen configured and test user added? [press Enter to continue]",
+            alfard_input(
+                "step 3 done — consent screen configured? press enter to continue",
                 default="",
             )
 
             webbrowser.open("https://console.cloud.google.com/apis/credentials")
             console.print(
-                "\nCreate OAuth credentials:\n"
-                "  → Click [bold]Create Credentials[/bold] → OAuth client ID\n"
-                "  → Application type: [bold]Desktop app[/bold] → name it alfard → Create\n"
-                "  → Click the [bold]download button (↓)[/bold] to download the JSON file"
+                f"\n[{p.fg_dim}]create oauth credentials:[/]\n"
+                f"[{p.fg_faint}]  click create credentials → oauth client id\n"
+                f"  application type: desktop app → name it alfard → create\n"
+                f"  click the download button to download the json file[/]"
             )
-            Prompt.ask("Step 4 done — credentials JSON downloaded? [press Enter to continue]", default="")
+            alfard_input("step 4 done — credentials json downloaded? press enter to continue", default="")
 
-            creds_path = Prompt.ask(
-                "\nDrag and drop your downloaded credentials JSON file here, or paste the path"
-            ).strip().strip("'\"")
+            creds_path = alfard_input("credentials json file path").strip().strip("'\"")
 
             if not creds_path or not Path(creds_path).exists():
-                console.print(Panel(
-                    f"[{theme.ERROR}]File not found.[/{theme.ERROR}]\n\nRe-run "
-                    f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}] and provide a valid path.",
-                    border_style=theme.PANEL_ERROR,
+                console.print(error_block(
+                    agent="alfard connect",
+                    state="failed",
+                    headline="file not found.",
+                    explanation=f"re-run alfard connect {name} and provide a valid path.",
                 ))
                 return False
 
             creds_dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(creds_path, creds_dest)
-            console.print(f"[{theme.SUCCESS}]Credentials saved.[/{theme.SUCCESS}]")
+            console.print(f"{dot('ok')} [{p.fg_dim}]credentials saved.[/]")
 
-    # Step 8: OAuth login
-    console.print(f"\n[{theme.DIM}]Opening browser for Google sign-in...[/{theme.DIM}]")
+    console.print(f"\n[{p.fg_dim}]opening browser for google sign-in...[/]")
     import os as _os2
     from dotenv import load_dotenv as _load_dotenv2
     _load_dotenv2()
@@ -391,32 +394,31 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         _env["GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"] = _client_secret
     result = subprocess.run(["gws", "auth", "login"], env=_env)
     if result.returncode != 0:
-        console.print(Panel(
-            f"[{theme.ERROR}]Google sign-in failed.[/{theme.ERROR}]\n\n"
-            f"Check the error above, then re-run "
-            f"[bold {theme.PRIMARY}]alfard connect {name}[/bold {theme.PRIMARY}]",
-            border_style=theme.PANEL_ERROR,
+        console.print(error_block(
+            agent="alfard connect",
+            state="failed",
+            headline="google sign-in failed.",
+            explanation=f"check the error above, then re-run: alfard connect {name}",
         ))
         return False
 
-    # Step 9: test the connection
-    console.print(f"[{theme.DIM}]Testing connection...[/{theme.DIM}]")
+    console.print(f"[{p.fg_dim}]testing connection...[/]")
     test = subprocess.run(
         ["gws", "gmail", "+triage", "--max", "1"],
         capture_output=True,
         text=True,
     )
     if test.returncode != 0:
-        console.print(Panel(
-            f"[{theme.ERROR}]Connection test failed.[/{theme.ERROR}]\n\n{test.stderr.strip()}",
-            border_style=theme.PANEL_ERROR,
+        console.print(error_block(
+            agent="alfard connect",
+            state="failed",
+            headline="connection test failed.",
+            explanation=test.stderr.strip(),
         ))
         return False
 
-    # Step 10: write to .env
     _update_env(integration["credential_env"], "gws-managed")
 
-    # Step 11: add server to integrations.yaml
     entry = {
         "name": name,
         "transport": integration["mcp_transport"],
@@ -433,51 +435,37 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     data["servers"].append(entry)
     _save_integrations(data)
 
-    # Step 12: add skill to agent(s)
     from alfard.agents.loader import list_agents, add_skill, AGENTS_DIR  # noqa: F401
 
     display = integration["display_name"]
     agents = list_agents()
     added_to: str = ""
     if agents:
-        console.print(f"\n[bold]Which agent should get the {display} skill?[/bold]")
-        for i, agent_name in enumerate(agents, start=1):
-            console.print(f"  {i}. {agent_name}")
-        console.print(f"  {len(agents) + 1}. All agents")
+        choices = agents + ["all agents"]
+        choice = alfard_select(
+            f"which agent should get the {display} skill?",
+            choices,
+            default=agents[0],
+        ) or agents[0]
 
-        choice_raw = Prompt.ask("Enter number", default="1")
-        try:
-            choice = int(choice_raw)
-        except ValueError:
-            choice = 1
-
-        if choice == len(agents) + 1:
+        if choice == "all agents":
             for agent_name in agents:
                 add_skill(agent_name, name)
             added_to = "all agents"
-        elif 1 <= choice <= len(agents):
-            selected = agents[choice - 1]
-            add_skill(selected, name)
-            added_to = selected
         else:
-            selected = agents[0]
-            add_skill(selected, name)
-            added_to = selected
+            add_skill(choice, name)
+            added_to = choice
 
-    # Step 13: success panel
-    skill_line = f"\nSkill added to: {added_to}" if added_to else ""
-    run_hint = f"\nRun: [bold {theme.PRIMARY}]alfard run {added_to}[/bold {theme.PRIMARY}]" if added_to else ""
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]{display} connected.[/bold {theme.SUCCESS}]\n\n"
-        f"{display} connected successfully."
-        f"{skill_line}"
-        f"{run_hint}",
-        border_style=theme.PANEL_SUCCESS,
-    ))
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]{display} connected.[/]")
+    if added_to and added_to.strip():
+        console.print(f"[{p.fg_faint}]skill added to: {added_to}[/]")
+        console.print(f"\n  [{p.fg_em}]alfard run {added_to.strip()}[/]")
+    else:
+        console.print(f"\n  [{p.fg_dim}]create an agent first: alfard create[/]")
     return True
 
 
-@click.command()
+@click.command(cls=AlfardCommand)
 @click.argument("integration", required=False)
 def connect(integration: str | None):
     """Connect an external service like Notion, Gmail or GitHub.
@@ -491,53 +479,32 @@ def connect(integration: str | None):
       alfard connect gmail
     """
     if not integration:
-        table = Table(
-            title="Available integrations",
-            border_style=theme.BORDER,
-            show_header=True,
-        )
-        table.add_column("Name", style="bold")
-        table.add_column("Description")
-        table.add_column("Auth")
-        table.add_column("Status")
-
         data = _load_integrations()
         connected = {s["name"] for s in data.get("servers", [])}
-
-        for name, info in CATALOGUE.items():
-            auth_label = "API key" if info["auth"] == AUTH_APIKEY else "OAuth"
-            status = (
-                f"[{theme.SUCCESS}]connected[/{theme.SUCCESS}]"
-                if name in connected
-                else f"[{theme.DIM}]not connected[/{theme.DIM}]"
-            )
-            table.add_row(name, info["description"], auth_label, status)
-
-        console.print(table)
+        console.print(render_integration_table(CATALOGUE, connected))
         console.print(
-            f"\nRun [bold {theme.PRIMARY}]alfard connect <name>[/bold {theme.PRIMARY}] to connect one.\n"
+            f"\n[{p.fg_faint}]run alfard connect <name> to connect one.[/]\n"
         )
         return
 
     integration = integration.lower().strip()
 
     if integration not in CATALOGUE:
-        console.print(Panel(
-            f"[{theme.ERROR}]Unknown integration: '{integration}'[/{theme.ERROR}]\n\n"
-            f"Run [bold {theme.PRIMARY}]alfard connect[/bold {theme.PRIMARY}] to see available integrations.",
-            border_style=theme.PANEL_ERROR,
+        console.print(error_block(
+            agent="alfard connect",
+            state="failed",
+            headline=f"unknown integration: '{integration}'",
+            explanation="run alfard connect to see available integrations.",
         ))
         raise SystemExit(1)
 
     info = CATALOGUE[integration]
 
     if _already_connected(integration):
-        overwrite = Prompt.ask(
-            f"[{theme.WARNING}]{info['display_name']} is already connected. Reconnect?[/{theme.WARNING}]",
-            choices=["y", "n"],
-            default="n",
-        )
-        if overwrite != "y":
+        if not alfard_confirm(
+            f"{info['display_name']} is already connected. reconnect?",
+            default=False,
+        ):
             return
 
     if integration == "slack":

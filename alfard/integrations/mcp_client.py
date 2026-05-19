@@ -110,13 +110,16 @@ class MCPClient:
             if data and "servers" in data:
                 self._server_configs = data["servers"]
 
+    _MCP_TRANSPORTS = {"stdio", "http"}
+
     def connect_all(self) -> None:
+        mcp_servers = [c for c in self._server_configs if c.get("transport") in self._MCP_TRANSPORTS]
         connected = 0
-        for cfg in self._server_configs:
+        for cfg in mcp_servers:
             self._connect(cfg)
             if cfg["name"] in self._sessions:
                 connected += 1
-        print(f"[mcp] connected to {connected}/{len(self._server_configs)} server(s)")
+        print(f"[mcp] connected to {connected}/{len(mcp_servers)} server(s)")
 
     def _connect(self, cfg: dict) -> None:
         name = cfg["name"]

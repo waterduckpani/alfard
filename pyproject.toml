@@ -17,6 +17,8 @@ dependencies = [
     "apscheduler>=3.10",
     "slack-sdk",
     "numpy>=1.24",
+    "questionary",
+    "art",
 ]
 
 [project.scripts]

@@ -1,14 +1,13 @@
 """CLI command to run an alfard agent as a Slack bot."""
 
 import click
-from rich.console import Console
-from rich.panel import Panel
-from alfard.cli import theme
+from alfard.cli.help_formatter import AlfardCommand
+from alfard.cli.theme import p, c, console
+from alfard.cli.components import dot, error_block, alfard_select
 from alfard.agents.loader import list_agents
 
-console = Console()
 
-@click.command()
+@click.command(cls=AlfardCommand)
 @click.argument("agent", required=False)
 def slack(agent: str | None):
     """Run an agent as a Slack bot.
@@ -22,57 +21,46 @@ def slack(agent: str | None):
       alfard slack postman
       alfard slack sahil
     """
-    from alfard.agents.loader import list_agents
-
     agents = list_agents()
 
     if not agents:
-        console.print(Panel(
-            f"[{theme.ERROR}]No agents found.[/{theme.ERROR}]\n\n"
-            "Create one first: [bold]alfard create[/bold]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard slack",
+            state="failed",
+            headline="no agents found.",
+            explanation="create one first: alfard create",
         ))
         raise SystemExit(1)
 
-    # Interactive agent selection if not provided
     if not agent:
         if len(agents) == 1:
             agent = agents[0]
         else:
-            from rich.prompt import Prompt
-            console.print(f"\n[bold]Which agent should run in Slack?[/bold]")
-            for i, a in enumerate(agents, 1):
-                console.print(f"  {i}. {a}")
-            choice = Prompt.ask("Agent", default="1")
-            try:
-                agent = agents[int(choice) - 1]
-            except (ValueError, IndexError):
-                agent = agents[0]
+            agent = alfard_select("which agent should run in slack?", agents, default=agents[0]) or agents[0]
 
     if agent not in agents:
-        console.print(Panel(
-            f"[{theme.ERROR}]Agent '{agent}' not found.[/{theme.ERROR}]",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard slack",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
         ))
         raise SystemExit(1)
 
-    console.print(Panel(
-        f"[bold {theme.SUCCESS}]Starting Slack bot[/bold {theme.SUCCESS}]\n\n"
-        f"Agent:    {agent}\n"
-        f"Mode:     Socket Mode (no public URL needed)\n\n"
-        f"[{theme.DIM}]DM @alfard in Slack to start chatting.\n"
-        f"Ctrl+C to stop.[/{theme.DIM}]",
-        border_style=theme.PANEL_SUCCESS
-    ))
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]starting slack bot[/]\n")
+    console.print(f"  [{p.fg_faint}]{'agent':<8}[/] [{p.fg_em}]{agent}[/]")
+    console.print(f"  [{p.fg_faint}]{'mode':<8}[/] [{p.fg_dim}]socket mode (no public url needed)[/]")
+    console.print(f"\n[{p.fg_faint}]dm @alfard in slack to start chatting. ctrl+c to stop.[/]\n")
 
     from alfard.interfaces.slack_bot import AlfardSlackBot
     try:
         bot = AlfardSlackBot(agent_name=agent)
         bot.start()
     except RuntimeError as e:
-        console.print(Panel(
-            f"[{theme.ERROR}]{e}[/{theme.ERROR}]\n\n"
-            "Run [bold]alfard connect slack[/bold] first.",
-            border_style=theme.PANEL_ERROR
+        console.print(error_block(
+            agent="alfard slack",
+            state="failed",
+            headline=str(e),
+            explanation="run alfard connect slack first.",
         ))
         raise SystemExit(1)
