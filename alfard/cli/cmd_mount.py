@@ -91,6 +91,7 @@ def mount(ctx: click.Context):
             if not path:
                 continue
             ctx.invoke(remove, agent=agent, path=path)
+        alfard_input("press enter to continue", default="")
 
 
 @mount.command(name="add")

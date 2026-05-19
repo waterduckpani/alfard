@@ -56,6 +56,7 @@ def skill(ctx: click.Context):
             ctx.invoke(remove)
         elif action == "create a new skill":
             ctx.invoke(create)
+        alfard_input("press enter to continue", default="")
 
 
 @skill.command(name="list")

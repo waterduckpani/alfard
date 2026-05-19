@@ -111,6 +111,8 @@ def cron(ctx: click.Context):
             ctx.invoke(status)
         elif action == "run scheduler":
             ctx.invoke(run)
+            continue
+        alfard_input("press enter to continue", default="")
 
 
 @cron.command(name="add")
