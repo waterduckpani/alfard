@@ -21,6 +21,7 @@ def build_orchestrator(
     notifier=None,
     connect_mcp: bool = True,
     gate_enabled: bool = True,
+    session_id: str | None = None,
 ) -> tuple:
     """
     Build a fully wired orchestrator for an agent.
@@ -36,7 +37,7 @@ def build_orchestrator(
     """
     loader = AgentLoader(agent_name)
     registry = ToolRegistry()
-    audit = AuditLogger()
+    audit = AuditLogger(session_id=session_id)
 
     gate = ApprovalGate(audit_logger=audit, notifier=notifier)
     gate.enabled = gate_enabled

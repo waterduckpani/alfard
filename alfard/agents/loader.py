@@ -58,40 +58,61 @@ class AgentLoader:
     def build_system_prompt(self, query: str = "") -> str:
         """Build the full system prompt for this agent.
 
-        Injects soul, brain, relevant memories, and active skills.
-        Memory is retrieved semantically based on the query.
+        Always injects: soul, project_state, last session.
+        Then retrieves top 8 memories scored by relevance/recency/importance
+        and groups them into What I know / How I work / Watch out sections.
+        Query should be the user's first message so retrieval is task-relevant.
         """
         parts = []
 
-        # Base prompt
-        from alfard.agents.base_prompt import BASE_PROMPT
         parts.append(BASE_PROMPT)
 
-        # Soul
+        # Always: soul
         soul = self._read_file("soul.md")
         if soul:
             parts.append(f"# Agent identity\n{soul}")
 
-        # Brain (permanent facts — always injected)
-        brain = self._read_file("brain.md")
-        if brain:
-            parts.append(f"# Permanent knowledge\n{brain}")
+        # Always: project state
+        project_state = self._read_file("memory/project_state.md")
+        if project_state:
+            parts.append(f"# Project state\n{project_state}")
 
-        # Memory context (semantic retrieval + recent sessions)
-        memory_context = self.memory_manager.build_memory_context(query)
-        if memory_context:
-            parts.append(memory_context)
+        # Always: last session
+        sessions = self.memory_manager.get_recent_sessions(n=1)
+        if sessions:
+            s = sessions[-1]
+            parts.append(f"# Last session\n[{s['date']}] {s['summary']}")
 
-        # Skills (load all active skills)
+        # Structured retrieval
+        memories = self.memory_manager.retrieve(query, top_k=8)
+        # project_state already injected above; exclude from grouped sections
+        memories = [m for m in memories if m["type"] != "project_state"]
+
+        _KNOW = {"fact", "decision", "person", "constraint"}
+        _WORK = {"procedure", "tool_pattern", "preference"}
+
+        know  = [m for m in memories if m["type"] in _KNOW and m["valence"] != "negative"]
+        work  = [m for m in memories if m["type"] in _WORK and m["valence"] != "negative"]
+        watch = [m for m in memories if m["valence"] == "negative"]
+
+        mem_sections: list[str] = []
+        if know:
+            mem_sections.append("## What I know\n" + "\n".join(f"- {m['content']}" for m in know))
+        if work:
+            mem_sections.append("## How I work\n" + "\n".join(f"- {m['content']}" for m in work))
+        if watch:
+            mem_sections.append("## Watch out\n" + "\n".join(f"- {m['content']}" for m in watch))
+
+        if mem_sections:
+            parts.append("# Memory\n" + "\n\n".join(mem_sections))
+
+        # Skills
         skills_dir = self.agent_dir / "skills"
         if skills_dir.exists():
             for skill_file in sorted(skills_dir.glob("*.md")):
                 skill_content = skill_file.read_text(encoding="utf-8").strip()
                 if skill_content:
-                    skill_name = skill_file.stem
-                    parts.append(
-                        f"# {skill_name.capitalize()} skill\n{skill_content}"
-                    )
+                    parts.append(f"# {skill_file.stem.capitalize()} skill\n{skill_content}")
 
         return "\n\n---\n\n".join(parts)
 

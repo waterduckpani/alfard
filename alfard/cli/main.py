@@ -41,19 +41,19 @@ def cli(ctx):
 
     choices = [
         "run an agent",
+        "run slack bot",
+        questionary.Separator(),
         "create a new agent",
         "edit an agent",
+        "list agents",
         questionary.Separator(),
         "connect an integration",
         "disconnect an integration",
+        questionary.Separator(),
         "manage skills",
         "manage mounts",
-        questionary.Separator(),
-        "run slack bot",
-        questionary.Separator(),
         "manage cron jobs",
         questionary.Separator(),
-        "list agents",
         "view status",
         "view logs",
         questionary.Separator(),
@@ -126,6 +126,7 @@ def cli(ctx):
                 alfard_input("press enter to continue", default="")
         elif selection == "disconnect an integration":
             ctx.invoke(disconnect)
+            alfard_input("press enter to continue", default="")
         elif selection == "manage skills":
             ctx.invoke(skill)
         elif selection == "manage mounts":

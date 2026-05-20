@@ -235,6 +235,35 @@ class VectorStore:
                    WHERE m.status = 'active'"""
             ).fetchall()
 
+    def get_active_full(self) -> list[dict]:
+        """Return all active/disputed memories with full metadata and raw embedding JSON."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT m.id, m.type, m.valence, m.content,
+                          m.confidence, m.importance,
+                          m.last_accessed_at, e.embedding
+                   FROM memories m
+                   JOIN embeddings e ON e.memory_id = m.id
+                   WHERE m.status IN ('active', 'disputed')"""
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def touch_many(self, memory_ids: list[str]) -> None:
+        """Increment usage_count and refresh last_accessed_at for the given ids."""
+        if not memory_ids:
+            return
+        now = time.time()
+        with self._connect() as conn:
+            conn.executemany(
+                """UPDATE memories
+                   SET usage_count = usage_count + 1,
+                       last_accessed_at = ?,
+                       updated_at = ?
+                   WHERE id = ?""",
+                [(now, now, mid) for mid in memory_ids],
+            )
+            conn.commit()
+
     def delete(self, memory_id: str) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))

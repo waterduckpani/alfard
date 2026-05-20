@@ -117,11 +117,7 @@ def _derive_team_id(bot_token: str) -> str | None:
     return None
 
 
-def _connect_slack(name: str, integration: dict) -> bool:
-    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
-    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
-
-    MANIFEST = '''display_information:
+_SLACK_MANIFEST = '''display_information:
   name: alfard
   description: Your local AI agent
   background_color: "#2d2d2d"
@@ -153,18 +149,26 @@ settings:
   socket_mode_enabled: true
   token_rotation_enabled: false'''
 
-    console.print(f"[{p.fg_dim}]one-time slack setup — about 2 minutes.[/]\n")
 
+def _ensure_slack_bot_token() -> str | None:
+    """Return SLACK_BOT_TOKEN, running the full app-creation flow if not already set."""
+    from dotenv import load_dotenv as _ldenv
+    _ldenv()
+    existing = os.environ.get("SLACK_BOT_TOKEN", "")
+    if existing.startswith("xoxb-"):
+        console.print(f"{dot('ok')} [{p.fg_dim}]using existing bot token.[/]")
+        return existing
+
+    console.print(f"[{p.fg_dim}]one-time slack app setup — about 2 minutes.[/]\n")
     console.print(f"[{p.fg_faint}]app manifest:[/]")
-    console.print(f"[{p.fg_dim}]{MANIFEST}[/]\n")
-    copied = copy_to_clipboard(MANIFEST)
+    console.print(f"[{p.fg_dim}]{_SLACK_MANIFEST}[/]\n")
+    copied = copy_to_clipboard(_SLACK_MANIFEST)
     if copied:
         console.print(f"{dot('ok')} [{p.fg_dim}]manifest copied to clipboard.[/]")
     else:
         console.print(f"[{p.fg_dim}]copy the manifest above manually.[/]")
 
-    console.print(f"\n[{p.fg_em}]step 1 of 3 — create a new slack app[/]")
-    console.print(f"[{p.fg_dim}]opening api.slack.com.[/]")
+    console.print(f"\n[{p.fg_em}]step 1 — create a new slack app[/]")
     console.print(
         f"[{p.fg_faint}]  choose 'from an app manifest'\n"
         f"  select your workspace\n"
@@ -174,7 +178,7 @@ settings:
     webbrowser.open("https://api.slack.com/apps?new_app=1")
     alfard_input("press enter once the app is created", default="")
 
-    console.print(f"\n[{p.fg_em}]step 2 of 3 — install to your workspace[/]")
+    console.print(f"\n[{p.fg_em}]step 2 — install to your workspace[/]")
     console.print(
         f"[{p.fg_faint}]  click 'install app' in the left sidebar\n"
         f"  click 'install to workspace'\n"
@@ -182,19 +186,29 @@ settings:
     )
     alfard_input("press enter once the app is installed", default="")
 
-    console.print(f"\n[{p.fg_em}]step 3 of 3 — copy your bot token[/]")
+    console.print(f"\n[{p.fg_em}]step 3 — copy your bot token[/]")
     console.print(
         f"[{p.fg_faint}]  go to 'oauth & permissions' in the left sidebar\n"
         f"  copy the 'bot user oauth token' (starts with xoxb-)[/]"
     )
-    bot_token = alfard_input("bot token", password=True).strip()
+    bot_token = alfard_input("bot token (xoxb-)", password=True).strip()
     if not bot_token or not bot_token.startswith("xoxb-"):
         console.print(f"\n  [{p.err}]invalid bot token — must start with xoxb-[/]")
         console.print(f"  [{p.fg_faint}]find it under oauth & permissions → bot user oauth token[/]")
-        console.print(f"\n[{p.err}]slack not connected.[/]")
-        return False
+        return None
     _update_env("SLACK_BOT_TOKEN", bot_token)
     console.print(f"{dot('ok')} [{p.fg_dim}]bot token saved.[/]")
+    return bot_token
+
+
+def _connect_slack(name: str, integration: dict) -> bool:
+    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
+
+    bot_token = _ensure_slack_bot_token()
+    if not bot_token:
+        console.print(f"\n[{p.err}]slack not connected.[/]")
+        return False
 
     console.print(f"[{p.fg_dim}]verifying token...[/]")
     team_id = _derive_team_id(bot_token)
@@ -242,13 +256,12 @@ def _connect_slack_bot(name: str, integration: dict) -> bool:
     console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
     console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
 
-    from dotenv import load_dotenv as _ldenv
-    _ldenv()
-    if not os.environ.get("SLACK_BOT_TOKEN"):
-        console.print(f"  [{p.err}]slack mcp not connected.[/]")
-        console.print(f"  [{p.fg_faint}]run alfard connect slack first.[/]")
+    bot_token = _ensure_slack_bot_token()
+    if not bot_token:
+        console.print(f"\n[{p.err}]slack bot not connected.[/]")
         return False
 
+    console.print(f"\n[{p.fg_em}]app-level token — for socket mode[/]")
     console.print(
         f"[{p.fg_faint}]  open your slack app at api.slack.com/apps\n"
         f"  click 'basic information' in the left sidebar\n"
@@ -266,7 +279,6 @@ def _connect_slack_bot(name: str, integration: dict) -> bool:
     _update_env("SLACK_APP_TOKEN", app_token)
     console.print(f"{dot('ok')} [{p.fg_dim}]app token saved.[/]")
 
-    # Save a marker entry so _already_connected works; no MCP transport
     entry = {"name": name, "transport": "none"}
     data = _load_integrations()
     data.setdefault("servers", [])
@@ -279,6 +291,11 @@ def _connect_slack_bot(name: str, integration: dict) -> bool:
         f"\n[{p.fg_faint}]start the bot:[/]\n"
         f"  [{p.fg_em}]alfard slack <agent>[/]"
     )
+    if not _already_connected("slack"):
+        console.print(
+            f"\n[{p.fg_faint}]to also use slack as an mcp tool:[/]\n"
+            f"  [{p.fg_em}]alfard connect slack[/]"
+        )
     return True
 
 
@@ -539,13 +556,24 @@ def connect(integration: str | None):
       alfard connect gmail
     """
     if not integration:
+        import questionary as _q
+        from dotenv import load_dotenv as _ldenv
+        _ldenv()
         data = _load_integrations()
         connected = {s["name"] for s in data.get("servers", [])}
-        console.print(render_integration_table(CATALOGUE, connected))
-        console.print(
-            f"\n[{p.fg_faint}]run alfard connect <name> to connect one.[/]\n"
-        )
-        return
+        if (Path.home() / ".config" / "gws" / "credentials.enc").exists():
+            connected.update({"gmail", "gdrive"})
+        int_choices = [
+            _q.Choice(
+                title=f"{info['display_name']}{' (connected)' if name in connected else ''}",
+                value=name,
+                description=info["description"],
+            )
+            for name, info in CATALOGUE.items()
+        ] + [_q.Choice(title="← back", value="← back")]
+        integration = alfard_select("which integration?", int_choices)
+        if not integration or integration == "← back":
+            return
 
     integration = integration.lower().strip()
 

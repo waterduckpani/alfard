@@ -3,12 +3,14 @@ agent memory. Handles memories (vector store) and session
 summaries (JSONL). Used by AgentLoader and Orchestrator."""
 
 import json
+import math
 import os
 import re
 import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from alfard.memory.embedder import cosine_similarity, get_embedding
 from alfard.memory.store import VectorStore
 
 _SECRET_PATTERNS: list[tuple[re.Pattern, str]] = [
@@ -170,6 +172,53 @@ class MemoryManager:
             return self.brain_db.search(query, top_k=top_k)
         except Exception:
             return []
+
+    def retrieve(self, query: str, top_k: int = 8) -> list[dict]:
+        """Score every active memory and return top_k by composite score.
+
+        score = (0.40 × relevance) + (0.35 × recency) + (0.25 × importance × confidence)
+        relevance = cosine similarity to query embedding
+        recency   = exp(−0.995 × hours_since_last_accessed); None → 0 hours (score=1.0)
+        negative valence  → multiply final score by 1.5
+        type=project_state → score fixed at 1.0 (always surfaces first)
+
+        Returns dicts with all memory fields plus a "score" key, sorted descending.
+        """
+        if self.brain_db.count() == 0:
+            return []
+
+        query_embedding = get_embedding(query)
+        rows = self.brain_db.get_active_full()
+        now = time.time()
+
+        scored: list[dict] = []
+        for row in rows:
+            if row["type"] == "project_state":
+                score = 1.0
+            else:
+                relevance = cosine_similarity(
+                    query_embedding, json.loads(row["embedding"])
+                )
+                hours = (
+                    (now - row["last_accessed_at"]) / 3600.0
+                    if row["last_accessed_at"] is not None
+                    else 0.0
+                )
+                recency = math.exp(-0.995 * hours)
+                score = (
+                    0.40 * relevance
+                    + 0.35 * recency
+                    + 0.25 * row["importance"] * row["confidence"]
+                )
+                if row["valence"] == "negative":
+                    score *= 1.5
+
+            scored.append({**row, "score": score})
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        top = scored[:top_k]
+        self.brain_db.touch_many([r["id"] for r in top])
+        return top
 
     def get_fact_count(self) -> int:
         return self.brain_db.count()
