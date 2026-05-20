@@ -28,7 +28,7 @@ def cli(ctx):
         return
 
     from alfard.cli.theme import p, console
-    from alfard.cli.components import header_block, alfard_select
+    from alfard.cli.components import header_block, alfard_select, alfard_input
 
     if not config.exists():
         console.print()
@@ -48,6 +48,8 @@ def cli(ctx):
         "disconnect an integration",
         "manage skills",
         "manage mounts",
+        questionary.Separator(),
+        "run slack bot",
         questionary.Separator(),
         "manage cron jobs",
         questionary.Separator(),
@@ -100,21 +102,65 @@ def cli(ctx):
                     if file_choice and file_choice != "← back":
                         ctx.invoke(edit, agent=agent_name, file=file_choice)
         elif selection == "connect an integration":
-            ctx.invoke(connect)
+            import os as _os
+            import questionary as _q
+            from pathlib import Path as _Path
+            from dotenv import load_dotenv as _ldenv
+            from alfard.integrations.catalogue import CATALOGUE
+            from alfard.cli.cmd_connect import _load_integrations
+            _ldenv()
+            connected = {s["name"] for s in _load_integrations().get("servers", [])}
+            if (_Path.home() / ".config" / "gws" / "credentials.enc").exists():
+                connected.update({"gmail", "gdrive"})
+            int_choices = [
+                _q.Choice(
+                    title=f"{info['display_name']}{' (connected)' if name in connected else ''}",
+                    value=name,
+                    description=info["description"],
+                )
+                for name, info in CATALOGUE.items()
+            ] + [_q.Choice(title="← back", value="← back")]
+            pick = alfard_select("which integration?", int_choices)
+            if pick and pick != "← back":
+                ctx.invoke(connect, integration=pick)
+                alfard_input("press enter to continue", default="")
         elif selection == "disconnect an integration":
             ctx.invoke(disconnect)
         elif selection == "manage skills":
             ctx.invoke(skill)
         elif selection == "manage mounts":
             ctx.invoke(mount)
+        elif selection == "run slack bot":
+            from alfard.agents.loader import list_agents as _list_agents_slack
+            import os as _os_slack
+            from dotenv import load_dotenv as _ldenv_slack
+            _ldenv_slack()
+            if not _os_slack.environ.get("SLACK_APP_TOKEN"):
+                console.print(f"\n[{p.fg_dim}]slack bot not configured.[/]")
+                console.print(f"[{p.fg_faint}]run: alfard connect slack-bot[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                agents = _list_agents_slack()
+                if not agents:
+                    console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                    alfard_input("press enter to continue", default="")
+                elif len(agents) == 1:
+                    ctx.invoke(slack, agent=agents[0])
+                else:
+                    agent_name = alfard_select("which agent?", agents + ["← back"])
+                    if agent_name and agent_name != "← back":
+                        ctx.invoke(slack, agent=agent_name)
         elif selection == "manage cron jobs":
             ctx.invoke(cron)
         elif selection == "list agents":
             ctx.invoke(list_agents)
+            alfard_input("press enter to continue", default="")
         elif selection == "view status":
             ctx.invoke(status)
+            alfard_input("press enter to continue", default="")
         elif selection == "view logs":
             ctx.invoke(log)
+            alfard_input("press enter to continue", default="")
         elif selection == "settings & setup":
             ctx.invoke(setup)
 

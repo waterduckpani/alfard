@@ -99,6 +99,24 @@ def _ask_agent_assignment(display: str) -> tuple[str, str]:
     return choice, added_to
 
 
+def _derive_team_id(bot_token: str) -> str | None:
+    """Call auth.test to derive the Slack team ID from a bot token."""
+    import urllib.request
+    import json as _json
+    req = urllib.request.Request(
+        "https://slack.com/api/auth.test",
+        headers={"Authorization": f"Bearer {bot_token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+            if data.get("ok"):
+                return data.get("team_id")
+    except Exception:
+        return None
+    return None
+
+
 def _connect_slack(name: str, integration: dict) -> bool:
     console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
     console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
@@ -135,7 +153,7 @@ settings:
   socket_mode_enabled: true
   token_rotation_enabled: false'''
 
-    console.print(f"[{p.fg_dim}]one-time slack setup — about 3 minutes.[/]\n")
+    console.print(f"[{p.fg_dim}]one-time slack setup — about 2 minutes.[/]\n")
 
     console.print(f"[{p.fg_faint}]app manifest:[/]")
     console.print(f"[{p.fg_dim}]{MANIFEST}[/]\n")
@@ -171,21 +189,76 @@ settings:
     )
     bot_token = alfard_input("bot token", password=True).strip()
     if not bot_token or not bot_token.startswith("xoxb-"):
-        console.print(f"  [{p.err}]invalid bot token — must start with xoxb-[/]")
+        console.print(f"\n  [{p.err}]invalid bot token — must start with xoxb-[/]")
+        console.print(f"  [{p.fg_faint}]find it under oauth & permissions → bot user oauth token[/]")
+        console.print(f"\n[{p.err}]slack not connected.[/]")
         return False
     _update_env("SLACK_BOT_TOKEN", bot_token)
     console.print(f"{dot('ok')} [{p.fg_dim}]bot token saved.[/]")
 
-    console.print(f"\n[{p.fg_em}]app-level token[/]")
+    console.print(f"[{p.fg_dim}]verifying token...[/]")
+    team_id = _derive_team_id(bot_token)
+    if not team_id:
+        console.print(f"  [{p.err}]could not verify token — check it and try again.[/]")
+        return False
+    _update_env("SLACK_TEAM_ID", team_id)
+    console.print(f"{dot('ok')} [{p.fg_dim}]workspace verified.[/]")
+
+    entry = {
+        "name": name,
+        "transport": integration["mcp_transport"],
+        "command": integration["mcp_command"],
+        "args": integration["mcp_args"],
+        "env_vars": {
+            "SLACK_BOT_TOKEN": "SLACK_BOT_TOKEN",
+            "SLACK_TEAM_ID": "SLACK_TEAM_ID",
+        },
+        "tools": {
+            "reversible": integration["reversible_tools"],
+            "irreversible": integration["irreversible_tools"],
+        },
+    }
+    data = _load_integrations()
+    data.setdefault("servers", [])
+    data["servers"] = [s for s in data["servers"] if s["name"] != name]
+    data["servers"].append(entry)
+    _save_integrations(data)
+
+    _, added_to = _ask_agent_assignment(integration["display_name"])
+
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]slack connected.[/]")
+    if added_to and added_to.strip():
+        console.print(f"[{p.fg_faint}]skill added to: {added_to.strip()}[/]")
+    else:
+        console.print(f"  [{p.fg_dim}]create an agent first: alfard create[/]")
     console.print(
-        f"[{p.fg_faint}]  click basic information in the left sidebar\n"
-        f"  scroll to app-level tokens\n"
-        f"  click generate token and scopes\n"
+        f"\n[{p.fg_faint}]to also run it as a chat bot:[/]\n"
+        f"  [{p.fg_em}]alfard connect slack-bot[/]"
+    )
+    return True
+
+
+def _connect_slack_bot(name: str, integration: dict) -> bool:
+    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
+
+    from dotenv import load_dotenv as _ldenv
+    _ldenv()
+    if not os.environ.get("SLACK_BOT_TOKEN"):
+        console.print(f"  [{p.err}]slack mcp not connected.[/]")
+        console.print(f"  [{p.fg_faint}]run alfard connect slack first.[/]")
+        return False
+
+    console.print(
+        f"[{p.fg_faint}]  open your slack app at api.slack.com/apps\n"
+        f"  click 'basic information' in the left sidebar\n"
+        f"  scroll to 'app-level tokens'\n"
+        f"  click 'generate token and scopes'\n"
         f"  name it anything (e.g. alfard-socket)\n"
-        f"  click add scope → select connections:write\n"
-        f"  click generate\n"
+        f"  add scope: connections:write → click 'generate'\n"
         f"  copy the token — starts with xapp-[/]"
     )
+    webbrowser.open("https://api.slack.com/apps")
     app_token = alfard_input("app-level token (xapp-)", password=True).strip()
     if not app_token or not app_token.startswith("xapp-"):
         console.print(f"  [{p.err}]invalid app token — must start with xapp-[/]")
@@ -193,32 +266,19 @@ settings:
     _update_env("SLACK_APP_TOKEN", app_token)
     console.print(f"{dot('ok')} [{p.fg_dim}]app token saved.[/]")
 
-    from alfard.agents.loader import list_agents, add_skill
-    agents = list_agents()
-    added_to = ""
-    if agents:
-        choices = agents + ["all agents"]
-        choice = alfard_select(
-            "which agent should get the slack skill?",
-            choices,
-            default=agents[0],
-        ) or agents[0]
+    # Save a marker entry so _already_connected works; no MCP transport
+    entry = {"name": name, "transport": "none"}
+    data = _load_integrations()
+    data.setdefault("servers", [])
+    data["servers"] = [s for s in data["servers"] if s["name"] != name]
+    data["servers"].append(entry)
+    _save_integrations(data)
 
-        if choice == "all agents":
-            for a in agents:
-                add_skill(a, name)
-            added_to = "all agents"
-        else:
-            add_skill(choice, name)
-            added_to = choice
-
-    console.print(f"\n{dot('ok')} [{p.fg_dim}]slack connected.[/]")
-    if added_to and added_to.strip():
-        console.print(f"[{p.fg_faint}]skill added to: {added_to.strip()}[/]")
-        console.print(f"\n  [{p.fg_em}]alfard slack {added_to.strip()}[/]")
-    else:
-        console.print(f"\n  [{p.fg_dim}]create an agent first: alfard create[/]")
-    console.print(f"[{p.fg_faint}]dm @alfard in slack to start chatting.[/]")
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]slack bot configured.[/]")
+    console.print(
+        f"\n[{p.fg_faint}]start the bot:[/]\n"
+        f"  [{p.fg_em}]alfard slack <agent>[/]"
+    )
     return True
 
 
@@ -509,6 +569,8 @@ def connect(integration: str | None):
 
     if integration == "slack":
         _connect_slack(integration, info)
+    elif integration == "slack-bot":
+        _connect_slack_bot(integration, info)
     elif info["auth"] == AUTH_APIKEY:
         _connect_apikey(integration, info)
     else:

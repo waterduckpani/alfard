@@ -105,17 +105,14 @@ CATALOGUE: dict[str, dict] = {
     "slack": {
         "display_name": "Slack",
         "auth": AUTH_APIKEY,
-        "description": "Read messages and post to channels in your Slack workspace.",
+        "description": "Read channels and post messages in your Slack workspace.",
         "credential_env": "SLACK_BOT_TOKEN",
         "get_token_url": "https://api.slack.com/apps",
         "get_token_steps": (
             "1. Go to api.slack.com/apps and click 'Create New App'\n"
             "2. Choose 'From a manifest' and paste the alfard manifest\n"
             "3. Install to your workspace\n"
-            "4. Copy the Bot Token (xoxb-) from OAuth & Permissions\n"
-            "5. Generate an App-Level Token (xapp-) from Basic Information\n"
-            "   → Add scope: connections:write\n"
-            "6. Paste both tokens when prompted"
+            "4. Copy the Bot Token (xoxb-) from OAuth & Permissions"
         ),
         "mcp_transport": "stdio",
         "mcp_command": "npx",
@@ -129,6 +126,21 @@ CATALOGUE: dict[str, dict] = {
             "post_message", "reply_to_thread",
             "upload_file", "set_channel_topic",
         ],
+    },
+    "slack-bot": {
+        "display_name": "Slack Bot",
+        "auth": AUTH_APIKEY,
+        "description": "Run an alfard agent as a bot that responds to DMs and @mentions in Slack.",
+        "credential_env": "SLACK_APP_TOKEN",
+        "get_token_url": "https://api.slack.com/apps",
+        "get_token_steps": (
+            "1. Open your Slack app at api.slack.com/apps\n"
+            "2. Click 'Basic Information' in the left sidebar\n"
+            "3. Scroll to 'App-Level Tokens'\n"
+            "4. Click 'Generate Token and Scopes'\n"
+            "5. Name it anything (e.g. alfard-socket), add scope: connections:write\n"
+            "6. Click 'Generate' and copy the token — starts with xapp-"
+        ),
     },
     "gmail": {
         "display_name": "Gmail",
