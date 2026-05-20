@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import yaml
+from alfard.paths import ALFARD_HOME
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import (
     header_block, dot, error_block,
@@ -71,7 +72,7 @@ PROVIDER_MODELS = {
     ],
 }
 
-CHECKPOINT_PATH = BASE_DIR / "config" / ".setup_checkpoint.yaml"
+CHECKPOINT_PATH = ALFARD_HOME / ".setup_checkpoint.yaml"
 
 
 def _update_env_file(env_path: Path, key: str, value: str) -> None:
@@ -105,6 +106,9 @@ def _save_checkpoint(path: Path, data: dict) -> None:
 
 
 def run_setup() -> None:
+    ALFARD_HOME.mkdir(parents=True, exist_ok=True)
+    (ALFARD_HOME / "config").mkdir(exist_ok=True)
+    (ALFARD_HOME / "logs").mkdir(exist_ok=True)
 
     # ── CHECKPOINT CHECK ──────────────────────────────────────────────────────
     saved = _load_checkpoint(CHECKPOINT_PATH)
@@ -155,7 +159,7 @@ def run_setup() -> None:
     api_key_env: str | None = None
 
     if "provider" in steps_done:
-        config_path = BASE_DIR / "config" / "alfard.yaml"
+        config_path = ALFARD_HOME / "config" / "alfard.yaml"
         with config_path.open() as f:
             saved_cfg = yaml.safe_load(f)
         provider = saved_cfg["provider"]["name"]
@@ -184,7 +188,7 @@ def run_setup() -> None:
         if provider in CLOUD_PROVIDERS:
             api_key_env = PROVIDER_API_KEY_ENV[provider]
             api_key = alfard_input(f"{provider} api key", password=True)
-            _update_env_file(BASE_DIR / ".env", api_key_env, api_key)
+            _update_env_file(ALFARD_HOME / ".env", api_key_env, api_key)
         else:
             console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
             base_url = alfard_input("base url", default=base_url).rstrip("/") or base_url
@@ -197,8 +201,8 @@ def run_setup() -> None:
         if model == "custom":
             model = alfard_input("custom model name") or model_names[0]
 
-        config_dir = BASE_DIR / "config"
-        config_dir.mkdir(exist_ok=True)
+        config_dir = ALFARD_HOME / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
         config_path = config_dir / "alfard.yaml"
 
         config_data = {

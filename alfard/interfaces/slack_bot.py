@@ -5,7 +5,7 @@ as interactive Slack messages."""
 import os
 import time
 import threading
-from dotenv import load_dotenv
+from alfard.paths import load_env
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
@@ -57,7 +57,7 @@ class AlfardSlackBot:
     """
 
     def __init__(self, agent_name: str):
-        load_dotenv()
+        load_env()
 
         self.agent_name = agent_name
         self.bot_token = os.environ.get("SLACK_BOT_TOKEN")

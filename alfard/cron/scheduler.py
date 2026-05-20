@@ -11,8 +11,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from alfard.agents.loader import AGENTS_DIR, list_agents
 from alfard.cron.parser import parse_schedule
 from alfard.cron.runner import run_job
+from alfard.paths import ALFARD_HOME
 
-CRON_DB = Path(__file__).parent.parent.parent / "logs" / "cron_jobs.sqlite"
+CRON_DB = ALFARD_HOME / "logs" / "cron_jobs.sqlite"
 CRONS_FILE = "crons.yaml"
 
 def _make_scheduler(background=False):

@@ -1,14 +1,14 @@
 """Approval gate — intercepts irreversible tool calls and waits for explicit human confirmation before allowing execution."""
 
 import json
-import pathlib
 import yaml
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich import print as rprint
 from alfard.cli import theme
+from alfard.paths import ALFARD_HOME
 
-_CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 
 class CLINotifier:

@@ -3,9 +3,8 @@ retrieval using the same API key as the main LLM provider."""
 
 import os
 import numpy as np
-from pathlib import Path
 import yaml
-from dotenv import load_dotenv
+from alfard.paths import ALFARD_HOME, load_env
 
 EMBEDDING_MODELS = {
     "openrouter": "openai/text-embedding-3-small",
@@ -23,7 +22,7 @@ BASE_URLS = {
     "lmstudio":   "http://localhost:1234/v1",
 }
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 
 def _load_config() -> dict:
@@ -40,7 +39,7 @@ def get_embedding(text: str) -> list[float]:
     Uses the same provider and API key as the main LLM.
     Returns a list of floats (the embedding vector).
     """
-    load_dotenv()
+    load_env()
     from openai import OpenAI
 
     cfg = _load_config()

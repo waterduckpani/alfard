@@ -21,8 +21,13 @@ from alfard.cli.cmd_mount import mount
 @click.pass_context
 def cli(ctx):
     """alfard — local AI agents, done right."""
-    from pathlib import Path
-    config = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+    from alfard.paths import ALFARD_HOME, load_env
+    config = ALFARD_HOME / "config" / "alfard.yaml"
+
+    if not ALFARD_HOME.exists() and ctx.invoked_subcommand not in (None, "setup"):
+        from alfard.cli.theme import console
+        console.print("Run alfard setup to get started.")
+        raise SystemExit(0)
 
     if ctx.invoked_subcommand is not None:
         return
@@ -34,7 +39,7 @@ def cli(ctx):
         console.print()
         console.print(header_block("0.1.0"))
         console.print()
-        console.print(f"[{p.fg_dim}]no configuration found. run alfard setup to get started.[/]")
+        console.print(f"[{p.fg_dim}]Run alfard setup to get started.[/]")
         return
 
     import questionary
@@ -104,12 +109,11 @@ def cli(ctx):
         elif selection == "connect an integration":
             import questionary as _q
             from pathlib import Path as _Path
-            from dotenv import load_dotenv as _ldenv
             from alfard.integrations.catalogue import CATALOGUE
             from alfard.cli.cmd_connect import _load_integrations
             from alfard.agents.loader import list_agents as _list_agents_web, AGENTS_DIR as _AGENTS_DIR
             from alfard.web.config import WebConfig as _WebConfig
-            _ldenv()
+            load_env()
             connected = {s["name"] for s in _load_integrations().get("servers", [])}
             if (_Path.home() / ".config" / "gws" / "credentials.enc").exists():
                 connected.update({"gmail", "gdrive"})
@@ -145,8 +149,7 @@ def cli(ctx):
         elif selection == "run slack bot":
             from alfard.agents.loader import list_agents as _list_agents_slack
             import os as _os_slack
-            from dotenv import load_dotenv as _ldenv_slack
-            _ldenv_slack()
+            load_env()
             if not _os_slack.environ.get("SLACK_APP_TOKEN"):
                 console.print(f"\n[{p.fg_dim}]slack bot not configured.[/]")
                 console.print(f"[{p.fg_faint}]run: alfard connect slack-bot[/]")

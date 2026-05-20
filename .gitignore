@@ -34,7 +34,7 @@ config/alfard.yaml
 
 # macOS
 .DS_Store
-config/integrations.yaml
+
 # Agent personal data
 agents/*/brain.md
 agents/*/memory.md
@@ -53,3 +53,19 @@ agents/*/soul.md
 main.py
 test_agent.py
 diag_web.py
+
+# Claude Code local settings
+.claude/
+
+# Design workspace (local only)
+Design/
+
+# Agent databases
+agents/**/*.db
+agents/**/*.sqlite
+
+# Setup state
+config/.setup_checkpoint.yaml
+
+# Local skill scratchpad
+skills/test.md

@@ -4,8 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from alfard.agents.base_prompt import BASE_PROMPT
 from alfard.memory.manager import MemoryManager
+from alfard.paths import ALFARD_HOME
 
-AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
+AGENTS_DIR = ALFARD_HOME / "agents"
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 SOUL_FILE = "soul.md"

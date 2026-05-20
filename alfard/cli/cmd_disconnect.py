@@ -10,9 +10,10 @@ from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_confirm, alfard_select
 from alfard.integrations.catalogue import CATALOGUE
 from alfard.agents.loader import list_agents, AGENTS_DIR
+from alfard.paths import ALFARD_HOME, load_env
 
-_ENV_PATH = Path(__file__).parent.parent.parent / ".env"
-_INTEGRATIONS_PATH = Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
+_ENV_PATH = ALFARD_HOME / ".env"
+_INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
 
 def _connected_integrations() -> list[str]:
@@ -26,8 +27,7 @@ def _connected_integrations() -> list[str]:
         for name in ("gmail", "gdrive"):
             if name not in connected:
                 connected.append(name)
-    from dotenv import load_dotenv
-    load_dotenv()
+    load_env()
     if os.environ.get("SLACK_BOT_TOKEN") and "slack" not in connected:
         connected.append("slack")
     from alfard.web.config import WebConfig

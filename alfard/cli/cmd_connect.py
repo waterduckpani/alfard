@@ -14,9 +14,10 @@ from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY, AUTH_OAUTH
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_input, alfard_select, alfard_confirm
 from alfard.cli.ui_helpers import render_integration_table
+from alfard.paths import ALFARD_HOME, load_env
 
-_ENV_PATH = Path(__file__).parent.parent.parent / ".env"
-_INTEGRATIONS_PATH = Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
+_ENV_PATH = ALFARD_HOME / ".env"
+_INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
 
 def _update_env(key: str, value: str) -> None:
@@ -152,8 +153,7 @@ settings:
 
 def _ensure_slack_bot_token() -> str | None:
     """Return SLACK_BOT_TOKEN, running the full app-creation flow if not already set."""
-    from dotenv import load_dotenv as _ldenv
-    _ldenv()
+    load_env()
     existing = os.environ.get("SLACK_BOT_TOKEN", "")
     if existing.startswith("xoxb-"):
         console.print(f"{dot('ok')} [{p.fg_dim}]using existing bot token.[/]")
@@ -373,8 +373,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     creds_dest = Path.home() / ".config" / "gws" / "client_secret.json"
     if not creds_dest.exists():
         import os as _os
-        from dotenv import load_dotenv as _load_dotenv
-        _load_dotenv()
+        load_env()
         ALFARD_CLIENT_ID = _os.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
         ALFARD_CLIENT_SECRET = _os.environ.get("ALFARD_GOOGLE_CLIENT_SECRET", "")
 
@@ -460,8 +459,7 @@ def _connect_oauth(name: str, integration: dict) -> bool:
 
     console.print(f"\n[{p.fg_dim}]opening browser for google sign-in...[/]")
     import os as _os2
-    from dotenv import load_dotenv as _load_dotenv2
-    _load_dotenv2()
+    load_env()
     _env = _os2.environ.copy()
     _client_id = _os2.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
     _client_secret = _os2.environ.get("ALFARD_GOOGLE_CLIENT_SECRET", "")
@@ -572,10 +570,9 @@ def connect(integration: str | None):
     """
     if not integration:
         import questionary as _q
-        from dotenv import load_dotenv as _ldenv
         from alfard.agents.loader import list_agents, AGENTS_DIR
         from alfard.web.config import WebConfig as _WebConfig
-        _ldenv()
+        load_env()
         data = _load_integrations()
         connected = {s["name"] for s in data.get("servers", [])}
         if (Path.home() / ".config" / "gws" / "credentials.enc").exists():

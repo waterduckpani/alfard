@@ -1,7 +1,8 @@
 """Credentials manager — loads and resolves API keys and service credentials from environment variables."""
 
 import os
-from dotenv import load_dotenv
+
+from alfard.paths import load_env
 
 
 # Security invariant: credentials are never passed to the LLM or
@@ -10,7 +11,7 @@ from dotenv import load_dotenv
 class CredentialsManager:
 
     def __init__(self) -> None:
-        load_dotenv()
+        load_env()
         self._store: dict[str, str] = {}
 
     def register(self, name: str, env_var: str) -> None:

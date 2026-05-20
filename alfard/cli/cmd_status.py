@@ -14,9 +14,10 @@ from alfard.agents.loader import list_agents, AGENTS_DIR
 from alfard.integrations.catalogue import CATALOGUE
 from alfard.cli.theme import p, c, console, capabilities
 from alfard.cli.components import dot
+from alfard.paths import ALFARD_HOME, load_env
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
-_INTEGRATIONS_PATH = Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+_INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
 
 def _connected_set() -> set[str]:
@@ -31,8 +32,7 @@ def _connected_set() -> set[str]:
     gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
     if gws_creds.exists():
         connected.update({"gmail", "gdrive"})
-    from dotenv import load_dotenv
-    load_dotenv()
+    load_env()
     if os.environ.get("SLACK_BOT_TOKEN"):
         connected.add("slack")
     return connected

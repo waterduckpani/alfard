@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import pathlib
 from typing import Any
 
 import mcp
@@ -12,8 +11,9 @@ import mcp.types
 import yaml
 
 from alfard.tools.registry import ToolRegistry
+from alfard.paths import ALFARD_HOME, load_env
 
-_CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "config" / "integrations.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
 
 def _rank_notion_search(content: list, query: str) -> list:
@@ -87,8 +87,7 @@ def _resolve_env_vars(env_vars: dict) -> dict:
     e.g. {"NOTION_TOKEN": "NOTION_TOKEN"} -> {"NOTION_TOKEN": "<actual token value>"}
     """
     import os
-    from dotenv import load_dotenv
-    load_dotenv()
+    load_env()
     resolved = {}
     for key, env_var_name in env_vars.items():
         value = os.environ.get(env_var_name, "")

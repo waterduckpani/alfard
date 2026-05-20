@@ -1,25 +1,29 @@
 """LLM client router — reads provider from config/alfard.yaml and returns the correct adapter."""
 
 import os
-from pathlib import Path
 
 import yaml
-from dotenv import load_dotenv
 
 from alfard.llm.providers import get_provider
 from alfard.llm.adapters.openai_compat import OpenAICompatAdapter
 from alfard.llm.adapters.anthropic_adapter import AnthropicAdapter
+from alfard.paths import ALFARD_HOME, load_env
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 
 class LLMClient:
 
     def __init__(self):
-        load_dotenv()
+        load_env()
 
-        with open(_CONFIG_PATH) as f:
-            config = yaml.safe_load(f)
+        try:
+            with open(_CONFIG_PATH) as f:
+                config = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise RuntimeError(
+                "No configuration found. Run 'alfard setup' to get started."
+            ) from None
 
         provider_cfg = config["provider"]
         name = provider_cfg["name"]

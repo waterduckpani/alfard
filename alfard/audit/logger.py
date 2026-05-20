@@ -5,9 +5,11 @@ import yaml
 from datetime import datetime
 from pathlib import Path
 
+from alfard.paths import ALFARD_HOME
+
 
 def _get_log_path() -> Path:
-    config_path = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+    config_path = ALFARD_HOME / "config" / "alfard.yaml"
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     log_path_str = (config.get("audit") or {}).get("log_path", "logs/audit.jsonl")

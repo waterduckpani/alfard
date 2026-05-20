@@ -10,8 +10,9 @@ from rich.text import Text
 import yaml
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot
+from alfard.paths import ALFARD_HOME
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "alfard.yaml"
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 
 def _get_log_path() -> Path | None:
@@ -20,7 +21,7 @@ def _get_log_path() -> Path | None:
     with open(_CONFIG_PATH) as f:
         cfg = yaml.safe_load(f) or {}
     log_path_str = cfg.get("audit", {}).get("log_path", "logs/audit.jsonl")
-    return Path(__file__).parent.parent.parent / log_path_str
+    return ALFARD_HOME / log_path_str
 
 
 def _format_event(event: dict) -> Text:
