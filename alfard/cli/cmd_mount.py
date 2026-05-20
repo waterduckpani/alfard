@@ -55,6 +55,7 @@ def mount(ctx: click.Context):
         action = alfard_select("what would you like to do?", [
             "list mounts",
             "add a mount",
+            "change access level",
             "remove a mount",
             questionary.Separator(),
             "← back",
@@ -68,6 +69,7 @@ def mount(ctx: click.Context):
             agents = list_agents()
             if not agents:
                 console.print(f"[{p.err}]no agents found. run alfard create first.[/]")
+                alfard_input("press enter to continue", default="")
                 continue
             agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
             if not agent:
@@ -79,10 +81,44 @@ def mount(ctx: click.Context):
             if not access:
                 continue
             ctx.invoke(add, agent=agent, path=path, access=access)
+        elif action == "change access level":
+            agents = list_agents()
+            if not agents:
+                console.print(f"[{p.err}]no agents found.[/]")
+                alfard_input("press enter to continue", default="")
+                continue
+            agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
+            if not agent:
+                continue
+            data = _load_mounts(agent)
+            mounts = data.get("mounts", [])
+            if not mounts:
+                console.print(f"[{p.fg_faint}]{agent} has no mounts.[/]")
+                alfard_input("press enter to continue", default="")
+                continue
+            mount_labels = [
+                f"{m['path']}  [{('read+write' if m.get('access') == 'readwrite' else 'read only')}]"
+                for m in mounts
+            ]
+            choice = alfard_select("which mount to update?", mount_labels)
+            if not choice:
+                continue
+            idx = mount_labels.index(choice)
+            selected = mounts[idx]
+            current = selected.get("access", "readonly")
+            new_access = alfard_select(
+                "new access level?",
+                ["readonly", "readwrite"],
+                default="readwrite" if current == "readonly" else "readonly",
+            )
+            if not new_access:
+                continue
+            ctx.invoke(change_access, agent=agent, path=selected["path"], access=new_access)
         elif action == "remove a mount":
             agents = list_agents()
             if not agents:
                 console.print(f"[{p.err}]no agents found.[/]")
+                alfard_input("press enter to continue", default="")
                 continue
             agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
             if not agent:
@@ -91,6 +127,7 @@ def mount(ctx: click.Context):
             mounts = [m["path"] for m in data.get("mounts", [])]
             if not mounts:
                 console.print(f"[{p.fg_faint}]{agent} has no mounts.[/]")
+                alfard_input("press enter to continue", default="")
                 continue
             path = alfard_select("which mount to remove?", mounts)
             if not path:
@@ -217,6 +254,79 @@ def remove(agent: str | None, path: str | None):
 
     _save_mounts(agent, data)
     console.print(f"{dot('ok')} [{p.fg_dim}]removed mount: {path}[/]")
+
+
+@mount.command(name="access")
+@click.argument("agent", required=False)
+@click.argument("path", required=False)
+@click.option("--access", "-a",
+              type=click.Choice(["readonly", "readwrite"]),
+              default=None,
+              help="New access level: readonly or readwrite")
+def change_access(agent: str | None, path: str | None, access: str | None):
+    """Change the access level of an existing mount."""
+    if not agent:
+        agents = list_agents()
+        if not agents:
+            console.print(f"[{p.err}]no agents found.[/]")
+            raise SystemExit(1)
+        agent = agents[0] if len(agents) == 1 else alfard_select("which agent?", agents)
+        if not agent:
+            return
+    if agent not in list_agents():
+        console.print(error_block(
+            agent="alfard mount",
+            state="failed",
+            headline=f"agent '{agent}' not found.",
+            explanation="",
+        ))
+        raise SystemExit(1)
+
+    data = _load_mounts(agent)
+    mounts = data.get("mounts", [])
+
+    if not mounts:
+        console.print(f"[{p.fg_faint}]{agent} has no mounts.[/]")
+        return
+
+    if not path:
+        mount_labels = [
+            f"{m['path']}  [{'read+write' if m.get('access') == 'readwrite' else 'read only'}]"
+            for m in mounts
+        ]
+        choice = alfard_select("which mount to update?", mount_labels)
+        if not choice:
+            return
+        path = mounts[mount_labels.index(choice)]["path"]
+
+    stored_path = str(Path(path).expanduser())
+    target = next((m for m in mounts if m["path"] == stored_path), None)
+    if target is None:
+        console.print(f"  [{p.warn}]mount not found: {path}[/]")
+        raise SystemExit(1)
+
+    if not access:
+        current = target.get("access", "readonly")
+        access = alfard_select(
+            "new access level?",
+            ["readonly", "readwrite"],
+            default="readwrite" if current == "readonly" else "readonly",
+        )
+        if not access:
+            return
+
+    if target.get("access") == access:
+        console.print(f"  [{p.fg_faint}]already set to {access}. no change.[/]")
+        return
+
+    target["access"] = access
+    _save_mounts(agent, data)
+
+    access_label = "read+write" if access == "readwrite" else "read only"
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]access level updated.[/]\n")
+    console.print(f"  [{p.fg_faint}]{'agent':<8}[/] [{p.fg_em}]{agent}[/]")
+    console.print(f"  [{p.fg_faint}]{'path':<8}[/] [{p.fg_em}]{stored_path}[/]")
+    console.print(f"  [{p.fg_faint}]{'access':<8}[/] [{p.fg_dim}]{access_label}[/]")
 
 
 @mount.command(name="list")
