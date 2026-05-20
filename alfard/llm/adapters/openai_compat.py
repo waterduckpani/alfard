@@ -34,6 +34,7 @@ class OpenAICompatAdapter:
         if message.tool_calls:
             tool_calls = [
                 {
+                    "id": tc.id,
                     "name": tc.function.name,
                     "arguments": json.loads(tc.function.arguments),
                 }

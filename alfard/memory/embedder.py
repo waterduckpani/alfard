@@ -5,6 +5,7 @@ import os
 import numpy as np
 from pathlib import Path
 import yaml
+from dotenv import load_dotenv
 
 EMBEDDING_MODELS = {
     "openrouter": "openai/text-embedding-3-small",
@@ -39,6 +40,7 @@ def get_embedding(text: str) -> list[float]:
     Uses the same provider and API key as the main LLM.
     Returns a list of floats (the embedding vector).
     """
+    load_dotenv()
     from openai import OpenAI
 
     cfg = _load_config()

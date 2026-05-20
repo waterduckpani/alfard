@@ -30,7 +30,40 @@ def _connected_integrations() -> list[str]:
     load_dotenv()
     if os.environ.get("SLACK_BOT_TOKEN") and "slack" not in connected:
         connected.append("slack")
+    from alfard.web.config import WebConfig
+    if any(WebConfig(AGENTS_DIR / a).enabled for a in list_agents()):
+        connected.append("web-access")
     return connected
+
+
+def _disconnect_web_access() -> None:
+    """Disable web access and remove web_usage skill from chosen agent(s)."""
+    from alfard.web.config import WebConfig
+    from alfard.agents.loader import remove_skill
+
+    agents_with_web = [a for a in list_agents() if WebConfig(AGENTS_DIR / a).enabled]
+    if not agents_with_web:
+        console.print(f"[{p.fg_dim}]no agents have web access enabled.[/]")
+        return
+
+    choices = agents_with_web + (["all agents"] if len(agents_with_web) > 1 else [])
+    agent_choice = alfard_select("which agent?", choices, default=choices[0])
+    if not agent_choice:
+        return
+
+    if not alfard_confirm("disable web access?", default=False):
+        console.print(f"[{p.fg_dim}]cancelled.[/]")
+        return
+
+    targets = agents_with_web if agent_choice == "all agents" else [agent_choice]
+    for agent_name in targets:
+        cfg = WebConfig(AGENTS_DIR / agent_name)
+        cfg.update(enabled=False)
+        cfg.save()
+        remove_skill(agent_name, "web_usage")
+
+    label = "all agents" if agent_choice == "all agents" else agent_choice
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]web access disabled for {label}.[/]")
 
 
 @click.command(cls=AlfardCommand)
@@ -56,6 +89,10 @@ def disconnect(integration: str | None):
             return
 
     integration = integration.lower().strip()
+
+    if integration in ("web access", "web-access"):
+        _disconnect_web_access()
+        return
 
     if integration not in CATALOGUE:
         console.print(error_block(

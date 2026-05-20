@@ -9,10 +9,14 @@ from alfard.audit.logger import AuditLogger
 from alfard.gate.approval import ApprovalGate
 from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
+from rich import print as rprint
+from rich.panel import Panel
+
 from alfard.orchestrator.memory import Memory
 from alfard.commands.registry import is_command, dispatch
 
 MAX_TURNS = 20
+_WEB_TOOLS = {"web_search", "web_fetch"}
 SYSTEM_REINJECT_EVERY = 5
 
 
@@ -40,6 +44,8 @@ class Orchestrator:
         self._loader = None  # set externally after construction
         self._facts_learned = 0
         self._memory_manager = None  # set externally
+        self._web_context_active = False  # True after a web tool returns results
+        self._web_access_enabled = False  # set externally from web_config
 
     def run(self, task: str) -> str:
         self._memory.add_user(task)
@@ -82,15 +88,19 @@ class Orchestrator:
             )
 
             if response["tool_calls"] is None:
+                self._web_context_active = False
                 self._memory.add_assistant(response["content"] or "")
                 return response["content"] or ""
+
+            self._memory.add_assistant_tool_calls(response["tool_calls"])
 
             for tool_call in response["tool_calls"]:
                 name = tool_call["name"]
                 arguments = tool_call["arguments"]
+                tool_call_id = tool_call["id"]
 
                 if not self._registry.is_registered(name):
-                    self._memory.add_tool_result(name, f"Error: tool '{name}' is not registered")
+                    self._memory.add_tool_result(tool_call_id, f"Error: tool '{name}' is not registered")
                     continue
 
                 classification = classify(name, self._registry)
@@ -98,10 +108,29 @@ class Orchestrator:
 
                 self._audit.log_tool_call(name, arguments, source)
 
-                if classification != REVERSIBLE:
+                injection_intercepted = False
+                if (
+                    self._web_access_enabled
+                    and self._web_context_active
+                    and name not in _WEB_TOOLS
+                ):
+                    injection_intercepted = True
+                    rprint(Panel(
+                        f"The agent read web content and is now calling: [bold]{name}[/bold]\n"
+                        "Web pages can contain hidden instructions that hijack agents.",
+                        title="⚠️  Possible prompt injection",
+                        border_style="yellow",
+                    ))
+                    approved = self._gate.request(name, arguments, source)
+                    self._audit.log_prompt_injection_warning(name, approved)
+                    if not approved:
+                        self._memory.add_tool_result(tool_call_id, "Action blocked for security reasons.")
+                        continue
+
+                if not injection_intercepted and classification != REVERSIBLE:
                     approved = self._gate.request(name, arguments, source)
                     if not approved:
-                        self._memory.add_tool_result(name, "Action rejected by user.")
+                        self._memory.add_tool_result(tool_call_id, "Action rejected by user.")
                         continue
 
                 tool = self._registry.get(name)
@@ -125,12 +154,14 @@ class Orchestrator:
                     # is_suspicious() is an additional signal — flag it
                     # but sanitize regardless.
                     raw = sanitize(raw, source=name)
-                    self._memory.add_tool_result(name, raw)
+                    self._memory.add_tool_result(tool_call_id, raw)
+                    if name in _WEB_TOOLS:
+                        self._web_context_active = True
                 else:
                     # Sanitize error strings too — they may contain
                     # content from malicious external sources.
                     error = sanitize(str(result["error"]), source=f"{name}.error")
-                    self._memory.add_tool_result(name, error)
+                    self._memory.add_tool_result(tool_call_id, error)
 
             # After processing all tool calls in this cycle,
             # next cycle is tool-initiated unless user sends new input
@@ -140,3 +171,4 @@ class Orchestrator:
 
     def reset(self) -> None:
         self._memory.reset()
+        self._web_context_active = False

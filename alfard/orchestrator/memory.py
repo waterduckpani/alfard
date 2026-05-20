@@ -1,6 +1,8 @@
 """Session memory — holds conversation history and injects the system prompt
 on every get_messages() call."""
 
+import json
+
 
 class Memory:
 
@@ -16,8 +18,25 @@ class Memory:
     def add_assistant(self, content: str) -> None:
         self._messages.append({"role": "assistant", "content": content})
 
-    def add_tool_result(self, tool_name: str, result: any) -> None:
-        self._messages.append({"role": "tool", "content": str(result), "tool_call_id": tool_name})
+    def add_assistant_tool_calls(self, tool_calls: list[dict]) -> None:
+        self._messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["arguments"]),
+                    },
+                }
+                for tc in tool_calls
+            ],
+        })
+
+    def add_tool_result(self, tool_call_id: str, result: any) -> None:
+        self._messages.append({"role": "tool", "content": str(result), "tool_call_id": tool_call_id})
 
     def get_messages(self) -> list[dict]:
         return [{"role": "system", "content": self._system_prompt}] + self._messages

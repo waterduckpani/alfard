@@ -102,16 +102,20 @@ def cli(ctx):
                     if file_choice and file_choice != "← back":
                         ctx.invoke(edit, agent=agent_name, file=file_choice)
         elif selection == "connect an integration":
-            import os as _os
             import questionary as _q
             from pathlib import Path as _Path
             from dotenv import load_dotenv as _ldenv
             from alfard.integrations.catalogue import CATALOGUE
             from alfard.cli.cmd_connect import _load_integrations
+            from alfard.agents.loader import list_agents as _list_agents_web, AGENTS_DIR as _AGENTS_DIR
+            from alfard.web.config import WebConfig as _WebConfig
             _ldenv()
             connected = {s["name"] for s in _load_integrations().get("servers", [])}
             if (_Path.home() / ".config" / "gws" / "credentials.enc").exists():
                 connected.update({"gmail", "gdrive"})
+            web_configured = any(
+                _WebConfig(_AGENTS_DIR / a).enabled for a in _list_agents_web()
+            )
             int_choices = [
                 _q.Choice(
                     title=f"{info['display_name']}{' (connected)' if name in connected else ''}",
@@ -119,7 +123,14 @@ def cli(ctx):
                     description=info["description"],
                 )
                 for name, info in CATALOGUE.items()
-            ] + [_q.Choice(title="← back", value="← back")]
+            ] + [
+                _q.Choice(
+                    title=f"web access{' (configured)' if web_configured else ''}",
+                    value="web-access",
+                    description="Configure web search and page fetching for an agent",
+                ),
+                _q.Choice(title="← back", value="← back"),
+            ]
             pick = alfard_select("which integration?", int_choices)
             if pick and pick != "← back":
                 ctx.invoke(connect, integration=pick)

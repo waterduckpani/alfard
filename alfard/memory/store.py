@@ -118,14 +118,17 @@ class VectorStore:
         """
         Store a memory with its embedding.
         Returns the memory id (UUID string).
-        Skips storage if a very similar active memory already exists
-        (cosine similarity > 0.95) unless force=True.
+        Skips storage if a very similar active memory of the same type AND valence
+        already exists (cosine similarity > 0.95) unless force=True.
+        Entries that differ in type or valence are always written through.
         """
         embedding = get_embedding(content)
 
         if not force:
             existing = self._active_with_embeddings()
             for row in existing:
+                if row["type"] != memory_type or row["valence"] != valence:
+                    continue
                 sim = cosine_similarity(embedding, json.loads(row["embedding"]))
                 if sim > 0.95:
                     return row["id"]
@@ -229,7 +232,7 @@ class VectorStore:
     def _active_with_embeddings(self) -> list[sqlite3.Row]:
         with self._connect() as conn:
             return conn.execute(
-                """SELECT m.id, m.content, e.embedding
+                """SELECT m.id, m.type, m.valence, m.content, e.embedding
                    FROM memories m
                    JOIN embeddings e ON e.memory_id = m.id
                    WHERE m.status = 'active'"""

@@ -19,6 +19,7 @@ dependencies = [
     "numpy>=1.24",
     "questionary",
     "art",
+    "ddgs",
 ]
 
 [project.scripts]

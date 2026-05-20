@@ -77,11 +77,12 @@ class AgentLoader:
         if project_state:
             parts.append(f"# Project state\n{project_state}")
 
-        # Always: last session
-        sessions = self.memory_manager.get_recent_sessions(n=1)
+        # Always: most recent session + query-relevant past sessions
+        sessions = self.memory_manager.retrieve_sessions(query)
         if sessions:
-            s = sessions[-1]
-            parts.append(f"# Last session\n[{s['date']}] {s['summary']}")
+            label = "# Last session" if len(sessions) == 1 else "# Recent sessions"
+            lines = [f"[{s['date']}] {s['summary']}" for s in sessions]
+            parts.append(f"{label}\n" + "\n".join(lines))
 
         # Structured retrieval
         memories = self.memory_manager.retrieve(query, top_k=8)

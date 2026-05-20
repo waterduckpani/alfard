@@ -65,6 +65,13 @@ def build_orchestrator(
     except MountError:
         pass
 
+    # Web tools
+    from alfard.web.config import WebConfig
+    from alfard.web.tools import register_web_tools
+    web_config = WebConfig(loader.agent_dir)
+    if web_config.enabled:
+        register_web_tools(registry, web_config)
+
     orchestrator = Orchestrator(
         llm=LLMClient(),
         registry=registry,
@@ -78,6 +85,7 @@ def build_orchestrator(
     orchestrator._loader = loader
     orchestrator._agent_name = agent_name
     orchestrator._memory_manager = loader.memory_manager
+    orchestrator._web_access_enabled = web_config.enabled
 
     register_all()
 

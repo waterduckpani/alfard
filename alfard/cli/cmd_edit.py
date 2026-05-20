@@ -7,6 +7,7 @@ from alfard.cli.help_formatter import AlfardCommand
 from alfard.agents.loader import AGENTS_DIR, list_agents
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, alfard_select
+from alfard.cli.cmd_create import _web_wizard
 
 FILE_MAP = {
     "soul": "soul.md",
@@ -17,7 +18,7 @@ FILE_MAP = {
 
 @click.command(cls=AlfardCommand)
 @click.argument("agent", required=False)
-@click.argument("file", required=False, type=click.Choice(["soul", "brain", "memory"]))
+@click.argument("file", required=False, type=click.Choice(["soul", "brain", "memory", "web"]))
 def edit(agent: str | None, file: str | None):
     """Edit an agent's soul, brain or memory files.
 
@@ -46,9 +47,13 @@ def edit(agent: str | None, file: str | None):
         raise SystemExit(1)
 
     if not file:
-        file = alfard_select("which file?", ["soul", "brain", "memory"])
+        file = alfard_select("which file?", ["soul", "brain", "memory", "web"])
         if not file:
             return
+
+    if file == "web":
+        _web_wizard(agent_dir)
+        return
 
     filename = FILE_MAP[file]
     filepath = agent_dir / filename

@@ -100,6 +100,13 @@ class AuditLogger:
             event["error_message"] = error_message
         self._write(event)
 
+    def log_prompt_injection_warning(self, tool_name: str, approved: bool) -> None:
+        self._write({
+            "type": "prompt_injection_warning",
+            "tool_name": tool_name,
+            "approved": approved,
+        })
+
     def log_user_correction(self, message: str) -> None:
         words = set(message.lower().split())
         signal = next((w for w in _CORRECTION_SIGNALS if w in words), None)

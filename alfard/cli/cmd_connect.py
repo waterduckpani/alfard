@@ -542,6 +542,20 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     return True
 
 
+def _connect_web_access() -> None:
+    """Run the web access wizard for a chosen agent."""
+    from alfard.agents.loader import list_agents, AGENTS_DIR
+    from alfard.cli.cmd_create import _web_wizard
+    agents = list_agents()
+    if not agents:
+        console.print(f"  [{p.fg_dim}]no agents found. create one first: alfard create[/]")
+        return
+    agent_name = alfard_select("which agent?", agents, default=agents[0])
+    if not agent_name:
+        return
+    _web_wizard(AGENTS_DIR / agent_name, agent_name)
+
+
 @click.command(cls=AlfardCommand)
 @click.argument("integration", required=False)
 def connect(integration: str | None):
@@ -554,15 +568,21 @@ def connect(integration: str | None):
       alfard connect notion
       alfard connect github
       alfard connect gmail
+      alfard connect web-access
     """
     if not integration:
         import questionary as _q
         from dotenv import load_dotenv as _ldenv
+        from alfard.agents.loader import list_agents, AGENTS_DIR
+        from alfard.web.config import WebConfig as _WebConfig
         _ldenv()
         data = _load_integrations()
         connected = {s["name"] for s in data.get("servers", [])}
         if (Path.home() / ".config" / "gws" / "credentials.enc").exists():
             connected.update({"gmail", "gdrive"})
+        web_configured = any(
+            _WebConfig(AGENTS_DIR / a).enabled for a in list_agents()
+        )
         int_choices = [
             _q.Choice(
                 title=f"{info['display_name']}{' (connected)' if name in connected else ''}",
@@ -570,12 +590,23 @@ def connect(integration: str | None):
                 description=info["description"],
             )
             for name, info in CATALOGUE.items()
-        ] + [_q.Choice(title="← back", value="← back")]
+        ] + [
+            _q.Choice(
+                title=f"web access{' (configured)' if web_configured else ''}",
+                value="web-access",
+                description="Configure web search and page fetching for an agent",
+            ),
+            _q.Choice(title="← back", value="← back"),
+        ]
         integration = alfard_select("which integration?", int_choices)
         if not integration or integration == "← back":
             return
 
     integration = integration.lower().strip()
+
+    if integration in ("web access", "web-access"):
+        _connect_web_access()
+        return
 
     if integration not in CATALOGUE:
         console.print(error_block(

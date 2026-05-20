@@ -48,3 +48,8 @@ logs/
 
 # Keep the agents directory structure but not personal data
 agents/*/soul.md
+
+# Smoke test / dev scratch files
+main.py
+test_agent.py
+diag_web.py
