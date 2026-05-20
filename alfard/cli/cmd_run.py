@@ -1,5 +1,7 @@
 """Starts a named agent and enters its interactive ReAct loop."""
 
+import sys
+import uuid
 import click
 from alfard.cli.help_formatter import AlfardCommand
 from datetime import datetime
@@ -11,21 +13,32 @@ from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_spinner, alfard_select
 
 
-class _WriteBrainFact:
+class _ProposeMemory:
     def __init__(self):
         self._manager = None
 
     def set_manager(self, manager):
         self._manager = manager
 
-    def __call__(self, fact: str, tags: str = "") -> str:
-        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    def __call__(
+        self,
+        content: str,
+        memory_type: str = "fact",
+        valence: str = "neutral",
+        reason: str = "",
+    ) -> str:
         if self._manager:
-            return self._manager.store_fact(fact, tag_list)
+            return self._manager.write(
+                content,
+                memory_type=memory_type,
+                valence=valence,
+                source="agent_inferred",
+                reason=reason,
+            )
         return "Memory not available."
 
 
-_write_brain_fact = _WriteBrainFact()
+_propose_memory = _ProposeMemory()
 
 
 @click.command(cls=AlfardCommand)
@@ -88,6 +101,10 @@ def run(agent: str | None, no_mcp: bool) -> None:
 
     console.print(f"\n[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
 
+    session_id = str(uuid.uuid4())
+    _turns = 0
+    _outcome = "abandoned"
+
     audit = None
     try:
         try:
@@ -96,6 +113,7 @@ def run(agent: str | None, no_mcp: bool) -> None:
                     agent_name=agent,
                     connect_mcp=not no_mcp,
                     gate_enabled=True,
+                    session_id=session_id,
                 )
         except RuntimeError as e:
             msg = str(e)
@@ -124,28 +142,44 @@ def run(agent: str | None, no_mcp: bool) -> None:
         if servers:
             console.print(f"[{p.fg_dim}]connected: {', '.join(servers)}[/]")
 
-        _write_brain_fact.set_manager(loader.memory_manager)
+        audit.log_session_start(
+            agent_name=agent,
+            provider=orchestrator._llm.provider_name,
+            model=orchestrator._llm.model,
+        )
+
+        _propose_memory.set_manager(loader.memory_manager)
 
         registry.register(
-            "write_brain_fact",
-            "Store a permanent fact about the user or their work. "
-            "Call when user states a preference, corrects you, or "
-            "shares something worth remembering.",
-            _write_brain_fact,
+            "propose_memory",
+            "Store a permanent memory mid-session. Call when the user states a "
+            "preference, corrects you, shares something worth remembering, or "
+            "when you infer something durable about their context or goals.",
+            _propose_memory,
             True,
             {
                 "type": "object",
                 "properties": {
-                    "fact": {
+                    "content": {
                         "type": "string",
-                        "description": "The fact to remember"
+                        "description": "The memory to store"
                     },
-                    "tags": {
+                    "memory_type": {
                         "type": "string",
-                        "description": "Comma-separated keywords"
+                        "description": "Category: fact, preference, project_state, correction, or goal",
+                        "default": "fact"
+                    },
+                    "valence": {
+                        "type": "string",
+                        "description": "Sentiment: positive, negative, or neutral",
+                        "default": "neutral"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Why this is worth remembering"
                     }
                 },
-                "required": ["fact"]
+                "required": ["content"]
             },
             is_mcp=True
         )
@@ -163,21 +197,38 @@ def run(agent: str | None, no_mcp: bool) -> None:
                 console.print(f"\n[{p.fg_dim}]goodbye.[/]")
                 break
 
-            if user_input.strip().lower() in ("exit", "quit", "q"):
+            stripped = user_input.strip()
+            cmd = stripped.lower()
+
+            if cmd in ("exit", "quit", "q", "bye", "done"):
+                _outcome = "completed"
                 console.print(f"[{p.fg_dim}]goodbye.[/]")
                 break
 
-            if not user_input.strip():
+            if not stripped:
                 continue
 
+            if stripped.lower().startswith("/remember "):
+                content = stripped[len("/remember "):].strip()
+                if content:
+                    result = loader.memory_manager.write(
+                        content, memory_type="fact", valence="neutral",
+                        source="user_explicit",
+                    )
+                    console.print(f"[{p.fg_dim}]{result}[/]\n")
+                continue
+
+            audit.log_user_correction(stripped)
+
             if first_message:
-                system_prompt = loader.build_system_prompt(query=user_input)
+                system_prompt = loader.build_system_prompt(query=stripped)
                 orchestrator._memory._system_prompt = system_prompt
                 first_message = False
 
             try:
                 console.print()
-                response = orchestrator.run(user_input)
+                response = orchestrator.run(stripped)
+                _turns += 1
                 console.print(f"[{p.fg_em}]{agent}[/]")
                 console.print(Markdown(response))
                 console.print()
@@ -241,4 +292,14 @@ def run(agent: str | None, no_mcp: bool) -> None:
             )
     finally:
         if audit is not None:
+            exc = sys.exc_info()[1]
+            if exc is not None and not isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                _outcome = "failed"
+            audit.log_session_end(
+                outcome=_outcome,
+                turns=_turns,
+                tool_calls_total=audit._tool_calls_total,
+                tool_calls_failed=audit._tool_calls_failed,
+                corrections_detected=audit._corrections_detected,
+            )
             audit.close()
