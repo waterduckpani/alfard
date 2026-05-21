@@ -4,7 +4,6 @@ import json
 import click
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich import print as rprint
 
 from alfard.agents.loader import list_agents, AgentLoader
 from alfard.cli.theme import p, console, PANEL_GATE, ICON_OK, ICON_FAIL
@@ -28,9 +27,10 @@ def _run_review(agent: str, loader: AgentLoader) -> None:
     proposals_path = loader.agent_dir / "memory" / "proposals.jsonl"
 
     if not proposals_path.exists():
-        rprint(Panel(
-            f"No pending proposals for [bold]{agent}[/bold].",
+        console.print(Panel(
+            f"No pending proposals for [{p.fg_dim}]{agent}[/].",
             border_style=PANEL_GATE,
+            expand=False,
         ))
         return
 
@@ -46,9 +46,10 @@ def _run_review(agent: str, loader: AgentLoader) -> None:
 
     pending = [entry for entry in all_proposals if entry.get("status") == "pending"]
     if not pending:
-        rprint(Panel(
-            f"No pending proposals for [bold]{agent}[/bold].",
+        console.print(Panel(
+            f"No pending proposals for [{p.fg_dim}]{agent}[/].",
             border_style=PANEL_GATE,
+            expand=False,
         ))
         return
 
@@ -71,7 +72,7 @@ def _run_review(agent: str, loader: AgentLoader) -> None:
             f"[{p.fg_em}]{content}[/]\n"
             + (f"\n[{p.fg_faint}]Reason   [{p.fg_dim}]{reason}[/]" if reason else "")
         )
-        rprint(Panel(panel_body, title="memory proposal", border_style=PANEL_GATE))
+        console.print(Panel(panel_body, title="memory proposal", border_style=PANEL_GATE, expand=False))
 
         while True:
             raw = Prompt.ask(
@@ -204,10 +205,11 @@ def status(agent: str | None = None) -> None:
         f"[{p.fg_faint}]{label:<{lw}}[/]{value}"
         for label, value in rows
     )
-    rprint(Panel(
+    console.print(Panel(
         panel_body,
         title=f"[{p.fg_dim}]Memory — {agent}[/]",
         border_style=PANEL_GATE,
+        expand=False,
         padding=(0, 1),
     ))
 

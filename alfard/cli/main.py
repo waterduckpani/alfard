@@ -172,6 +172,7 @@ def cli(ctx):
             ctx.invoke(cron)
         elif selection == "manage memory":
             ctx.invoke(memory)
+            alfard_input("press enter to continue", default="")
         elif selection == "list agents":
             ctx.invoke(list_agents)
             alfard_input("press enter to continue", default="")
