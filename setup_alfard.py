@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import time
 import shutil
 import subprocess
 from pathlib import Path
@@ -73,6 +74,76 @@ PROVIDER_MODELS = {
 }
 
 CHECKPOINT_PATH = ALFARD_HOME / ".setup_checkpoint.yaml"
+
+# Skills that are automatically added when their matching integration is connected.
+# These are shown greyed-out and unselectable in the skills step.
+INTEGRATION_SKILL_MAP: dict[str, str] = {
+    "gmail": "gmail",
+    "gdrive": "gdrive",
+    "slack": "slack",
+    "github": "github",
+    "notion": "notion",
+}
+
+STEP_LABELS = {
+    2: "create your agent",
+    3: "add skills",
+    4: "connect integrations",
+    5: "schedule tasks",
+    6: "mount folders",
+}
+
+
+def _section_transition(summary: str, next_step: int) -> None:
+    """Print summary, pause, clear, reprint banner and progress indicator."""
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]{summary}[/]")
+    time.sleep(0.6)
+    console.clear()
+    console.print()
+    console.print(header_block("0.1.0"))
+    console.print()
+    label = STEP_LABELS.get(next_step, "")
+    console.print(f"[{p.fg_dim}]step {next_step} of 6 — {label}[/]\n")
+
+
+_WEB_ACCESS_CATALOGUE_ENTRY: dict = {
+    "description": "web search and page fetch for your agent",
+    "display_auth": "api key (optional)",
+}
+
+
+def _setup_connect_web_access(agent_name: str) -> None:
+    """Provider selection + config save for web access during setup."""
+    from alfard.agents.loader import AGENTS_DIR, add_skill
+    from alfard.web.config import WebConfig
+
+    import questionary as _q
+
+    console.print(f"\n[{p.fg_em}]web access[/]")
+    raw = alfard_select(
+        "search provider",
+        [
+            _q.Choice("duckduckgo  — no key needed", value="duckduckgo"),
+            _q.Choice("brave search  — api key required", value="brave search"),
+            _q.Choice("searxng  — self-hosted url required", value="searxng"),
+        ],
+        default="duckduckgo",
+    ) or "duckduckgo"
+
+    cfg = WebConfig(AGENTS_DIR / agent_name)
+
+    if raw == "brave search":
+        key = alfard_input("brave search api key", password=True).strip()
+        cfg.update(enabled=True, search_provider="brave", brave_api_key=key or None)
+    elif raw == "searxng":
+        url = alfard_input("searxng base url", default="http://localhost:8080").strip()
+        cfg.update(enabled=True, search_provider="searxng", searxng_url=url or None)
+    else:
+        cfg.update(enabled=True, search_provider="duckduckgo")
+
+    cfg.save()
+    add_skill(agent_name, "web_usage")
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]web access connected: {raw}[/]")
 
 
 def _update_env_file(env_path: Path, key: str, value: str) -> None:
@@ -174,12 +245,6 @@ def run_setup() -> None:
         console.print(f"[{p.fg_dim}]which provider do you want to use?[/]\n")
 
         provider_names = list(PROVIDERS.values())
-        for name in provider_names:
-            tag = f"  {c('fg_faint', '(local, no key needed)')}" if name in LOCAL_PROVIDERS else ""
-            default_marker = f"  {c('fg_faint', '(default)')}" if name == "openrouter" else ""
-            console.print(f"  {c('fg_em', name)}{tag}{default_marker}")
-        console.print()
-
         raw_provider = alfard_select("provider", provider_names, default="openrouter")
         provider = raw_provider or "openrouter"
 
@@ -187,7 +252,15 @@ def run_setup() -> None:
 
         if provider in CLOUD_PROVIDERS:
             api_key_env = PROVIDER_API_KEY_ENV[provider]
-            api_key = alfard_input(f"{provider} api key", password=True)
+            while True:
+                api_key = alfard_input(f"{provider} api key", password=True)
+                if api_key.strip():
+                    break
+                console.print(f"  [{p.warn}]key looks empty — continue anyway? (y/n)[/] ", end="")
+                answer = input().strip().lower()
+                if answer == "n":
+                    continue
+                break
             _update_env_file(ALFARD_HOME / ".env", api_key_env, api_key)
         else:
             console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
@@ -199,7 +272,12 @@ def run_setup() -> None:
         model = raw_model or model_names[0]
 
         if model == "custom":
-            model = alfard_input("custom model name") or model_names[0]
+            custom_input = alfard_input("custom model name")
+            if not custom_input.strip():
+                console.print(f"  [{p.fg_dim}]no input — defaulting to {model_names[0]}[/]")
+                model = model_names[0]
+            else:
+                model = custom_input
 
         config_dir = ALFARD_HOME / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -224,18 +302,13 @@ def run_setup() -> None:
         with config_path.open("w") as f:
             yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
-        console.print(
-            f"\n{dot('ok')} [{p.fg_dim}]provider configured: {provider} / {model}[/]"
-        )
-        console.print(f"\n[{p.fg_dim}]memory — alfard uses a lightweight embedding model to give your agent[/]")
-        console.print(f"[{p.fg_dim}]persistent memory across conversations. cost: < $0.001/day.[/]")
-
         steps_done = list(dict.fromkeys(steps_done + ["provider"]))
         _save_checkpoint(CHECKPOINT_PATH, {
             "steps_done": steps_done,
             "provider": provider,
             "agent_name": ck.get("agent_name", ""),
         })
+        _section_transition(f"provider configured: {provider} / {model}", next_step=2)
 
     # ── 4. CREATE FIRST AGENT ─────────────────────────────────────────────────
     from alfard.agents.loader import AGENTS_DIR
@@ -278,16 +351,18 @@ def run_setup() -> None:
                 break
 
             console.print()
+            console.print(f"[{p.fg_dim}]describe what this agent does — be as specific as possible.[/]")
+            console.print(f"[{p.fg_dim}]a couple of sentences is ideal. this becomes the core of soul.md[/]")
+            console.print(f"[{p.fg_dim}]and will define the agent's purpose in every conversation.[/]\n")
             description = alfard_input(
                 "what does this agent do?",
-                hint="e.g. triages my gmail inbox, flags urgent messages, drafts replies",
+                hint="e.g. triages my gmail inbox, flags urgent emails by sender and topic, drafts replies in my voice",
             ).strip()
 
             personality = alfard_input(
                 "personality or tone",
                 hint="e.g. concise, direct, never uses bullet points",
-                default="helpful and concise",
-            ).strip()
+            ).strip() or "helpful and concise"
 
             console.print(f"\n[{p.fg_faint}]soul preview[/]")
             console.print(f"[{p.fg_dim}]name:    [/][{p.fg_em}]{agent_name}[/]")
@@ -318,9 +393,6 @@ def run_setup() -> None:
                 (agent_dir / "memory.md").write_text(
                     f"# {agent_name} — memory\n\n", encoding="utf-8"
                 )
-                console.print(
-                    f"{dot('ok')} [{p.fg_dim}]alfard created {agent_name}.[/]"
-                )
                 break
             # loop back — re-ask name, purpose, and tone
 
@@ -330,6 +402,7 @@ def run_setup() -> None:
             "provider": provider,
             "agent_name": agent_name,
         })
+        _section_transition(f"agent created: {agent_name}", next_step=3)
 
     # ── 5. SKILLS ─────────────────────────────────────────────────────────────
     if "skills" not in steps_done:
@@ -338,18 +411,35 @@ def run_setup() -> None:
             f"[{p.fg_dim}]skills give your agent new capabilities — web search, memory tools, custom actions.[/]\n"
         )
 
-        from alfard.agents.loader import list_available_skills, add_skill
+        import questionary as _q
+        from alfard.agents.loader import list_available_skills, add_skill, SKILLS_DIR
 
-        available = list_available_skills()
+        available = [s for s in list_available_skills() if s != "web_usage"]
         if not available:
             console.print(
                 f"[{p.fg_faint}]no skills in the library yet. add skills later:\n"
                 f"  alfard skill add {agent_name}[/]"
             )
         else:
+            choices = []
+            for s in available:
+                integration = INTEGRATION_SKILL_MAP.get(s)
+                if integration:
+                    choices.append(_q.Choice(
+                        title=s,
+                        value=s,
+                        disabled=f"auto-added with {integration}",
+                    ))
+                else:
+                    choices.append(_q.Choice(s, checked=False))
+
+            console.print(
+                f"  [{p.fg_faint}]greyed skills are added automatically when you connect an integration[/]\n"
+            )
+
             selected = alfard_multiselect(
                 "add skills from the library:",
-                available,
+                choices,
             )
             if selected:
                 for s in selected:
@@ -358,12 +448,48 @@ def run_setup() -> None:
                     f"{dot('ok')} [{p.fg_dim}]skills added.[/]"
                 )
 
+        console.print()
+        if alfard_confirm("create a custom skill?", default=False):
+            while True:
+                skill_name = alfard_input(
+                    "skill name",
+                    hint="lowercase, hyphens ok   ·   leave blank to skip",
+                ).strip().lower()
+                if not skill_name:
+                    break
+                if not re.match(r'^[a-z0-9-]+$', skill_name):
+                    console.print(f"  [{p.err}]lowercase letters, numbers, and hyphens only.[/]")
+                    continue
+                dest = SKILLS_DIR / f"{skill_name}.md"
+                if dest.exists():
+                    console.print(f"  [{p.warn}]'{skill_name}' already exists — skipping.[/]")
+                    break
+                skill_desc = alfard_input("one-line description:").strip()
+                SKILLS_DIR.mkdir(exist_ok=True)
+                dest.write_text(
+                    f"# {skill_name.capitalize()} skill\n\n"
+                    f"{skill_desc}\n\n"
+                    f"## How it works\n\n\n"
+                    f"## Rules\n\n\n"
+                    f"## Common mistakes to avoid\n\n",
+                    encoding="utf-8",
+                )
+                add_skill(agent_name, skill_name)
+                console.print(
+                    f"{dot('ok')} [{p.fg_dim}]skill '{skill_name}' created and added to {agent_name}.[/]"
+                )
+                console.print(
+                    f"  [{p.fg_faint}]edit it later: alfard skill edit {skill_name}[/]"
+                )
+                break
+
         steps_done = list(dict.fromkeys(steps_done + ["skills"]))
         _save_checkpoint(CHECKPOINT_PATH, {
             "steps_done": steps_done,
             "provider": provider,
             "agent_name": agent_name,
         })
+        _section_transition("skills configured", next_step=4)
 
     # ── 6. CONNECT INTEGRATION (optional) ─────────────────────────────────────
     connected_integration: bool = ck.get("connected_integration", False)
@@ -382,37 +508,55 @@ def run_setup() -> None:
                 console.print(
                     f"{dot('ok')} [{p.fg_dim}]google credentials are bundled — oauth is automatic.[/]"
                 )
-            else:
-                console.print(
-                    f"[{p.fg_dim}]gmail requires a one-time google cloud project setup (~5 min).[/]"
-                )
 
         console.print(f"\n[{p.fg_em}]connect an integration[/] [{p.fg_faint}](optional)[/]")
         console.print(f"[{p.fg_dim}]connect notion, gmail, github, slack and more.[/]\n")
 
+        import questionary as _q
         from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY
         from alfard.cli.cmd_connect import _connect_apikey, _connect_oauth, _load_integrations
-        from alfard.cli.ui_helpers import render_integration_table
+
+        _extended_catalogue = {**CATALOGUE, "web access": _WEB_ACCESS_CATALOGUE_ENTRY}
 
         _int_data = _load_integrations()
         _connected_set = {s["name"] for s in _int_data.get("servers", [])}
-        console.print(render_integration_table(CATALOGUE, _connected_set))
         console.print(
             f"  [{p.fg_faint}]leave empty to skip — connect later with alfard connect[/]\n"
         )
 
-        _names = list(CATALOGUE.keys())
+        def _int_auth_label(info: dict) -> str:
+            if info.get("display_auth"):
+                return info["display_auth"]
+            return "api key" if info.get("auth") == AUTH_APIKEY else "oauth"
+
+        _int_choices = [
+            _q.Choice(
+                title=f"{name}  ({_int_auth_label(info)})" + ("  ● connected" if name in _connected_set else ""),
+                value=name,
+            )
+            for name, info in _extended_catalogue.items()
+        ]
         _selected = alfard_multiselect(
             "which integrations would you like to connect?",
-            _names,
+            _int_choices,
         )
 
         if _selected:
             for chosen in _selected:
+                if chosen == "web access":
+                    _setup_connect_web_access(agent_name)
+                    connected_integration = True
+                    continue
                 info = CATALOGUE[chosen]
                 if info["auth"] == AUTH_APIKEY:
                     _connect_apikey(chosen, info)
                 else:
+                    if chosen == "gmail":
+                        gid = os.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
+                        if not gid or gid == "custom":
+                            console.print(
+                                f"[{p.fg_dim}]gmail requires a one-time google cloud project setup (~5 min).[/]"
+                            )
                     _connect_oauth(chosen, info)
                 connected_integration = True
                 if chosen == "gmail":
@@ -429,35 +573,135 @@ def run_setup() -> None:
             "agent_name": agent_name,
             "connected_integration": connected_integration,
         })
+        _section_transition("integrations configured", next_step=5)
 
-    # ── 7. DONE ───────────────────────────────────────────────────────────────
-    has_cron = False
+    # ── 7. SCHEDULE TASKS (optional) ─────────────────────────────────────────
+    if "cron" not in steps_done:
+        console.print(f"\n[{p.fg_em}]schedule a task[/] [{p.fg_faint}](optional)[/]")
+        console.print(
+            f"[{p.fg_dim}]schedule a recurring task? set up cron jobs now or"
+            f" later with: alfard cron add[/]\n"
+        )
 
-    console.print(f"\n{dot('ok')} [{p.fg_dim}]alfard is ready.[/]\n")
-    console.print(f"[{p.fg_dim}]your agent: [/][{p.fg_em}]{agent_name}[/]\n")
-    console.print(f"[{p.fg_dim}]what to do next:[/]")
-    console.print(f"  [{p.fg_em}]alfard run {agent_name}[/]")
-    if not connected_integration:
-        console.print(f"  [{p.fg_dim}]alfard connect[/]       [{p.fg_faint}]connect integrations[/]")
-    elif not has_cron:
-        console.print(f"  [{p.fg_dim}]alfard cron add[/]     [{p.fg_faint}]schedule recurring tasks[/]")
-    console.print(f"  [{p.fg_dim}]alfard --help[/]         [{p.fg_faint}]see all commands[/]")
+        if alfard_confirm("set up a cron job now?", default=False):
+            from alfard.cli.cmd_cron import _collect_schedule, _load_crons, _save_crons, _slug
+            from alfard.agents.loader import AgentLoader
 
-    venv_bin = Path(sys.executable).parent
-    export_line_sh   = f'export PATH="{venv_bin}:$PATH"'
-    export_line_fish = f'set -gx PATH "{venv_bin}" $PATH'
+            job_name_raw = alfard_input(
+                "job name",
+                hint="e.g. morning inbox summary",
+            ).strip()
+            if job_name_raw:
+                job_slug = _slug(job_name_raw)
+                task = alfard_input(
+                    "describe the task in detail",
+                    hint="what to fetch, what to do with it, and what the output should be",
+                ).strip()
+                if task:
+                    loader = AgentLoader(agent_name)
+                    available_skills = loader.get_agent_skills()
+                    linked_skills: list[str] = []
+                    if available_skills:
+                        linked_skills = alfard_multiselect(
+                            "which skills should this job use? (optional — space to toggle, enter to confirm)",
+                            available_skills,
+                        )
+                    cron_expr = _collect_schedule()
+                    if cron_expr:
+                        jobs = _load_crons(agent_name)
+                        jobs.append({
+                            "name": job_slug,
+                            "task": task,
+                            "schedule": cron_expr,
+                            "linked_skills": linked_skills,
+                            "enabled": True,
+                        })
+                        _save_crons(agent_name, jobs)
+                        console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]")
+                        console.print(f"[{p.fg_faint}]start scheduler: alfard cron run[/]")
+        else:
+            console.print(f"[{p.fg_faint}]add cron jobs later: alfard cron add[/]")
 
-    console.print(f"\n[{p.fg_em}]one more step — shell access[/]")
-    console.print(f"[{p.fg_dim}]add this to your shell config so alfard works from anywhere:[/]\n")
-    console.print(f"  [{p.fg_em}]zsh / bash[/]")
-    console.print(f"  [{p.fg_faint}]  {export_line_sh}[/]")
-    console.print(f"\n  [{p.fg_em}]fish[/]")
-    console.print(f"  [{p.fg_faint}]  {export_line_fish}[/]")
-    console.print(f"\n[{p.fg_dim}]then restart your terminal or run:[/]")
-    console.print(f"  [{p.fg_faint}]source ~/.zshrc[/]   [{p.fg_dim}](zsh)[/]")
-    console.print(f"  [{p.fg_faint}]source ~/.bash_profile[/]   [{p.fg_dim}](bash)[/]")
+        steps_done = list(dict.fromkeys(steps_done + ["cron"]))
+        _save_checkpoint(CHECKPOINT_PATH, {
+            "steps_done": steps_done,
+            "provider": provider,
+            "agent_name": agent_name,
+            "connected_integration": connected_integration,
+        })
+        _section_transition("schedule configured", next_step=6)
 
+    # ── 8. MOUNT FOLDERS (optional) ──────────────────────────────────────────
+    if "mounts" not in steps_done:
+        console.print(f"\n[{p.fg_em}]mount a folder[/] [{p.fg_faint}](optional)[/]")
+        console.print(
+            f"[{p.fg_dim}]mount a local folder so your agent can read files?[/]\n"
+        )
+
+        if alfard_confirm("mount a folder now?", default=False):
+            from alfard.cli.cmd_mount import _load_mounts, _save_mounts
+
+            folder_path = alfard_input(
+                "folder path",
+                hint="e.g. ~/Documents/work",
+            ).strip()
+            if folder_path:
+                resolved = Path(folder_path).expanduser().resolve()
+                if not resolved.exists() or not resolved.is_dir():
+                    console.print(f"  [{p.warn}]path not found or not a directory — skipping.[/]")
+                    console.print(f"[{p.fg_faint}]mount folders later: alfard mount add[/]")
+                else:
+                    access = alfard_select(
+                        "access level?",
+                        ["readonly", "readwrite"],
+                        default="readonly",
+                    ) or "readonly"
+                    data = _load_mounts(agent_name)
+                    stored_path = str(Path(folder_path).expanduser())
+                    existing_paths = [m["path"] for m in data.get("mounts", [])]
+                    if stored_path in existing_paths:
+                        console.print(f"  [{p.warn}]already mounted: {folder_path}[/]")
+                    else:
+                        data.setdefault("mounts", []).append({
+                            "path": stored_path,
+                            "access": access,
+                        })
+                        _save_mounts(agent_name, data)
+                        access_label = "read+write" if access == "readwrite" else "read only"
+                        console.print(f"\n{dot('ok')} [{p.fg_dim}]folder mounted.[/]")
+                        console.print(f"  [{p.fg_faint}]{'path':<8}[/] [{p.fg_em}]{resolved}[/]")
+                        console.print(f"  [{p.fg_faint}]{'access':<8}[/] [{p.fg_dim}]{access_label}[/]")
+        else:
+            console.print(f"[{p.fg_faint}]mount folders later: alfard mount add[/]")
+
+        steps_done = list(dict.fromkeys(steps_done + ["mounts"]))
+        _save_checkpoint(CHECKPOINT_PATH, {
+            "steps_done": steps_done,
+            "provider": provider,
+            "agent_name": agent_name,
+            "connected_integration": connected_integration,
+        })
+
+    # ── 9. DONE ───────────────────────────────────────────────────────────────
     CHECKPOINT_PATH.unlink(missing_ok=True)
+    console.clear()
+    console.print()
+    console.print(header_block("0.1.0"))
+    console.print()
+    console.print(f"{dot('ok')} [{p.fg_em}]alfard is ready.[/]\n")
+    console.print(f"[{p.fg_dim}]before you start — a few things worth knowing:[/]\n")
+    console.print(f"[{p.fg_em}]memory[/]      [{p.fg_dim}]your agent remembers facts, preferences and[/]")
+    console.print(f"            [{p.fg_dim}]mistakes across every session. stored locally[/]")
+    console.print(f"            [{p.fg_dim}]in ~/.alfard/ — never sent anywhere.[/]\n")
+    console.print(f"[{p.fg_em}]security[/]    [{p.fg_dim}]every action is logged. irreversible actions[/]")
+    console.print(f"            [{p.fg_dim}](sending emails, deleting files) require your[/]")
+    console.print(f"            [{p.fg_dim}]explicit approval before they run.[/]\n")
+    console.print(f"[{p.fg_dim}]your data stays on your machine. always.[/]")
+    console.print(f"\n[{p.fg_faint}]press enter to open alfard →[/] ", end="")
+    input()
+
+    from alfard.cli.main import cli
+    cli.main([], standalone_mode=False)
 
 
 if __name__ == "__main__":

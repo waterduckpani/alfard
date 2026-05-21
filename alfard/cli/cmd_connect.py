@@ -13,7 +13,6 @@ from pathlib import Path
 from alfard.integrations.catalogue import CATALOGUE, AUTH_APIKEY, AUTH_OAUTH
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_input, alfard_select, alfard_confirm
-from alfard.cli.ui_helpers import render_integration_table
 from alfard.paths import ALFARD_HOME, load_env
 
 _ENV_PATH = ALFARD_HOME / ".env"
