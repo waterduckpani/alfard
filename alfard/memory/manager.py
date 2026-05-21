@@ -642,15 +642,20 @@ class MemoryManager:
             return 0
 
         proposals_path = self.agent_dir / "memory" / "proposals.jsonl"
-        existing_contents: set[str] = set()
+        rejected_contents: set[str] = set()
         if proposals_path.exists():
             for line in proposals_path.read_text(encoding="utf-8").splitlines():
                 try:
-                    existing_contents.add(json.loads(line)["content"])
+                    entry = json.loads(line)
+                    if entry.get("status") == "rejected":
+                        rejected_contents.add(entry["content"].strip().lower())
                 except (json.JSONDecodeError, KeyError):
                     pass
 
-        new_proposals = [p for p in proposals if p["content"] not in existing_contents]
+        new_proposals = [
+            p for p in proposals
+            if p["content"].strip().lower() not in rejected_contents
+        ]
         if not new_proposals:
             return 0
 

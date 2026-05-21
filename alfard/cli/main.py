@@ -15,6 +15,7 @@ from alfard.cli.cmd_cron import cron
 from alfard.cli.cmd_disconnect import disconnect
 from alfard.cli.cmd_slack import slack
 from alfard.cli.cmd_mount import mount
+from alfard.cli.cmd_memory import memory
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
@@ -33,7 +34,7 @@ def cli(ctx):
         return
 
     from alfard.cli.theme import p, console
-    from alfard.cli.components import header_block, alfard_select, alfard_input
+    from alfard.cli.components import header_block, alfard_select, alfard_input, alfard_confirm
 
     if not config.exists():
         console.print()
@@ -58,6 +59,8 @@ def cli(ctx):
         "manage skills",
         "manage mounts",
         "manage cron jobs",
+        questionary.Separator(),
+        "manage memory",
         questionary.Separator(),
         "view status",
         "view logs",
@@ -167,6 +170,8 @@ def cli(ctx):
                         ctx.invoke(slack, agent=agent_name)
         elif selection == "manage cron jobs":
             ctx.invoke(cron)
+        elif selection == "manage memory":
+            ctx.invoke(memory)
         elif selection == "list agents":
             ctx.invoke(list_agents)
             alfard_input("press enter to continue", default="")
@@ -177,7 +182,45 @@ def cli(ctx):
             ctx.invoke(log)
             alfard_input("press enter to continue", default="")
         elif selection == "settings & setup":
-            ctx.invoke(setup)
+            from alfard.paths import ALFARD_HOME
+            import shutil
+            sub = alfard_select(
+                "settings & setup",
+                [
+                    "re-run setup",
+                    "reset alfard",
+                    questionary.Separator(),
+                    "← back",
+                ],
+            )
+            if sub == "re-run setup":
+                ctx.invoke(setup)
+            elif sub == "reset alfard":
+                console.print()
+                console.print(
+                    f"  [{p.err}]warning:[/] this will permanently delete all of your alfard data."
+                )
+                console.print(
+                    f"  [{p.fg_dim}]this includes your config, agents, integrations, env file, and logs.[/]"
+                )
+                console.print()
+                first = alfard_confirm("are you sure you want to delete everything?", default=False)
+                if first:
+                    console.print()
+                    console.print(
+                        f"  [{p.err}]final warning:[/] there is no undo. [{p.fg_em}]{ALFARD_HOME}[/] will be deleted."
+                    )
+                    console.print()
+                    second = alfard_confirm("delete all alfard data permanently?", default=False)
+                    if second:
+                        shutil.rmtree(ALFARD_HOME, ignore_errors=True)
+                        console.print()
+                        console.print(f"  [{p.ok}]done.[/] alfard has been reset.")
+                        console.print(
+                            f"  [{p.fg_dim}]run [/][{p.fg_em}]alfard setup[/][{p.fg_dim}] to start fresh.[/]"
+                        )
+                        console.print()
+                        return
 
 
 cli.add_command(setup)
@@ -193,6 +236,7 @@ cli.add_command(cron)
 cli.add_command(disconnect)
 cli.add_command(slack)
 cli.add_command(mount)
+cli.add_command(memory)
 
 if __name__ == "__main__":
     cli()
