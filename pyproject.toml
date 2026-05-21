@@ -20,6 +20,8 @@ dependencies = [
     "questionary",
     "art",
     "ddgs",
+    "cryptography>=42.0.0",
+    "keyring>=25.0.0",
 ]
 
 [project.scripts]

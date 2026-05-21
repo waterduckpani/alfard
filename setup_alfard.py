@@ -146,19 +146,6 @@ def _setup_connect_web_access(agent_name: str) -> None:
     console.print(f"\n{dot('ok')} [{p.fg_dim}]web access connected: {raw}[/]")
 
 
-def _update_env_file(env_path: Path, key: str, value: str) -> None:
-    pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
-    new_line = f"{key}={value}"
-    if env_path.exists():
-        content = env_path.read_text()
-        if pattern.search(content):
-            content = pattern.sub(new_line, content)
-        else:
-            content = content.rstrip("\n") + f"\n{new_line}\n"
-        env_path.write_text(content)
-    else:
-        env_path.write_text(f"{new_line}\n")
-
 
 def _load_checkpoint(path: Path) -> dict | None:
     if not path.exists():
@@ -261,7 +248,7 @@ def run_setup() -> None:
                 if answer == "n":
                     continue
                 break
-            _update_env_file(ALFARD_HOME / ".env", api_key_env, api_key)
+            collected_keys = {api_key_env: api_key}
         else:
             console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
             base_url = alfard_input("base url", default=base_url).rstrip("/") or base_url
@@ -301,6 +288,12 @@ def run_setup() -> None:
         }
         with config_path.open("w") as f:
             yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        if provider in CLOUD_PROVIDERS:
+            from alfard.security.keystore import write_env_encrypted, using_keyring
+            write_env_encrypted(ALFARD_HOME, collected_keys)
+            backend = "(OS keyring)" if using_keyring(ALFARD_HOME) else "(key file — keyring unavailable)"
+            console.print(f"\n{dot('ok')} [{p.fg_dim}]API keys encrypted and stored {backend}[/]")
 
         steps_done = list(dict.fromkeys(steps_done + ["provider"]))
         _save_checkpoint(CHECKPOINT_PATH, {
