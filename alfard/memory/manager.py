@@ -253,7 +253,10 @@ class MemoryManager:
         if self.brain_db.count() == 0:
             return []
 
-        query_embedding = get_embedding(query)
+        try:
+            query_embedding = get_embedding(query)
+        except RuntimeError:
+            query_embedding = None
         rows = self.brain_db.get_active_full()
         now = time.time()
 
@@ -262,8 +265,10 @@ class MemoryManager:
             if row["type"] == "project_state":
                 score = 1.0
             else:
-                relevance = cosine_similarity(
-                    query_embedding, json.loads(row["embedding"])
+                relevance = (
+                    cosine_similarity(query_embedding, json.loads(row["embedding"]))
+                    if query_embedding is not None
+                    else 0.0
                 )
                 hours = (
                     (now - row["last_accessed_at"]) / 3600.0
@@ -294,7 +299,10 @@ class MemoryManager:
 
         Returns the goal content, or None if no match.
         """
-        query_embedding = get_embedding(query)
+        try:
+            query_embedding = get_embedding(query)
+        except RuntimeError:
+            return None
         with self.brain_db._connect() as conn:
             rows = conn.execute(
                 """SELECT m.id, m.content, e.embedding
@@ -455,7 +463,10 @@ class MemoryManager:
         Embed the summary and write a row to sessions.db.
         Trims to the MAX_SESSIONS most recent rows after inserting.
         """
-        embedding = get_embedding(summary)
+        try:
+            embedding = get_embedding(summary)
+        except RuntimeError:
+            embedding = None
         now = time.time()
         session_id = str(uuid.uuid4())
         with self._connect_sessions() as conn:
@@ -503,16 +514,23 @@ class MemoryManager:
         seen = {sessions[0]["id"]}
 
         if len(sessions) > 1 and top_k > 0 and query:
-            query_embedding = get_embedding(query)
-            scored = [
-                (cosine_similarity(query_embedding, json.loads(s["embedding"])), s)
-                for s in sessions[1:]
-            ]
-            scored.sort(reverse=True, key=lambda x: x[0])
-            for _, s in scored[:top_k]:
-                if s["id"] not in seen:
-                    result.append(s)
-                    seen.add(s["id"])
+            try:
+                query_embedding = get_embedding(query)
+                candidates = [
+                    s for s in sessions[1:]
+                    if json.loads(s["embedding"]) is not None
+                ]
+                scored = [
+                    (cosine_similarity(query_embedding, json.loads(s["embedding"])), s)
+                    for s in candidates
+                ]
+                scored.sort(reverse=True, key=lambda x: x[0])
+                for _, s in scored[:top_k]:
+                    if s["id"] not in seen:
+                        result.append(s)
+                        seen.add(s["id"])
+            except RuntimeError:
+                pass  # no embeddings available; fall back to recency only
 
         return result
 

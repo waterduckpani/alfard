@@ -4,6 +4,7 @@ from pathlib import Path
 
 ALFARD_HOME = Path.home() / ".alfard"
 ENV_PATH = ALFARD_HOME / ".env"
+USER_SKILLS_DIR = ALFARD_HOME / "skills"
 
 
 def load_env() -> None:

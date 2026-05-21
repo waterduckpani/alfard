@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from alfard.agents.base_prompt import BASE_PROMPT
 from alfard.memory.manager import MemoryManager
-from alfard.paths import ALFARD_HOME
+from alfard.paths import ALFARD_HOME, USER_SKILLS_DIR
 
 AGENTS_DIR = ALFARD_HOME / "agents"
 SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
@@ -138,7 +138,9 @@ def list_agents() -> list[str]:
 def add_skill(agent_name: str, skill_name: str) -> bool:
     """Copy a skill from the global library to an agent.
     Returns True if added, False if skill not found."""
-    skill_source = SKILLS_DIR / f"{skill_name}.md"
+    user_source = USER_SKILLS_DIR / f"{skill_name}.md"
+    pkg_source = SKILLS_DIR / f"{skill_name}.md"
+    skill_source = user_source if user_source.exists() else pkg_source
     if not skill_source.exists():
         return False
     agent_skills_dir = AGENTS_DIR / agent_name / "skills"
@@ -162,7 +164,9 @@ def remove_skill(agent_name: str, skill_name: str) -> bool:
 
 
 def list_available_skills() -> list[str]:
-    """Return all skill names in the global skills library."""
-    if not SKILLS_DIR.exists():
-        return []
-    return sorted(p.stem for p in SKILLS_DIR.glob("*.md"))
+    """Return all skill names from the package library and USER_SKILLS_DIR combined."""
+    USER_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    pkg = [p.stem for p in SKILLS_DIR.glob("*.md")] if SKILLS_DIR.exists() else []
+    user = [p.stem for p in USER_SKILLS_DIR.glob("*.md")]
+    pkg_set = set(pkg)
+    return sorted(pkg) + sorted(s for s in user if s not in pkg_set)

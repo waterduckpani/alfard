@@ -8,8 +8,9 @@ import click
 
 from alfard.agents.loader import (
     AgentLoader, list_agents, list_available_skills,
-    add_skill, remove_skill, SKILLS_DIR,
+    add_skill, remove_skill,
 )
+from alfard.paths import USER_SKILLS_DIR
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import (
     dot, alfard_table,
@@ -245,10 +246,10 @@ def create():
                 f"  [{p.err}]lowercase letters, numbers, and hyphens only.[/]"
             )
             continue
-        dest = SKILLS_DIR / f"{name}.md"
+        dest = USER_SKILLS_DIR / f"{name}.md"
         if dest.exists():
             console.print(
-                f"  [{p.warn}]'{name}' already exists at skills/{name}.md[/]"
+                f"  [{p.warn}]'{name}' already exists at {dest}[/]"
             )
             if not alfard_confirm("overwrite?", default=False):
                 continue
@@ -266,7 +267,7 @@ def create():
     if target is None or target == "none — add later":
         target = None
 
-    SKILLS_DIR.mkdir(exist_ok=True)
+    USER_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     skeleton = (
         f"# {name.capitalize()} skill\n\n"
         f"{description}\n\n"
@@ -282,7 +283,7 @@ def create():
     console.print(f"\n{dot('ok')} [{p.fg_dim}]skill '{name}' created.[/]")
     if target:
         console.print(f"[{p.fg_faint}]added to {target}.[/]")
-    console.print(f"[{p.fg_faint}]skills/{name}.md[/]")
+    console.print(f"[{p.fg_faint}]{dest}[/]")
 
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
     console.print(f"\n[{p.fg_dim}]opening in {editor}...[/]")
