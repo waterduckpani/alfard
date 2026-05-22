@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from alfard.memory.embedder import cosine_similarity, get_embedding
+from alfard.memory.notifications import push as _push_notification, should_notify
 from alfard.memory.store import VectorStore
 
 if TYPE_CHECKING:
@@ -176,6 +177,15 @@ class MemoryManager:
         self._export_brain_md()
         if memory_type == "project_state":
             self._export_project_state_md()
+
+        if should_notify(source):
+            _push_notification({
+                "type": memory_type,
+                "content": content,
+                "source": source,
+                "valence": valence,
+                "status": write_status,
+            })
 
         if write_status == "disputed":
             return "conflict"
@@ -557,15 +567,18 @@ class MemoryManager:
         result.reverse()
         return result
 
-    def run_reflect(self, llm_client: "LLMClient", audit_log_path: Path) -> int:
+    def run_reflect(self, llm_client: "LLMClient", audit_log_path: Path, force: bool = False) -> int:
         """Analyze the last 10 sessions and propose memory improvements.
 
-        Triggered only when session count is a non-zero multiple of 10.
+        Normally triggered only when session count is a non-zero multiple of 10.
+        Pass force=True to bypass the session-count guard (used by other triggers).
         Proposals are appended to memory/proposals.jsonl.
         Returns the number of new proposals written.
         """
         count = self.get_session_count()
-        if count == 0 or count % 10 != 0:
+        if count == 0:
+            return 0
+        if not force and count % 10 != 0:
             return 0
 
         sessions = self.get_recent_sessions(10)

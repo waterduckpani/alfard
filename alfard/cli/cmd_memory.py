@@ -2,12 +2,26 @@
 
 import json
 import click
+import yaml
 from rich.panel import Panel
 from rich.prompt import Prompt
 
 from alfard.agents.loader import list_agents, AgentLoader
 from alfard.cli.theme import p, console, PANEL_GATE, ICON_OK, ICON_FAIL
 from alfard.cli.components import alfard_select
+from alfard.paths import ALFARD_HOME
+
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+
+
+def _read_msg_interval() -> int:
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        raw = cfg.get("memory", {}).get("reflect_message_interval", 20)
+        return max(5, min(100, int(raw)))
+    except Exception:
+        return 20
 
 
 _BAR_WIDTH = 16
@@ -180,11 +194,13 @@ def status(agent: str | None = None) -> None:
                 pass
 
     session_count = manager.get_session_count()
+    msg_interval = _read_msg_interval()
 
     # ── Reflect math ─────────────────────────────────────────
     last_reflect_n = (session_count // 10) * 10
     sessions_ago = session_count - last_reflect_n
     next_reflect_n = last_reflect_n + 10
+    sessions_until = next_reflect_n - session_count
 
     if last_reflect_n == 0:
         last_reflect_str = "—"
@@ -192,14 +208,22 @@ def status(agent: str | None = None) -> None:
         plural = "s" if sessions_ago != 1 else ""
         last_reflect_str = f"Session {last_reflect_n}  ({sessions_ago} session{plural} ago)"
 
+    until_plural = "s" if sessions_until != 1 else ""
+    next_reflect_str = f"in {sessions_until} session{until_plural}"
+
+    triggers_str = (
+        f"every {msg_interval} msgs · every 30 min idle · every 10 sessions"
+    )
+
     # ── Summary panel ────────────────────────────────────────
     lw = 20  # plain label column width
     rows = [
-        ("brain.db",        f"[{p.fg_em}]{active_count}[/] [{p.fg_dim}]active memories[/]"),
-        ("proposals.jsonl", f"[{p.fg_em}]{pending_count}[/] [{p.fg_dim}]pending proposals[/]"),
-        ("sessions.db",     f"[{p.fg_em}]{session_count}[/] [{p.fg_dim}]sessions recorded[/]"),
-        ("last reflect",    f"[{p.fg_dim}]{last_reflect_str}[/]"),
-        ("next reflect",    f"[{p.fg_dim}]Session {next_reflect_n}[/]"),
+        ("brain.db",         f"[{p.fg_em}]{active_count}[/] [{p.fg_dim}]active memories[/]"),
+        ("proposals.jsonl",  f"[{p.fg_em}]{pending_count}[/] [{p.fg_dim}]pending proposals[/]"),
+        ("sessions.db",      f"[{p.fg_em}]{session_count}[/] [{p.fg_dim}]sessions recorded[/]"),
+        ("last reflect",     f"[{p.fg_dim}]{last_reflect_str}[/]"),
+        ("next reflect",     f"[{p.fg_dim}]{next_reflect_str}[/]"),
+        ("reflect triggers", f"[{p.fg_dim}]{triggers_str}[/]"),
     ]
     panel_body = "\n".join(
         f"[{p.fg_faint}]{label:<{lw}}[/]{value}"

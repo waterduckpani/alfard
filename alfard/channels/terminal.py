@@ -1,17 +1,47 @@
 """Terminal channel — interactive CLI loop for a single alfard agent session."""
 
+import re
 import select
 import sys
 import threading
 from collections import deque
 
+import yaml
+from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
+from rich.text import Text
 
 from alfard.channels.base import BaseChannel
 from alfard.cli.theme import p, console
 from alfard.cli.components import error_block
 from alfard.gate.approval import _STDIN_LOCK
+from alfard.memory.notifications import drain as _drain_notifications
+from alfard.memory import reflect_triggers
+from alfard.paths import ALFARD_HOME
+
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+
+
+def _read_msg_interval() -> int:
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        raw = cfg.get("memory", {}).get("reflect_message_interval", 20)
+        return max(5, min(100, int(raw)))
+    except Exception:
+        return 20
+
+
+_FAKE_NOTIFICATION_RE = re.compile(
+    r"╭─\s*remembered.*?╰─[^\n]*\n?",
+    re.DOTALL,
+)
+
+
+def _strip_fake_notifications(text: str) -> str:
+    """Remove any ╭─ remembered ─╮ blocks the agent emitted as raw text."""
+    return _FAKE_NOTIFICATION_RE.sub("", text).strip()
 
 
 _EXPLICIT_PHRASES = (
@@ -20,7 +50,37 @@ _EXPLICIT_PHRASES = (
     "never forget",
     "always remember",
     "make sure you remember",
+    "please remember",
+    "remember this",
+    "keep in mind",
 )
+
+# Patterns that guarantee a user_explicit memory write regardless of LLM behaviour.
+# Each is (regex, memory_type). Checked against the lowercased user message.
+_AUTO_MEMORY_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\bplease remember\b"), "fact"),
+    (re.compile(r"\bremember this\b"), "fact"),
+    (re.compile(r"\bdon'?t forget\b"), "fact"),
+    (re.compile(r"\bnever forget\b"), "fact"),
+    (re.compile(r"\bmy name is\b"), "fact"),
+    (re.compile(r"\bcall me\b"), "fact"),
+    (re.compile(r"\brefer to me\b"), "fact"),
+    (re.compile(r"\bi am\b.{0,30}\bmy name\b"), "fact"),
+    (re.compile(r"\bi prefer\b"), "preference"),
+    (re.compile(r"\bi always\b"), "preference"),
+    (re.compile(r"\bplease (always|use|don'?t)\b"), "preference"),
+    (re.compile(r"\binstead of\b"), "preference"),
+    (re.compile(r"\brather than\b"), "preference"),
+]
+
+
+def _auto_memory_type(msg: str) -> str | None:
+    """Return the memory_type if the message should auto-trigger a write, else None."""
+    lower = msg.lower()
+    for pattern, mem_type in _AUTO_MEMORY_PATTERNS:
+        if pattern.search(lower):
+            return mem_type
+    return None
 
 
 class _ProposeMemory:
@@ -83,9 +143,30 @@ class _CompleteGoal:
         return "Memory not available."
 
 
+class _RecallMemory:
+    def __init__(self) -> None:
+        self._manager = None
+
+    def set_manager(self, manager) -> None:
+        self._manager = manager
+
+    def __call__(self, query: str) -> str:
+        if not self._manager:
+            return "Memory not available."
+        memories = self._manager.retrieve(query, top_k=5)
+        if not memories:
+            return "No relevant memories found."
+        lines = [
+            f'[memory: {m["type"]}] "{m["content"]}"'
+            for m in memories
+        ]
+        return "\n".join(lines)
+
+
 # Module-level singletons — required for multiprocessing pickle on macOS/Windows
 _propose_memory = _ProposeMemory()
 _complete_goal = _CompleteGoal()
+_recall_memory = _RecallMemory()
 
 
 class TerminalChannel(BaseChannel):
@@ -104,6 +185,29 @@ class TerminalChannel(BaseChannel):
     def stop(self) -> None:
         self._orchestrator.stop()
 
+    def notify_memory_write(self, entry: dict) -> None:
+        mem_type = entry.get("type", "fact")
+        content = entry.get("content", "")
+        truncated = content[:80] + "…" if len(content) > 80 else content
+
+        if mem_type == "mistake":
+            label = "⚠ mistake"
+            border_style = p.warn
+        else:
+            label = mem_type
+            border_style = p.fg_faint
+
+        text = Text(f'{label} · "{truncated}"', style=f"dim italic")
+        panel = Panel(
+            text,
+            title="[dim]remembered[/dim]",
+            title_align="left",
+            border_style=border_style,
+            expand=False,
+            padding=(0, 1),
+        )
+        console.print(panel)
+
     def start(self) -> None:  # noqa: C901  (complexity lives here by necessity)
         agent = self._agent_name
         orchestrator = self._orchestrator
@@ -117,6 +221,7 @@ class TerminalChannel(BaseChannel):
         try:
             _propose_memory.set_manager(loader.memory_manager)
             _complete_goal.set_manager(loader.memory_manager)
+            _recall_memory.set_manager(loader.memory_manager)
 
             session_count = loader.memory_manager.get_session_count()
             loader.memory_manager.mark_stale_goals(session_count)
@@ -125,9 +230,11 @@ class TerminalChannel(BaseChannel):
 
             registry.register(
                 "propose_memory",
-                "Store a permanent memory mid-session. Call when the user states a "
-                "preference, corrects you, shares something worth remembering, or "
-                "when you infer something durable about their context or goals.",
+                "REQUIRED: Persist a memory to permanent storage. "
+                "Call this BEFORE your text reply whenever: the user states a preference "
+                "(memory_type='preference'), corrects you (memory_type='correction'), "
+                "shares a goal (memory_type='goal'), or you infer a durable fact "
+                "(memory_type='fact'). Without this call the information is lost forever.",
                 _propose_memory,
                 True,
                 {
@@ -177,6 +284,27 @@ class TerminalChannel(BaseChannel):
                 is_mcp=True
             )
 
+            registry.register(
+                "recall_memory",
+                "Search persistent memory for relevant context. "
+                "Call this when the user references something not in the current "
+                "conversation, asks what you know about a topic, or before making "
+                "a decision that past context would improve.",
+                _recall_memory,
+                True,
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Natural language search query"
+                        }
+                    },
+                    "required": ["query"]
+                },
+                is_mcp=True
+            )
+
             console.print(
                 f"[{p.fg_faint}]type your message and press enter. "
                 f"type exit or quit to stop.[/]\n"
@@ -185,6 +313,13 @@ class TerminalChannel(BaseChannel):
             first_message = True
             _user_message_count = 0
             _pending_queue: deque = deque()
+            _msg_interval = _read_msg_interval()
+            reflect_triggers.start_idle_watcher(
+                agent,
+                loader.memory_manager,
+                orchestrator._llm,
+                audit.log_path,
+            )
 
             while True:
                 if _pending_queue:
@@ -216,6 +351,8 @@ class TerminalChannel(BaseChannel):
                                 source="user_explicit", confidence=1.0,
                             )
                             console.print(f"[{p.fg_dim}]{result}[/]\n")
+                            for _entry in _drain_notifications():
+                                self.notify_memory_write(_entry)
                         continue
 
                     if stripped.lower().startswith("/que "):
@@ -240,6 +377,7 @@ class TerminalChannel(BaseChannel):
                     first_message = False
 
                 _result: list = [None, None]  # [response, exception]
+                _turn_notifications: list = []
                 _done = threading.Event()
 
                 def _run_turn(msg: str = stripped) -> None:
@@ -248,6 +386,8 @@ class TerminalChannel(BaseChannel):
                     except Exception as exc:
                         _result[1] = exc
                     finally:
+                        # Harvest notifications from this thread before signalling done.
+                        _turn_notifications.extend(_drain_notifications())
                         _done.set()
 
                 console.print()
@@ -298,12 +438,26 @@ class TerminalChannel(BaseChannel):
                     ))
                     continue
 
-                response = _result[0] or ""
+                response = _strip_fake_notifications(_result[0] or "")
                 _turns += 1
                 _user_message_count += 1
                 console.print(f"[{p.fg_em}]{agent}[/]")
                 console.print(Markdown(response))
                 console.print()
+                for _entry in _turn_notifications:
+                    self.notify_memory_write(_entry)
+
+                triggered = reflect_triggers.on_user_message(
+                    agent,
+                    loader.memory_manager,
+                    orchestrator._llm,
+                    audit.log_path,
+                    _msg_interval,
+                )
+                if triggered:
+                    console.print(
+                        f"[{p.fg_dim}]💡 reflect triggered — review with: alfard memory review[/]"
+                    )
 
                 if _user_message_count >= 15:
                     _user_message_count = 0
@@ -314,6 +468,7 @@ class TerminalChannel(BaseChannel):
                         pass
 
         finally:
+            reflect_triggers.stop_idle_watcher(agent)
             exc = sys.exc_info()[1]
             if exc is not None and not isinstance(exc, (SystemExit, KeyboardInterrupt)):
                 _outcome = "failed"
