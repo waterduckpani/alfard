@@ -245,57 +245,11 @@ def _connect_slack(name: str, integration: dict) -> bool:
     else:
         console.print(f"  [{p.fg_dim}]create an agent first: alfard create[/]")
     console.print(
-        f"\n[{p.fg_faint}]to also run it as a chat bot:[/]\n"
-        f"  [{p.fg_em}]alfard connect slack-bot[/]"
+        f"\n[{p.fg_faint}]to also use as a chat bot:[/]\n"
+        f"  [{p.fg_em}]alfard channel connect slack[/]"
     )
     return True
 
-
-def _connect_slack_bot(name: str, integration: dict) -> bool:
-    console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
-    console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
-
-    bot_token = _ensure_slack_bot_token()
-    if not bot_token:
-        console.print(f"\n[{p.err}]slack bot not connected.[/]")
-        return False
-
-    console.print(f"\n[{p.fg_em}]app-level token — for socket mode[/]")
-    console.print(
-        f"[{p.fg_faint}]  open your slack app at api.slack.com/apps\n"
-        f"  click 'basic information' in the left sidebar\n"
-        f"  scroll to 'app-level tokens'\n"
-        f"  click 'generate token and scopes'\n"
-        f"  name it anything (e.g. alfard-socket)\n"
-        f"  add scope: connections:write → click 'generate'\n"
-        f"  copy the token — starts with xapp-[/]"
-    )
-    webbrowser.open("https://api.slack.com/apps")
-    app_token = alfard_input("app-level token (xapp-)", password=True).strip()
-    if not app_token or not app_token.startswith("xapp-"):
-        console.print(f"  [{p.err}]invalid app token — must start with xapp-[/]")
-        return False
-    _update_env("SLACK_APP_TOKEN", app_token)
-    console.print(f"{dot('ok')} [{p.fg_dim}]app token saved.[/]")
-
-    entry = {"name": name, "transport": "none"}
-    data = _load_integrations()
-    data.setdefault("servers", [])
-    data["servers"] = [s for s in data["servers"] if s["name"] != name]
-    data["servers"].append(entry)
-    _save_integrations(data)
-
-    console.print(f"\n{dot('ok')} [{p.fg_dim}]slack bot configured.[/]")
-    console.print(
-        f"\n[{p.fg_faint}]start the bot:[/]\n"
-        f"  [{p.fg_em}]alfard slack <agent>[/]"
-    )
-    if not _already_connected("slack"):
-        console.print(
-            f"\n[{p.fg_faint}]to also use slack as an mcp tool:[/]\n"
-            f"  [{p.fg_em}]alfard connect slack[/]"
-        )
-    return True
 
 
 def _connect_apikey(name: str, integration: dict) -> bool:
@@ -624,8 +578,6 @@ def connect(integration: str | None):
 
     if integration == "slack":
         _connect_slack(integration, info)
-    elif integration == "slack-bot":
-        _connect_slack_bot(integration, info)
     elif info["auth"] == AUTH_APIKEY:
         _connect_apikey(integration, info)
     else:

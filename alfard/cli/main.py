@@ -16,6 +16,9 @@ from alfard.cli.cmd_disconnect import disconnect
 from alfard.cli.cmd_slack import slack
 from alfard.cli.cmd_mount import mount
 from alfard.cli.cmd_memory import memory
+from alfard.cli.cmd_headless import headless, _has_headless_channels
+from alfard.cli.cmd_service import service
+from alfard.cli.cmd_channel import channel, connected_channels
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
@@ -47,11 +50,14 @@ def cli(ctx):
 
     choices = [
         "run an agent",
-        "run slack bot",
+        "run headless",
         questionary.Separator(),
         "create a new agent",
         "edit an agent",
         "list agents",
+        questionary.Separator(),
+        "connect a channel",
+        "disconnect a channel",
         questionary.Separator(),
         "connect an integration",
         "disconnect an integration",
@@ -85,30 +91,64 @@ def cli(ctx):
             agents = _list_agents()
             if not agents:
                 console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
             elif len(agents) == 1:
                 ctx.invoke(run, agent=agents[0], no_mcp=False)
             else:
                 agent_name = alfard_select("which agent?", agents + ["← back"])
                 if agent_name and agent_name != "← back":
                     ctx.invoke(run, agent=agent_name, no_mcp=False)
+        elif selection == "run headless":
+            load_env()
+            from alfard.agents.loader import list_agents as _list_agents_hl
+            agents = _list_agents_hl()
+            if not agents:
+                console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
+            elif not _has_headless_channels():
+                console.print(f"\n[{p.fg_dim}]no channels configured yet.[/]")
+                console.print(f"[{p.fg_faint}]connect one first: alfard channel connect[/]")
+                alfard_input("press enter to continue", default="")
+            elif len(agents) == 1:
+                ctx.invoke(headless, agent=agents[0], no_mcp=False)
+            else:
+                agent_name = alfard_select("which agent?", agents + ["← back"])
+                if agent_name and agent_name != "← back":
+                    ctx.invoke(headless, agent=agent_name, no_mcp=False)
         elif selection == "create a new agent":
             ctx.invoke(create)
+            alfard_input("press enter to continue", default="")
         elif selection == "edit an agent":
             from alfard.agents.loader import list_agents as _list_agents2
             agents = _list_agents2()
             if not agents:
                 console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
             elif len(agents) == 1:
                 agent_name = agents[0]
                 file_choice = alfard_select("which file?", ["soul", "brain", "memory", "← back"])
                 if file_choice and file_choice != "← back":
                     ctx.invoke(edit, agent=agent_name, file=file_choice)
+                    alfard_input("press enter to continue", default="")
             else:
                 agent_name = alfard_select("which agent?", agents + ["← back"])
                 if agent_name and agent_name != "← back":
                     file_choice = alfard_select("which file?", ["soul", "brain", "memory", "← back"])
                     if file_choice and file_choice != "← back":
                         ctx.invoke(edit, agent=agent_name, file=file_choice)
+                        alfard_input("press enter to continue", default="")
+        elif selection == "connect a channel":
+            ctx.invoke(channel.commands["connect"])
+            alfard_input("press enter to continue", default="")
+        elif selection == "disconnect a channel":
+            load_env()
+            if not connected_channels():
+                console.print(f"\n[{p.fg_dim}]no channels connected.[/]")
+                console.print(f"[{p.fg_faint}]connect one first: alfard channel connect[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                ctx.invoke(channel.commands["disconnect"])
+                alfard_input("press enter to continue", default="")
         elif selection == "connect an integration":
             import questionary as _q
             from pathlib import Path as _Path
@@ -149,25 +189,6 @@ def cli(ctx):
             ctx.invoke(skill)
         elif selection == "manage mounts":
             ctx.invoke(mount)
-        elif selection == "run slack bot":
-            from alfard.agents.loader import list_agents as _list_agents_slack
-            import os as _os_slack
-            load_env()
-            if not _os_slack.environ.get("SLACK_APP_TOKEN"):
-                console.print(f"\n[{p.fg_dim}]slack bot not configured.[/]")
-                console.print(f"[{p.fg_faint}]run: alfard connect slack-bot[/]")
-                alfard_input("press enter to continue", default="")
-            else:
-                agents = _list_agents_slack()
-                if not agents:
-                    console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
-                    alfard_input("press enter to continue", default="")
-                elif len(agents) == 1:
-                    ctx.invoke(slack, agent=agents[0])
-                else:
-                    agent_name = alfard_select("which agent?", agents + ["← back"])
-                    if agent_name and agent_name != "← back":
-                        ctx.invoke(slack, agent=agent_name)
         elif selection == "manage cron jobs":
             ctx.invoke(cron)
         elif selection == "manage memory":
@@ -188,13 +209,19 @@ def cli(ctx):
             sub = alfard_select(
                 "settings & setup",
                 [
+                    "change provider / model / api key",
+                    questionary.Separator(),
                     "re-run setup",
                     "reset alfard",
                     questionary.Separator(),
                     "← back",
                 ],
             )
-            if sub == "re-run setup":
+            if sub == "change provider / model / api key":
+                from setup_alfard import run_provider_settings
+                run_provider_settings()
+                alfard_input("press enter to continue", default="")
+            elif sub == "re-run setup":
                 ctx.invoke(setup)
             elif sub == "reset alfard":
                 console.print()
@@ -226,6 +253,7 @@ def cli(ctx):
 
 cli.add_command(setup)
 cli.add_command(run)
+cli.add_command(headless)
 cli.add_command(create)
 cli.add_command(connect)
 cli.add_command(edit)
@@ -238,6 +266,8 @@ cli.add_command(disconnect)
 cli.add_command(slack)
 cli.add_command(mount)
 cli.add_command(memory)
+cli.add_command(service)
+cli.add_command(channel)
 
 if __name__ == "__main__":
     cli()

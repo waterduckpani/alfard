@@ -127,21 +127,6 @@ CATALOGUE: dict[str, dict] = {
             "upload_file", "set_channel_topic",
         ],
     },
-    "slack-bot": {
-        "display_name": "Slack Bot",
-        "auth": AUTH_APIKEY,
-        "description": "Run an alfard agent as a bot that responds to DMs and @mentions in Slack.",
-        "credential_env": "SLACK_APP_TOKEN",
-        "get_token_url": "https://api.slack.com/apps",
-        "get_token_steps": (
-            "1. Open your Slack app at api.slack.com/apps\n"
-            "2. Click 'Basic Information' in the left sidebar\n"
-            "3. Scroll to 'App-Level Tokens'\n"
-            "4. Click 'Generate Token and Scopes'\n"
-            "5. Name it anything (e.g. alfard-socket), add scope: connections:write\n"
-            "6. Click 'Generate' and copy the token — starts with xapp-"
-        ),
-    },
     "gmail": {
         "display_name": "Gmail",
         "auth": AUTH_OAUTH,

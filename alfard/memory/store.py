@@ -1,13 +1,20 @@
 """SQLite vector store — stores typed memories with embeddings for
 semantic retrieval. Embeddings live in a separate linked table."""
 
+import contextlib
 import os
 import sqlite3
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
 from alfard.memory.embedder import get_embedding, cosine_similarity
+
+# Per-path write locks — prevents concurrent brain.db write conflicts
+# when multiple channels share the same agent directory.
+_write_locks: dict[str, threading.Lock] = {}
+_write_locks_guard = threading.Lock()
 
 
 class VectorStore:
@@ -19,6 +26,11 @@ class VectorStore:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        key = str(db_path.resolve())
+        with _write_locks_guard:
+            if key not in _write_locks:
+                _write_locks[key] = threading.Lock()
+        self._write_lock = _write_locks[key]
         self._init_db()
         self._migrate_legacy()
 
@@ -26,6 +38,16 @@ class VectorStore:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @contextlib.contextmanager
+    def locked_write(self, timeout: float = 3):
+        """Context manager that acquires the write lock before yielding."""
+        if not self._write_lock.acquire(timeout=timeout):
+            raise RuntimeError(f"brain.db write timed out — {self.db_path}")
+        try:
+            yield
+        finally:
+            self._write_lock.release()
 
     def _init_db(self) -> None:
         with self._connect() as conn:
@@ -136,21 +158,26 @@ class VectorStore:
         now = time.time()
         mem_id = str(uuid.uuid4())
 
-        with self._connect() as conn:
-            conn.execute(
-                """INSERT INTO memories
-                   (id, type, valence, content, confidence, importance,
-                    source, usage_count, status, created_at, updated_at,
-                    last_accessed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL)""",
-                (mem_id, memory_type, valence, content, confidence,
-                 importance, source, status, now, now),
-            )
-            conn.execute(
-                "INSERT INTO embeddings (id, memory_id, embedding) VALUES (?, ?, ?)",
-                (str(uuid.uuid4()), mem_id, json.dumps(embedding)),
-            )
-            conn.commit()
+        if not self._write_lock.acquire(timeout=3):
+            raise RuntimeError(f"brain.db write timed out — {self.db_path}")
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """INSERT INTO memories
+                       (id, type, valence, content, confidence, importance,
+                        source, usage_count, status, created_at, updated_at,
+                        last_accessed_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL)""",
+                    (mem_id, memory_type, valence, content, confidence,
+                     importance, source, status, now, now),
+                )
+                conn.execute(
+                    "INSERT INTO embeddings (id, memory_id, embedding) VALUES (?, ?, ?)",
+                    (str(uuid.uuid4()), mem_id, json.dumps(embedding)),
+                )
+                conn.commit()
+        finally:
+            self._write_lock.release()
 
         return mem_id
 
@@ -177,16 +204,20 @@ class VectorStore:
         top = scored[:top_k]
 
         now = time.time()
-        with self._connect() as conn:
-            conn.executemany(
-                """UPDATE memories
-                   SET usage_count = usage_count + 1,
-                       last_accessed_at = ?,
-                       updated_at = ?
-                   WHERE id = ?""",
-                [(now, now, r[2]) for r in top],
-            )
-            conn.commit()
+        if self._write_lock.acquire(timeout=3):
+            try:
+                with self._connect() as conn:
+                    conn.executemany(
+                        """UPDATE memories
+                           SET usage_count = usage_count + 1,
+                               last_accessed_at = ?,
+                               updated_at = ?
+                           WHERE id = ?""",
+                        [(now, now, r[2]) for r in top],
+                    )
+                    conn.commit()
+            finally:
+                self._write_lock.release()
 
         return [r[1] for r in top]
 
@@ -256,21 +287,31 @@ class VectorStore:
         if not memory_ids:
             return
         now = time.time()
-        with self._connect() as conn:
-            conn.executemany(
-                """UPDATE memories
-                   SET usage_count = usage_count + 1,
-                       last_accessed_at = ?,
-                       updated_at = ?
-                   WHERE id = ?""",
-                [(now, now, mid) for mid in memory_ids],
-            )
-            conn.commit()
+        if not self._write_lock.acquire(timeout=3):
+            raise RuntimeError(f"brain.db write timed out — {self.db_path}")
+        try:
+            with self._connect() as conn:
+                conn.executemany(
+                    """UPDATE memories
+                       SET usage_count = usage_count + 1,
+                           last_accessed_at = ?,
+                           updated_at = ?
+                       WHERE id = ?""",
+                    [(now, now, mid) for mid in memory_ids],
+                )
+                conn.commit()
+        finally:
+            self._write_lock.release()
 
     def delete(self, memory_id: str) -> None:
-        with self._connect() as conn:
-            conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-            conn.commit()
+        if not self._write_lock.acquire(timeout=3):
+            raise RuntimeError(f"brain.db write timed out — {self.db_path}")
+        try:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                conn.commit()
+        finally:
+            self._write_lock.release()
 
     def count(self) -> int:
         with self._connect() as conn:

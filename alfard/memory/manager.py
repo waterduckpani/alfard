@@ -323,12 +323,13 @@ class MemoryManager:
             return None
 
         now = time.time()
-        with self.brain_db._connect() as conn:
-            conn.execute(
-                "UPDATE memories SET status = 'complete', updated_at = ? WHERE id = ?",
-                (now, best_id),
-            )
-            conn.commit()
+        with self.brain_db.locked_write():
+            with self.brain_db._connect() as conn:
+                conn.execute(
+                    "UPDATE memories SET status = 'complete', updated_at = ? WHERE id = ?",
+                    (now, best_id),
+                )
+                conn.commit()
         self._export_brain_md()
         return best_content
 
@@ -344,15 +345,16 @@ class MemoryManager:
             return 0
 
         now = time.time()
-        with self.brain_db._connect() as conn:
-            result = conn.execute(
-                """UPDATE memories SET status = 'stale', updated_at = ?
-                   WHERE type = 'goal' AND status = 'active'
-                     AND last_accessed_at IS NOT NULL AND last_accessed_at < ?""",
-                (now, threshold),
-            )
-            count = result.rowcount
-            conn.commit()
+        with self.brain_db.locked_write():
+            with self.brain_db._connect() as conn:
+                result = conn.execute(
+                    """UPDATE memories SET status = 'stale', updated_at = ?
+                       WHERE type = 'goal' AND status = 'active'
+                         AND last_accessed_at IS NOT NULL AND last_accessed_at < ?""",
+                    (now, threshold),
+                )
+                count = result.rowcount
+                conn.commit()
         if count:
             self._export_brain_md()
         return count
@@ -410,12 +412,13 @@ class MemoryManager:
         if not to_archive:
             return 0
 
-        with self.brain_db._connect() as conn:
-            conn.executemany(
-                "UPDATE memories SET status = 'archived', updated_at = ? WHERE id = ?",
-                [(now, mid) for mid in to_archive],
-            )
-            conn.commit()
+        with self.brain_db.locked_write():
+            with self.brain_db._connect() as conn:
+                conn.executemany(
+                    "UPDATE memories SET status = 'archived', updated_at = ? WHERE id = ?",
+                    [(now, mid) for mid in to_archive],
+                )
+                conn.commit()
         self._export_brain_md()
         return len(to_archive)
 
@@ -429,28 +432,29 @@ class MemoryManager:
         threshold_20 = self._session_threshold(20)
 
         total = 0
-        with self.brain_db._connect() as conn:
-            r = conn.execute(
-                """UPDATE memories SET status = 'archived', updated_at = ?
-                   WHERE status = 'complete' AND updated_at < ?""",
-                (now, ninety_days_ago),
-            )
-            total += r.rowcount
-            r = conn.execute(
-                "UPDATE memories SET status = 'archived', updated_at = ? WHERE status = 'stale'",
-                (now,),
-            )
-            total += r.rowcount
-            if threshold_20 is not None:
+        with self.brain_db.locked_write():
+            with self.brain_db._connect() as conn:
                 r = conn.execute(
                     """UPDATE memories SET status = 'archived', updated_at = ?
-                       WHERE status = 'active' AND confidence < 0.4
-                         AND usage_count = 0
-                         AND last_accessed_at IS NOT NULL AND last_accessed_at < ?""",
-                    (now, threshold_20),
+                       WHERE status = 'complete' AND updated_at < ?""",
+                    (now, ninety_days_ago),
                 )
                 total += r.rowcount
-            conn.commit()
+                r = conn.execute(
+                    "UPDATE memories SET status = 'archived', updated_at = ? WHERE status = 'stale'",
+                    (now,),
+                )
+                total += r.rowcount
+                if threshold_20 is not None:
+                    r = conn.execute(
+                        """UPDATE memories SET status = 'archived', updated_at = ?
+                           WHERE status = 'active' AND confidence < 0.4
+                             AND usage_count = 0
+                             AND last_accessed_at IS NOT NULL AND last_accessed_at < ?""",
+                        (now, threshold_20),
+                    )
+                    total += r.rowcount
+                conn.commit()
         if total:
             self._export_brain_md()
         return total
