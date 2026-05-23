@@ -8,6 +8,7 @@ from collections import deque
 
 import yaml
 from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
@@ -113,151 +114,152 @@ class TerminalChannel(BaseChannel):
                 audit.log_path,
             )
 
-            while True:
-                if _pending_queue:
-                    stripped = _pending_queue.popleft()
-                    console.print(f"[{p.fg_faint}]· auto: {stripped}[/]")
-                else:
-                    try:
-                        user_input = _session.prompt("you › ")
-                    except (KeyboardInterrupt, EOFError):
-                        console.print(f"\n[{p.fg_dim}]goodbye.[/]")
-                        break
+            with patch_stdout():
+                while True:
+                    if _pending_queue:
+                        stripped = _pending_queue.popleft()
+                        console.print(f"[{p.fg_faint}]· auto: {stripped}[/]")
+                    else:
+                        try:
+                            user_input = _session.prompt("you › ")
+                        except (KeyboardInterrupt, EOFError):
+                            console.print(f"\n[{p.fg_dim}]goodbye.[/]")
+                            break
 
-                    stripped = user_input.strip()
-                    cmd = stripped.lower()
+                        stripped = user_input.strip()
+                        cmd = stripped.lower()
 
-                    if cmd in ("exit", "quit", "q", "bye", "done"):
-                        _outcome = "completed"
-                        console.print(f"[{p.fg_dim}]goodbye.[/]")
-                        break
+                        if cmd in ("exit", "quit", "q", "bye", "done"):
+                            _outcome = "completed"
+                            console.print(f"[{p.fg_dim}]goodbye.[/]")
+                            break
 
-                    if not stripped:
-                        continue
+                        if not stripped:
+                            continue
 
-                    if stripped.lower().startswith("/remember "):
-                        content = stripped[len("/remember "):].strip()
-                        if content:
-                            result = loader.memory_manager.write(
-                                content, memory_type="fact", valence="neutral",
-                                source="user_explicit", confidence=1.0,
+                        if stripped.lower().startswith("/remember "):
+                            content = stripped[len("/remember "):].strip()
+                            if content:
+                                result = loader.memory_manager.write(
+                                    content, memory_type="fact", valence="neutral",
+                                    source="user_explicit", confidence=1.0,
+                                )
+                                console.print(f"[{p.fg_dim}]{result}[/]\n")
+                                for _entry in _drain_notifications():
+                                    self.notify_memory_write(_entry)
+                            continue
+
+                        if stripped.lower().startswith("/que "):
+                            content = stripped[5:].strip()
+                            if content:
+                                _pending_queue.append(content)
+                                console.print(f"[{p.fg_faint}]· queued for next turn[/]")
+                            continue
+
+                        if stripped.lower().startswith("/guide"):
+                            console.print(
+                                f"[{p.fg_faint}]· /guide works while the agent is running[/]"
                             )
-                            console.print(f"[{p.fg_dim}]{result}[/]\n")
-                            for _entry in _drain_notifications():
-                                self.notify_memory_write(_entry)
-                        continue
+                            continue
 
-                    if stripped.lower().startswith("/que "):
-                        content = stripped[5:].strip()
-                        if content:
-                            _pending_queue.append(content)
-                            console.print(f"[{p.fg_faint}]· queued for next turn[/]")
-                        continue
+                    audit.log_user_correction(stripped)
+                    _propose_memory.set_user_message(stripped)
 
-                    if stripped.lower().startswith("/guide"):
-                        console.print(
-                            f"[{p.fg_faint}]· /guide works while the agent is running[/]"
-                        )
-                        continue
+                    if first_message:
+                        system_prompt = loader.build_system_prompt(query=stripped)
+                        orchestrator._memory._system_prompt = system_prompt
+                        first_message = False
 
-                audit.log_user_correction(stripped)
-                _propose_memory.set_user_message(stripped)
+                    _result: list = [None, None]  # [response, exception]
+                    _turn_notifications: list = []
+                    _done = threading.Event()
 
-                if first_message:
-                    system_prompt = loader.build_system_prompt(query=stripped)
-                    orchestrator._memory._system_prompt = system_prompt
-                    first_message = False
+                    def _run_turn(msg: str = stripped) -> None:
+                        try:
+                            _result[0] = orchestrator.run(msg)
+                        except Exception as exc:
+                            _result[1] = exc
+                        finally:
+                            # Harvest notifications from this thread before signalling done.
+                            _turn_notifications.extend(_drain_notifications())
+                            _done.set()
 
-                _result: list = [None, None]  # [response, exception]
-                _turn_notifications: list = []
-                _done = threading.Event()
+                    console.print()
+                    _thread = threading.Thread(target=_run_turn, daemon=True)
+                    _thread.start()
 
-                def _run_turn(msg: str = stripped) -> None:
                     try:
-                        _result[0] = orchestrator.run(msg)
-                    except Exception as exc:
-                        _result[1] = exc
-                    finally:
-                        # Harvest notifications from this thread before signalling done.
-                        _turn_notifications.extend(_drain_notifications())
-                        _done.set()
-
-                console.print()
-                _thread = threading.Thread(target=_run_turn, daemon=True)
-                _thread.start()
-
-                try:
-                    while not _done.wait(timeout=0.1):
-                        if _STDIN_LOCK.acquire(blocking=False):
-                            try:
-                                ready, _, _ = select.select([sys.stdin], [], [], 0)
-                                if ready:
-                                    mid = sys.stdin.readline().rstrip("\n").strip()
-                                    if mid.lower().startswith("/que "):
-                                        content = mid[5:].strip()
-                                        if content:
-                                            _pending_queue.append(content)
-                                            console.print(f"[{p.fg_faint}]· queued: '{content}'[/]")
-                                    elif mid.lower().startswith("/guide "):
-                                        content = mid[7:].strip()
-                                        if content:
-                                            orchestrator.signal_guide(content)
+                        while not _done.wait(timeout=0.1):
+                            if _STDIN_LOCK.acquire(blocking=False):
+                                try:
+                                    ready, _, _ = select.select([sys.stdin], [], [], 0)
+                                    if ready:
+                                        mid = sys.stdin.readline().rstrip("\n").strip()
+                                        if mid.lower().startswith("/que "):
+                                            content = mid[5:].strip()
+                                            if content:
+                                                _pending_queue.append(content)
+                                                console.print(f"[{p.fg_faint}]· queued: '{content}'[/]")
+                                        elif mid.lower().startswith("/guide "):
+                                            content = mid[7:].strip()
+                                            if content:
+                                                orchestrator.signal_guide(content)
+                                                console.print(
+                                                    f"[{p.fg_faint}]· guidance sent[/]"
+                                                )
+                                        elif mid:
                                             console.print(
-                                                f"[{p.fg_faint}]· guidance sent[/]"
+                                                f"[{p.fg_faint}]· agent is running — use /que or /guide[/]"
                                             )
-                                    elif mid:
-                                        console.print(
-                                            f"[{p.fg_faint}]· agent is running — use /que or /guide[/]"
-                                        )
-                            finally:
-                                _STDIN_LOCK.release()
-                except KeyboardInterrupt:
-                    orchestrator.stop()
-                    _done.wait()
-                    _thread.join(timeout=5)
-                    orchestrator.reset()
-                    console.print(f"\n[{p.fg_dim}]interrupted.[/]\n")
-                    continue
+                                finally:
+                                    _STDIN_LOCK.release()
+                    except KeyboardInterrupt:
+                        orchestrator.stop()
+                        _done.wait()
+                        _thread.join(timeout=5)
+                        orchestrator.reset()
+                        console.print(f"\n[{p.fg_dim}]interrupted.[/]\n")
+                        continue
 
-                _thread.join()
+                    _thread.join()
 
-                if _result[1] is not None:
-                    console.print(error_block(
-                        agent=agent,
-                        state="failed",
-                        headline=str(_result[1]),
-                        explanation="",
-                    ))
-                    continue
+                    if _result[1] is not None:
+                        console.print(error_block(
+                            agent=agent,
+                            state="failed",
+                            headline=str(_result[1]),
+                            explanation="",
+                        ))
+                        continue
 
-                response = _strip_fake_notifications(_result[0] or "")
-                _turns += 1
-                _user_message_count += 1
-                console.print(f"[{p.fg_em}]{agent}[/]")
-                console.print(Markdown(response))
-                console.print()
-                for _entry in _turn_notifications:
-                    self.notify_memory_write(_entry)
+                    response = _strip_fake_notifications(_result[0] or "")
+                    _turns += 1
+                    _user_message_count += 1
+                    console.print(f"[{p.fg_em}]{agent}[/]")
+                    console.print(Markdown(response))
+                    console.print()
+                    for _entry in _turn_notifications:
+                        self.notify_memory_write(_entry)
 
-                triggered = reflect_triggers.on_user_message(
-                    agent,
-                    loader.memory_manager,
-                    orchestrator._llm,
-                    audit.log_path,
-                    _msg_interval,
-                )
-                if triggered:
-                    console.print(
-                        f"[{p.fg_dim}]💡 reflect triggered — review with: alfard memory review[/]"
+                    triggered = reflect_triggers.on_user_message(
+                        agent,
+                        loader.memory_manager,
+                        orchestrator._llm,
+                        audit.log_path,
+                        _msg_interval,
                     )
+                    if triggered:
+                        console.print(
+                            f"[{p.fg_dim}]💡 reflect triggered — review with: alfard memory review[/]"
+                        )
 
-                if _user_message_count >= 15:
-                    _user_message_count = 0
-                    try:
-                        orchestrator.checkpoint_session()
-                        console.print(f"[{p.fg_faint}]· memory updated[/]")
-                    except Exception:
-                        pass
+                    if _user_message_count >= 15:
+                        _user_message_count = 0
+                        try:
+                            orchestrator.checkpoint_session()
+                            console.print(f"[{p.fg_faint}]· memory updated[/]")
+                        except Exception:
+                            pass
 
         finally:
             reflect_triggers.stop_idle_watcher(agent)
