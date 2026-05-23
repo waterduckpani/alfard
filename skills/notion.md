@@ -34,8 +34,19 @@ Use API-get-block-children to get the content of a page.
 If you can see a database in search results, you have access to it.
 Query it directly. Only mention permissions if you get a 404.
 
+## Creating a database entry
+To add a row to a database, use API-post-database-entries — never API-post-page.
+Steps:
+1. Call API-post-search with filter {value: "data_source", property: "object"} to get the database ID.
+2. Call API-post-database-entries with the top-level database ID as the parent:
+   parent: {database_id: "<top-level id from search>"}
+   Never pass a page_id as the parent when creating a database entry.
+
 ## Common mistakes to avoid
 - Using "database" instead of "data_source" in search filters
 - Using a nested ID instead of the top-level ID
+- Using API-post-page to create a database entry — this causes a permissions error
+- Passing a page_id as parent instead of database_id when creating a database entry
+- Skipping API-post-search and guessing or reusing a database ID
 - Retrying a 404 with a different ID instead of telling the user
 - Answering from memory instead of calling the tool
