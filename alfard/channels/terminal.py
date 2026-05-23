@@ -7,8 +7,8 @@ import threading
 from collections import deque
 
 import yaml
+from prompt_toolkit import PromptSession
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.markdown import Markdown
 from rich.text import Text
 
@@ -94,6 +94,7 @@ class TerminalChannel(BaseChannel):
 
         _turns = 0
         _outcome = "abandoned"
+        _session = PromptSession()
 
         try:
             console.print(
@@ -118,7 +119,7 @@ class TerminalChannel(BaseChannel):
                     console.print(f"[{p.fg_faint}]· auto: {stripped}[/]")
                 else:
                     try:
-                        user_input = Prompt.ask(f"[{p.fg_em}]you[/]")
+                        user_input = _session.prompt("you › ")
                     except (KeyboardInterrupt, EOFError):
                         console.print(f"\n[{p.fg_dim}]goodbye.[/]")
                         break
