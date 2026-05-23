@@ -11,13 +11,25 @@ from alfard.paths import ALFARD_HOME, load_env
 
 _ENV_PATH = ALFARD_HOME / ".env"
 
-# Registry of supported channels. Add Telegram / Discord entries here when ready.
+# Registry of supported channels.
 _CHANNELS: dict[str, dict] = {
     "slack": {
         "display_name": "Slack",
         "description": "Chat with your agent via Slack DMs and @mentions (Socket Mode)",
         "env_keys": ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"],
         "integrations_name": "slack-bot",
+    },
+    "telegram": {
+        "display_name": "Telegram",
+        "description": "Chat with your agent via a Telegram bot (long polling)",
+        "env_keys": ["TELEGRAM_BOT_TOKEN"],
+        "integrations_name": "telegram-bot",
+    },
+    "discord": {
+        "display_name": "Discord",
+        "description": "Chat with your agent via a Discord bot (gateway)",
+        "env_keys": ["DISCORD_BOT_TOKEN"],
+        "integrations_name": "discord-bot",
     },
 }
 
@@ -63,12 +75,11 @@ def channel() -> None:
 def connect(name: str | None) -> None:
     """Connect a chat channel so your agent can receive messages.
 
-    Currently supports Slack. Telegram and Discord coming soon.
-
     \b
     Examples:
       alfard channel connect
       alfard channel connect slack
+      alfard channel connect telegram
     """
     load_env()
 
@@ -104,6 +115,10 @@ def connect(name: str | None) -> None:
 
     if name == "slack":
         _connect_slack()
+    elif name == "telegram":
+        _connect_telegram()
+    elif name == "discord":
+        _connect_discord()
 
 
 def _connect_slack() -> None:
@@ -165,6 +180,138 @@ def _connect_slack() -> None:
     console.print(
         f"[{p.fg_faint}]run [/][{p.fg_em}]alfard run <agent>[/]"
         f"[{p.fg_faint}] to start — slack will be active alongside the terminal.[/]"
+    )
+    console.print(
+        f"[{p.fg_faint}]or run [/][{p.fg_em}]alfard headless <agent>[/]"
+        f"[{p.fg_faint}] to run with no terminal.[/]"
+    )
+
+
+def _connect_telegram() -> None:
+    from alfard.cli.cmd_connect import _update_env
+    from alfard.cli.components import alfard_input
+
+    info = _CHANNELS["telegram"]
+    console.print(f"\n[{p.fg_em}]{info['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{info['description']}[/]\n")
+
+    console.print(
+        f"[{p.fg_faint}]  1. Open Telegram and search for @BotFather\n"
+        f"  2. Send /newbot and follow the prompts\n"
+        f"  3. Copy the token BotFather gives you[/]\n"
+    )
+
+    bot_token = alfard_input("bot token", password=True).strip()
+    if not bot_token:
+        console.print(f"[{p.err}]no token entered — telegram not connected.[/]")
+        return
+    _update_env("TELEGRAM_BOT_TOKEN", bot_token)
+    console.print(f"{dot('ok')} [{p.fg_dim}]bot token saved.[/]")
+
+    console.print(
+        f"\n[{p.fg_faint}]  Allowed user IDs restrict who can talk to your bot.\n"
+        f"  Find your Telegram user ID by messaging @userinfobot.\n"
+        f"  Enter comma-separated IDs, or leave blank to allow everyone.[/]\n"
+    )
+    allowed = alfard_input("allowed user IDs (optional, comma-separated)").strip()
+    if allowed:
+        _update_env("TELEGRAM_ALLOWED_USERS", allowed)
+        console.print(f"{dot('ok')} [{p.fg_dim}]allowed users saved.[/]")
+    else:
+        console.print(
+            f"[{p.warn}]  ⚠  No allowed users set. "
+            f"Anyone who finds your bot can message it.[/]"
+        )
+
+    import yaml
+    integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
+    integrations_path.parent.mkdir(parents=True, exist_ok=True)
+    if integrations_path.exists():
+        with open(integrations_path) as f:
+            data = yaml.safe_load(f) or {"servers": []}
+    else:
+        data = {"servers": []}
+    data.setdefault("servers", [])
+    data["servers"] = [s for s in data["servers"] if s.get("name") != "telegram-bot"]
+    data["servers"].append({"name": "telegram-bot", "transport": "none"})
+    with open(integrations_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]telegram channel connected.[/]")
+    console.print(
+        f"[{p.fg_faint}]run [/][{p.fg_em}]alfard run <agent>[/]"
+        f"[{p.fg_faint}] to start — telegram will be active alongside the terminal.[/]"
+    )
+    console.print(
+        f"[{p.fg_faint}]or run [/][{p.fg_em}]alfard headless <agent>[/]"
+        f"[{p.fg_faint}] to run with no terminal.[/]"
+    )
+
+
+def _connect_discord() -> None:
+    from alfard.cli.cmd_connect import _update_env
+    from alfard.cli.components import alfard_input
+
+    info = _CHANNELS["discord"]
+    console.print(f"\n[{p.fg_em}]{info['display_name']}[/]")
+    console.print(f"[{p.fg_dim}]{info['description']}[/]\n")
+
+    console.print(
+        f"[{p.fg_faint}]  1. Go to discord.com/developers/applications → your app → Bot\n"
+        f"  2. Scroll to 'Privileged Gateway Intents', enable Message Content Intent, save\n"
+        f"  3. Scroll up, click Reset Token, copy it[/]\n"
+    )
+
+    bot_token = alfard_input("bot token", password=True).strip()
+    if not bot_token:
+        console.print(f"[{p.err}]no token entered — discord not connected.[/]")
+        return
+    _update_env("DISCORD_BOT_TOKEN", bot_token)
+    console.print(f"{dot('ok')} [{p.fg_dim}]bot token saved.[/]")
+
+    console.print(
+        f"\n[{p.fg_faint}]Now add the bot to your server:\n"
+        f"  1. Go to OAuth2 in the left sidebar\n"
+        f"  2. Under Scopes: check 'bot'\n"
+        f"  3. Scroll down, under Bot Permissions check:\n"
+        f"     Send Messages, Read Message History, Add Reactions, View Channels\n"
+        f"  4. Copy the Generated URL at the bottom of the page\n"
+        f"  5. Open it in your browser, select your server, click Authorise[/]\n"
+    )
+
+    console.print(
+        f"[{p.fg_faint}]  Allowed guild IDs restrict which servers the bot responds in.\n"
+        f"  Right-click a server icon in Discord (with Developer Mode on) to copy its ID.\n"
+        f"  Enter comma-separated IDs, or leave blank to allow all servers.[/]\n"
+    )
+    allowed = alfard_input("allowed guild IDs (optional, comma-separated)").strip()
+    if allowed:
+        _update_env("DISCORD_ALLOWED_GUILDS", allowed)
+        console.print(f"{dot('ok')} [{p.fg_dim}]allowed guilds saved.[/]")
+    else:
+        console.print(
+            f"[{p.warn}]  ⚠  No guilds set. "
+            f"Bot will respond in any server it is added to.[/]"
+        )
+
+    import yaml
+    integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
+    integrations_path.parent.mkdir(parents=True, exist_ok=True)
+    if integrations_path.exists():
+        with open(integrations_path) as f:
+            data = yaml.safe_load(f) or {"servers": []}
+    else:
+        data = {"servers": []}
+    data.setdefault("servers", [])
+    data["servers"] = [s for s in data["servers"] if s.get("name") != "discord-bot"]
+    data["servers"].append({"name": "discord-bot", "transport": "none"})
+    with open(integrations_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]discord channel connected.[/]")
+    console.print(
+        f"[{p.fg_faint}]run [/][{p.fg_em}]alfard run <agent>[/]"
+        f"[{p.fg_faint}] to start — discord will be active alongside the terminal.[/]"
     )
     console.print(
         f"[{p.fg_faint}]or run [/][{p.fg_em}]alfard headless <agent>[/]"

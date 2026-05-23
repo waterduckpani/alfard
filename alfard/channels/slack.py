@@ -26,3 +26,8 @@ class SlackChannel(BaseChannel):
             self._bot.socket_client.close()
         except Exception:
             pass
+
+    def notify_memory_write(self, entry: dict) -> None:
+        # Slack notifications are posted by AlfardSlackBot._handle_message()
+        # after the response is sent, where the Slack channel ID is available.
+        pass

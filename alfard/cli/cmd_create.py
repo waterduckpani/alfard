@@ -5,11 +5,9 @@ from pathlib import Path
 import click
 from alfard.cli.help_formatter import AlfardCommand
 import questionary
-from alfard.agents.loader import (
-    AGENTS_DIR, list_agents, list_available_skills, add_skill, remove_skill,
-)
-from alfard.cli.theme import p, c, console
-from alfard.cli.components import dot, alfard_confirm, alfard_input, alfard_select, alfard_multiselect
+from alfard.agents.loader import AGENTS_DIR, add_skill, remove_skill, list_available_skills
+from alfard.cli.theme import p, console
+from alfard.cli.components import g, alfard_confirm, alfard_input, alfard_select, alfard_multiselect
 
 
 _PROVIDER_LABELS = [
@@ -77,20 +75,50 @@ def _web_wizard(agent_dir: Path, agent_name: str | None = None) -> bool:
     return True
 
 
+_ESSENTIAL_SKILLS = [
+    "memory", "tasks", "projects", "research",
+    "reasoning", "communication", "debugging",
+]
+
+_TONE_OPTIONS = ["professional", "friendly", "direct", "casual", "custom"]
+
+_LENGTH_OPTIONS = [
+    "concise (1-3 sentences)",
+    "balanced",
+    "thorough",
+    "ask me each time",
+]
+
+_UNCERTAIN_OPTIONS = [
+    "say so and stop",
+    "say so and search",
+    "make its best guess and flag it",
+]
+
+
+def _section(title: str) -> None:
+    fill = g["h"] * max(0, 44 - len(title) - 4)
+    console.print(f"\n[{p.fg_dim}]{g['h']}{g['h']} {title} {fill}[/]\n")
+
+
 @click.command(cls=AlfardCommand)
 def create():
     """Create a new agent interactively."""
 
     console.print(f"\n[{p.fg_em}]create a new agent[/]\n")
 
+    # ── Section 1 — Identity ──────────────────────────────────────────────────
+
+    _section("Identity")
+
     while True:
         name = alfard_input(
-            "agent name",
-            hint="lowercase, hyphens ok, e.g. my-agent   ·   leave blank to go back",
+            "what is your agent's name?",
+            hint="lowercase, hyphens ok  ·  blank to cancel",
         ).strip().lower()
         if not name:
             return
-        if not re.match(r'^[a-z0-9-]+$', name):
+        if not re.match(r"^[a-z0-9-]+$", name):
             console.print(f"  [{p.err}]name must be lowercase letters, numbers, or hyphens only.[/]")
             continue
         agent_dir = AGENTS_DIR / name
@@ -99,94 +127,156 @@ def create():
             continue
         break
 
-    description = alfard_input("what does this agent do?").strip()
-
-    personality = alfard_input(
-        "personality or tone",
-        default="helpful and concise",
+    description = alfard_input(
+        "describe your agent in one sentence — what is it for?",
     ).strip()
+
+    tone_choice = alfard_select("what tone should it have?", _TONE_OPTIONS)
+    if tone_choice is None:
+        return
+    if tone_choice == "custom":
+        tone = alfard_input("describe the tone in your own words:").strip() or "professional"
+    else:
+        tone = tone_choice
+
+    # ── Section 2 — Expertise ─────────────────────────────────────────────────
+
+    _section("Expertise")
+
+    knows_deeply = alfard_input(
+        "what domains or topics should it know deeply?",
+        hint="optional — press enter to skip",
+    ).strip()
+
+    stays_out_of = alfard_input(
+        "what domains should it stay out of entirely?",
+        hint="optional — press enter to skip",
+    ).strip()
+
+    # ── Section 3 — Communication ─────────────────────────────────────────────
+
+    _section("Communication")
+
+    length_choice = alfard_select(
+        "how long should responses be by default?", _LENGTH_OPTIONS
+    )
+    if length_choice is None:
+        return
+    response_length = length_choice
+
+    formatting = alfard_input(
+        "any formatting rules?",
+        hint="optional — e.g. always use bullet points, never use headers",
+    ).strip()
+
+    # ── Section 4 — When uncertain ────────────────────────────────────────────
+
+    _section("When uncertain")
+
+    uncertain_choice = alfard_select(
+        "when it doesn't know something, should it:", _UNCERTAIN_OPTIONS
+    )
+    if uncertain_choice is None:
+        return
+    uncertain = uncertain_choice
+
+    # ── Section 5 — About you ─────────────────────────────────────────────────
+
+    _section("About you  (optional — press enter to skip)")
+
+    user_name = alfard_input("your name?").strip()
+    user_pref = alfard_input("one thing about how you like to work?").strip()
+
+    # ── Section 6 — Skills ────────────────────────────────────────────────────
+
+    _section("Skills  (optional — space to toggle, enter to confirm)")
+
+    available = list_available_skills()
+    extra_skills: list[str] = []
+    if available:
+        choices = [questionary.Choice(s, value=s) for s in available]
+        extra_skills = alfard_multiselect("add skills from the library:", choices)
+
+    # ── Create agent directory ────────────────────────────────────────────────
 
     agent_dir.mkdir(parents=True, exist_ok=True)
 
-    soul_content = f"""# {name}
+    # ── Generate soul.md ──────────────────────────────────────────────────────
 
-## Purpose
-{description}
-
-## Personality
-{personality}
-
-## Rules
-- Always be honest about what you can and cannot do.
-- Never take irreversible actions without explicit user confirmation.
-- Keep responses concise and focused on the task.
-- If unsure, ask for clarification rather than guessing.
-"""
-    (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
-
-    (agent_dir / "brain.md").write_text(
-        f"# {name} — knowledge\n\n",
-        encoding="utf-8"
-    )
-    (agent_dir / "memory.md").write_text(
-        f"# {name} — memory\n\n",
-        encoding="utf-8"
-    )
-
-    # Step 1 — copy skills from an existing agent
-    copied_skills: set[str] = set()
-    agents_with_skills = [
-        a for a in list_agents()
-        if a != name and (AGENTS_DIR / a / "skills").exists()
-        and any((AGENTS_DIR / a / "skills").glob("*.md"))
+    lines: list[str] = [
+        "# Soul",
+        "",
+        "## Identity",
+        f"Name: {name}",
+        f"Purpose: {description or '—'}",
+        f"Tone: {tone}",
+        "",
+        "## Expertise",
+        f"Knows deeply: {knows_deeply or '—'}",
+        f"Stays out of: {stays_out_of or '—'}",
+        "",
+        "## Communication",
+        f"Response length: {response_length}",
+        f"Formatting: {formatting or '—'}",
+        "",
+        "## Behaviour",
+        f"When uncertain: {uncertain}",
+        "",
+        "## Core rules",
+        "- Never modify soul.md",
+        "- Never store API keys, passwords, or tokens in memory",
+        "- Always prefer the reversible path when options exist",
     ]
-    if agents_with_skills:
-        console.print()
-        source = alfard_select(
-            "copy skills from an existing agent? (optional)",
-            ["skip"] + agents_with_skills,
-            default="skip",
-        )
-        if source and source != "skip":
-            src_skills_dir = AGENTS_DIR / source / "skills"
-            dest_skills_dir = agent_dir / "skills"
-            dest_skills_dir.mkdir(exist_ok=True)
-            for skill_file in sorted(src_skills_dir.glob("*.md")):
-                (dest_skills_dir / skill_file.name).write_text(
-                    skill_file.read_text(encoding="utf-8"), encoding="utf-8"
+
+    if stays_out_of:
+        lines.append(f"- Do not engage with: {stays_out_of}")
+    if uncertain == "say so and stop":
+        lines.append("- When uncertain, acknowledge the limit clearly and stop")
+    elif uncertain == "say so and search":
+        lines.append("- When uncertain, say so then use search to find the answer")
+    elif "best guess" in uncertain:
+        lines.append("- When uncertain, give a best guess but always flag it explicitly")
+
+    (agent_dir / "soul.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # ── brain.md stub ─────────────────────────────────────────────────────────
+
+    (agent_dir / "brain.md").write_text(f"# {name} — knowledge\n\n", encoding="utf-8")
+
+    # ── Write user facts to brain.db ──────────────────────────────────────────
+
+    if user_name or user_pref:
+        try:
+            from alfard.memory.store import VectorStore
+            store = VectorStore(agent_dir / "brain.db")
+            if user_name:
+                store.store(
+                    f"User's name is {user_name}",
+                    memory_type="fact",
+                    source="user_explicit",
+                    confidence=1.0,
+                    importance=0.8,
                 )
-                copied_skills.add(skill_file.stem)
+            if user_pref:
+                store.store(
+                    user_pref,
+                    memory_type="preference",
+                    source="user_explicit",
+                    confidence=1.0,
+                    importance=0.8,
+                )
+        except Exception:
+            pass
 
-    # Step 2 — add skills from the global library
-    available = list_available_skills()
-    if available:
-        choices = []
-        for s in available:
-            if s in copied_skills:
-                choices.append(questionary.Choice(
-                    s, value=s, checked=True, disabled="copied above"
-                ))
-            else:
-                choices.append(questionary.Choice(s, value=s))
-        console.print()
-        selected = alfard_multiselect(
-            "add skills from the library:",
-            choices,
-        )
-        if selected:
-            for s in selected:
-                if s not in copied_skills:
-                    add_skill(name, s)
+    # ── Add selected skills ───────────────────────────────────────────────────
 
-    web_enabled = _web_wizard(agent_dir, name)
-    if not web_enabled:
-        console.print(f"[{p.fg_faint}]you can enable web access later via: alfard connect[/]")
+    for skill in extra_skills:
+        add_skill(name, skill)
+
+    # ── Completion ────────────────────────────────────────────────────────────
 
     console.print()
-    console.print(f"{dot('ok')} [{p.fg_dim}]alfard created {name}.[/]\n")
-    console.print(f"[{p.fg_faint}]agents/{name}/[/]")
-    console.print(f"  [{p.fg_dim}]soul.md[/]    — defines who your agent is")
-    console.print(f"  [{p.fg_dim}]brain.md[/]   — permanent knowledge you give the agent")
-    console.print(f"  [{p.fg_dim}]memory.md[/]  — managed automatically; do not edit by hand")
-    console.print(f"\n  [{p.fg_em}]alfard edit {name} soul[/]    [{p.fg_faint}]open soul.md now[/]")
-    console.print(f"  [{p.fg_em}]alfard run {name}[/]          [{p.fg_faint}]start chatting[/]")
+    console.print(f"[{p.ok}]{g['check']}[/] soul.md written")
+    skills_list = ", ".join(_ESSENTIAL_SKILLS)
+    console.print(f"[{p.ok}]{g['check']}[/] Essential skills included: {skills_list}")
+    console.print(f"[{p.fg_faint}]  Edit anytime: alfard edit {name} soul[/]")

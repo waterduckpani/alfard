@@ -75,16 +75,6 @@ PROVIDER_MODELS = {
 
 CHECKPOINT_PATH = ALFARD_HOME / ".setup_checkpoint.yaml"
 
-# Skills that are automatically added when their matching integration is connected.
-# These are shown greyed-out and unselectable in the skills step.
-INTEGRATION_SKILL_MAP: dict[str, str] = {
-    "gmail": "gmail",
-    "gdrive": "gdrive",
-    "slack": "slack",
-    "github": "github",
-    "notion": "notion",
-}
-
 STEP_LABELS = {
     2: "create your agent",
     3: "add skills",
@@ -400,48 +390,15 @@ def run_setup() -> None:
     # ── 5. SKILLS ─────────────────────────────────────────────────────────────
     if "skills" not in steps_done:
         console.print(f"\n[{p.fg_em}]skills[/]")
+        from alfard.agents.loader import add_skill, SKILLS_DIR
+
         console.print(
-            f"[{p.fg_dim}]skills give your agent new capabilities — web search, memory tools, custom actions.[/]\n"
+            f"{dot('ok')} [{p.fg_dim}]Essential skills included: memory, tasks, projects, research, reasoning, communication, debugging[/]"
+        )
+        console.print(
+            f"  [{p.fg_faint}]Add more: alfard skill add {agent_name}[/]\n"
         )
 
-        import questionary as _q
-        from alfard.agents.loader import list_available_skills, add_skill, SKILLS_DIR
-
-        available = [s for s in list_available_skills() if s != "web_usage"]
-        if not available:
-            console.print(
-                f"[{p.fg_faint}]no skills in the library yet. add skills later:\n"
-                f"  alfard skill add {agent_name}[/]"
-            )
-        else:
-            choices = []
-            for s in available:
-                integration = INTEGRATION_SKILL_MAP.get(s)
-                if integration:
-                    choices.append(_q.Choice(
-                        title=s,
-                        value=s,
-                        disabled=f"auto-added with {integration}",
-                    ))
-                else:
-                    choices.append(_q.Choice(s, checked=False))
-
-            console.print(
-                f"  [{p.fg_faint}]greyed skills are added automatically when you connect an integration[/]\n"
-            )
-
-            selected = alfard_multiselect(
-                "add skills from the library:",
-                choices,
-            )
-            if selected:
-                for s in selected:
-                    add_skill(agent_name, s)
-                console.print(
-                    f"{dot('ok')} [{p.fg_dim}]skills added.[/]"
-                )
-
-        console.print()
         if alfard_confirm("create a custom skill?", default=False):
             while True:
                 skill_name = alfard_input(
@@ -695,6 +652,114 @@ def run_setup() -> None:
 
     from alfard.cli.main import cli
     cli.main([], standalone_mode=False)
+
+
+def run_provider_settings() -> None:
+    """Interactive flow to change provider, model, or API key without re-running full setup."""
+    config_path = ALFARD_HOME / "config" / "alfard.yaml"
+    if not config_path.exists():
+        console.print(f"\n  [{p.err}]no config found — run alfard setup first.[/]")
+        return
+
+    with config_path.open() as f:
+        cfg = yaml.safe_load(f)
+
+    current_provider = cfg["provider"]["name"]
+    current_model = cfg["provider"]["model"]
+    current_base_url = cfg["provider"].get("base_url", PROVIDER_BASE_URLS.get(current_provider, ""))
+
+    console.print(f"\n[{p.fg_faint}]current[/]")
+    console.print(f"  [{p.fg_dim}]provider  [/][{p.fg_em}]{current_provider}[/]")
+    console.print(f"  [{p.fg_dim}]model     [/][{p.fg_em}]{current_model}[/]")
+    if current_provider in CLOUD_PROVIDERS:
+        console.print(f"  [{p.fg_dim}]api key   [/][{p.fg_faint}]•••• (encrypted)[/]")
+    else:
+        console.print(f"  [{p.fg_dim}]base url  [/][{p.fg_em}]{current_base_url}[/]")
+    console.print()
+
+    if current_provider in CLOUD_PROVIDERS:
+        options = ["change provider & model", "change model", "change api key", "← back"]
+    else:
+        options = ["change provider & model", "change model", "change base url", "← back"]
+
+    action = alfard_select("what would you like to change?", options)
+    if not action or action == "← back":
+        return
+
+    if action == "change provider & model":
+        provider_names = list(PROVIDERS.values())
+        new_provider = alfard_select("provider", provider_names, default=current_provider) or current_provider
+        base_url = PROVIDER_BASE_URLS[new_provider]
+        api_key_env = None
+
+        if new_provider in CLOUD_PROVIDERS:
+            api_key_env = PROVIDER_API_KEY_ENV[new_provider]
+            while True:
+                api_key = alfard_input(f"{new_provider} api key", password=True)
+                if api_key.strip():
+                    break
+                console.print(f"  [{p.warn}]key looks empty — continue anyway? (y/n)[/] ", end="")
+                if input().strip().lower() != "n":
+                    break
+            from alfard.security.keystore import write_env_encrypted, using_keyring
+            write_env_encrypted(ALFARD_HOME, {api_key_env: api_key})
+            backend = "(OS keyring)" if using_keyring(ALFARD_HOME) else "(key file)"
+            console.print(f"\n{dot('ok')} [{p.fg_dim}]api key encrypted and stored {backend}[/]")
+        else:
+            console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
+            base_url = alfard_input("base url", default=base_url).rstrip("/") or base_url
+
+        model_names = [name for _, name in PROVIDER_MODELS[new_provider]]
+        raw_model = alfard_select("model", model_names, default=model_names[0]) or model_names[0]
+        new_model = raw_model
+        if new_model == "custom":
+            custom_input = alfard_input("custom model name").strip()
+            new_model = custom_input if custom_input else model_names[0]
+
+        cfg["provider"] = {
+            "name": new_provider,
+            "model": new_model,
+            "base_url": base_url,
+            "api_key_env": api_key_env,
+        }
+        with config_path.open("w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        console.print(f"\n{dot('ok')} [{p.fg_dim}]provider updated: {new_provider} / {new_model}[/]")
+
+    elif action == "change model":
+        model_names = [name for _, name in PROVIDER_MODELS.get(current_provider, [("1", "custom")])]
+        default_model = current_model if current_model in model_names else model_names[0]
+        raw_model = alfard_select("model", model_names, default=default_model) or current_model
+        new_model = raw_model
+        if new_model == "custom":
+            custom_input = alfard_input("custom model name").strip()
+            new_model = custom_input if custom_input else current_model
+        cfg["provider"]["model"] = new_model
+        with config_path.open("w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        console.print(f"\n{dot('ok')} [{p.fg_dim}]model updated: {new_model}[/]")
+
+    elif action == "change api key":
+        api_key_env = PROVIDER_API_KEY_ENV[current_provider]
+        while True:
+            api_key = alfard_input(f"{current_provider} api key", password=True)
+            if api_key.strip():
+                break
+            console.print(f"  [{p.warn}]key looks empty — continue anyway? (y/n)[/] ", end="")
+            if input().strip().lower() != "n":
+                break
+        from alfard.security.keystore import write_env_encrypted, using_keyring
+        write_env_encrypted(ALFARD_HOME, {api_key_env: api_key})
+        backend = "(OS keyring)" if using_keyring(ALFARD_HOME) else "(key file)"
+        console.print(f"\n{dot('ok')} [{p.fg_dim}]api key updated {backend}[/]")
+
+    elif action == "change base url":
+        console.print(f"\n[{p.fg_dim}]current url: {current_base_url}[/]")
+        new_base_url = alfard_input("base url", default=current_base_url).rstrip("/") or current_base_url
+        cfg["provider"]["base_url"] = new_base_url
+        with config_path.open("w") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        console.print(f"\n{dot('ok')} [{p.fg_dim}]base url updated: {new_base_url}[/]")
 
 
 if __name__ == "__main__":

@@ -12,11 +12,20 @@ def handle_help(context: dict) -> str:
     return "\n".join(lines)
 
 
-def handle_clear(context: dict) -> str:
-    memory = context.get("memory")
-    if memory:
-        memory.reset()
-    return "Context cleared. Starting fresh."
+def handle_new(context: dict) -> str:
+    orchestrator = context.get("orchestrator")
+    loader = context.get("loader")
+
+    if orchestrator:
+        orchestrator.checkpoint_session()
+        if loader:
+            new_prompt = loader.build_system_prompt()
+            orchestrator._system_prompt = new_prompt
+            orchestrator._memory._system_prompt = new_prompt
+    elif context.get("memory"):
+        context["memory"].reset()
+
+    return "Session saved. Starting fresh with updated memory."
 
 
 def handle_status(context: dict) -> str:
@@ -143,6 +152,20 @@ def handle_model(context: dict) -> str:
     )
 
 
+def handle_que(context: dict) -> str:
+    args = context.get("_args", "").strip()
+    if not args:
+        return "Usage: /que <message> — queues a message to send after the current agent turn."
+    return f"Queued: \"{args}\" — will run after the current turn."
+
+
+def handle_guide(context: dict) -> str:
+    args = context.get("_args", "").strip()
+    if not args:
+        return "Usage: /guide <guidance> — pauses the agent mid-turn and injects your guidance."
+    return "Usage: /guide <guidance> — type this while the agent is running to redirect it."
+
+
 # ── Registration ──────────────────────────────────────────
 
 def register_all() -> None:
@@ -150,10 +173,12 @@ def register_all() -> None:
     from alfard.commands.registry import _commands, register
     if _commands:
         return
-    register("/help",     "List all available commands",           handle_help)
-    register("/clear",    "Clear conversation context",            handle_clear)
-    register("/status",   "Show agent, integrations, turn count",  handle_status)
-    register("/skills",   "List active skills for this agent",     handle_skills)
-    register("/remember", "Save this session to brain.md",         handle_remember)
-    register("/reset",    "Wipe memory.md for this agent",         handle_reset)
-    register("/model",    "Show current LLM provider and model",   handle_model)
+    register("/help",     "List all available commands",                        handle_help)
+    register("/new",      "Save session and start fresh with updated memory",   handle_new)
+    register("/status",   "Show agent, integrations, turn count",               handle_status)
+    register("/skills",   "List active skills for this agent",                  handle_skills)
+    register("/remember", "Save this session to brain.md",                      handle_remember)
+    register("/reset",    "Wipe memory.md for this agent",                      handle_reset)
+    register("/model",    "Show current LLM provider and model",                handle_model)
+    register("/que",      "Queue a message to send after the current turn",     handle_que)
+    register("/guide",    "Redirect the agent mid-turn with inline guidance",   handle_guide)

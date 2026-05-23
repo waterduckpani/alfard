@@ -5,6 +5,8 @@ as interactive Slack messages."""
 import os
 import time
 import threading
+from collections import deque
+from alfard.memory.notifications import drain as _drain_notifications
 from alfard.paths import load_env
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
@@ -32,6 +34,18 @@ def _build_orchestrator(agent_name: str,
         gate_enabled=True,
     )
     return orchestrator, audit, notifier
+
+
+def _format_memory_notification(entry: dict) -> str:
+    """Format a memory-write entry as a muted Slack mrkdwn follow-up."""
+    mem_type = entry.get("type", "fact")
+    content = entry.get("content", "")
+    truncated = content[:80] + "…" if len(content) > 80 else content
+    if mem_type == "mistake":
+        label = "⚠ mistake"
+    else:
+        label = mem_type
+    return f'_{label} · "{truncated}"_'
 
 
 def _to_slack_mrkdwn(text: str) -> str:
@@ -84,6 +98,9 @@ class AlfardSlackBot:
         self._locks: dict[str, threading.Lock] = {}
         self._first_message: dict[str, bool] = {}
         self._session_last_active: dict[str, float] = {}
+        self._message_counts: dict[str, int] = {}
+        self._pending_queues: dict[str, deque] = {}
+        self._stop_event = threading.Event()
 
         # Bot's own user ID (to ignore self-messages)
         auth = self.web_client.auth_test()
@@ -101,6 +118,7 @@ class AlfardSlackBot:
             self._locks[channel] = threading.Lock()
             self._first_message[channel] = True
             self._session_last_active[channel] = time.time()
+            self._message_counts[channel] = 0
         return self._sessions[channel]
 
     def _evict_stale_sessions(self) -> None:
@@ -119,11 +137,60 @@ class AlfardSlackBot:
             self._locks.pop(ch, None)
             self._first_message.pop(ch, None)
             self._session_last_active.pop(ch, None)
+            self._message_counts.pop(ch, None)
+            self._pending_queues.pop(ch, None)
 
     def _handle_message(self, channel: str, text: str,
                         user: str) -> None:
         """Process a message in a thread so Slack doesn't time out."""
         self._session_last_active[channel] = time.time()
+        stripped = text.strip()
+
+        # /guide — signal the running orchestrator without acquiring the lock
+        if stripped.lower().startswith("/guide "):
+            guidance = stripped[7:].strip()
+            if guidance and channel in self._sessions:
+                orchestrator, _, _ = self._sessions[channel]
+                orchestrator.signal_guide(guidance)
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=channel,
+                        text="⏸ Guidance received — agent will adjust at the next step."
+                    )
+                except Exception:
+                    pass
+            elif guidance:
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=channel, text="No active session to guide."
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=channel, text="Usage: /guide <your guidance>"
+                    )
+                except Exception:
+                    pass
+            return
+
+        # /que — add to queue without acquiring the lock, acknowledge immediately
+        if stripped.lower().startswith("/que "):
+            queued = stripped[5:].strip()
+            if queued:
+                if channel not in self._pending_queues:
+                    self._pending_queues[channel] = deque()
+                self._pending_queues[channel].append(queued)
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=channel,
+                        text=f"✓ Queued — will send after the current turn finishes."
+                    )
+                except Exception:
+                    pass
+            return
+
         self._evict_stale_sessions()
         orchestrator, audit, notifier = self._get_session(channel)
         lock = self._locks[channel]
@@ -152,11 +219,43 @@ class AlfardSlackBot:
                 )
                 response = "Something went wrong. Please try again."
 
+            self._message_counts[channel] = self._message_counts.get(channel, 0) + 1
+            if self._message_counts[channel] >= 15:
+                self._message_counts[channel] = 0
+                try:
+                    orchestrator.checkpoint_session()
+                except Exception:
+                    pass
+
             # Post response
             self.web_client.chat_postMessage(
                 channel=channel,
                 text=_to_slack_mrkdwn(response)
             )
+
+            # Emit memory-write notifications buffered during this turn
+            for _entry in _drain_notifications():
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=channel,
+                        text=_format_memory_notification(_entry),
+                    )
+                except Exception:
+                    pass
+
+            # Drain any messages queued with /que during this turn
+            pending = self._pending_queues.get(channel)
+            while pending:
+                next_msg = pending.popleft()
+                try:
+                    queued_response = orchestrator.run(next_msg)
+                    self._message_counts[channel] = self._message_counts.get(channel, 0) + 1
+                    self.web_client.chat_postMessage(
+                        channel=channel,
+                        text=_to_slack_mrkdwn(queued_response)
+                    )
+                except Exception:
+                    pass
 
     def _process_request(self, client: SocketModeClient,
                          req: SocketModeRequest) -> None:
@@ -244,6 +343,24 @@ class AlfardSlackBot:
                         except Exception:
                             pass
 
+    def _check_inactivity(self) -> None:
+        """Background thread: checkpoint conversations idle > 30 min with ≥ 3 messages."""
+        while not self._stop_event.wait(600):  # check every 10 minutes
+            cutoff = time.time() - 1800  # 30 minutes
+            for channel, last_active in list(self._session_last_active.items()):
+                if last_active < cutoff and self._message_counts.get(channel, 0) >= 3:
+                    lock = self._locks.get(channel)
+                    if lock is None:
+                        continue
+                    with lock:
+                        if self._message_counts.get(channel, 0) >= 3:
+                            self._message_counts[channel] = 0
+                            try:
+                                orchestrator, _, _ = self._sessions[channel]
+                                orchestrator.checkpoint_session()
+                            except Exception:
+                                pass
+
     def start(self) -> None:
         """Start the bot. Blocks until Ctrl+C."""
         self.socket_client.socket_mode_request_listeners.append(
@@ -253,9 +370,14 @@ class AlfardSlackBot:
         print("[slack] connected. Send a DM to @alfard to start.")
         print("[slack] press Ctrl+C to stop.")
 
+        threading.Thread(
+            target=self._check_inactivity, daemon=True, name="alfard-inactivity"
+        ).start()
+
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n[slack] stopping...")
+            self._stop_event.set()
             self.socket_client.close()

@@ -50,10 +50,16 @@ class ChannelManager:
             foreground.start()
 
     def _run_background(self, channel: BaseChannel) -> None:
+        import traceback
         try:
             channel.start()
         except Exception as exc:
             log.error("channel '%s' crashed: %s", channel.get_name(), exc, exc_info=True)
+            print(
+                f"\n[channel:{channel.get_name()}] crashed — {exc}\n"
+                + traceback.format_exc(),
+                flush=True,
+            )
             if self._audit is not None:
                 try:
                     self._audit._write({

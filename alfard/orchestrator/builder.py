@@ -14,6 +14,7 @@ from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
 from alfard.commands.handlers import register_all
+from alfard.memory.tools import register_memory_tools
 
 
 def build_orchestrator(
@@ -87,6 +88,7 @@ def build_orchestrator(
     orchestrator._memory_manager = loader.memory_manager
     orchestrator._web_access_enabled = web_config.enabled
 
+    register_memory_tools(registry, loader)
     register_all()
 
     return orchestrator, audit, loader, registry

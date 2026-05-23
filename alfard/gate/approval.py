@@ -1,6 +1,7 @@
 """Approval gate — intercepts irreversible tool calls and waits for explicit human confirmation before allowing execution."""
 
 import json
+import threading
 import yaml
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -9,6 +10,10 @@ from alfard.cli import theme
 from alfard.paths import ALFARD_HOME
 
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+
+# Serialises stdin access between the gate (background thread) and the
+# mid-turn command poller (main thread) so they never race on the same fd.
+_STDIN_LOCK = threading.Lock()
 
 
 class CLINotifier:
@@ -20,10 +25,11 @@ class CLINotifier:
             f"Source:     {source}[/{theme.DIM}]"
         )
         rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
-        while True:
-            choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
-            if choice in ("y", "n"):
-                return choice
+        with _STDIN_LOCK:
+            while True:
+                choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
+                if choice in ("y", "n"):
+                    return choice
 
 
 class ApprovalGate:

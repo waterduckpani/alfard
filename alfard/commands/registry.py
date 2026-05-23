@@ -20,11 +20,14 @@ def dispatch(command: str, context: dict) -> str | None:
 
     context dict contains whatever the handler needs:
       agent_name, memory, loader, registry, llm, turn_count
+    Also injects _args: text after the command name.
     """
-    key = command.lstrip("/").split()[0].lower()
+    parts = command.lstrip("/").split(maxsplit=1)
+    key = parts[0].lower()
     if key not in _commands:
         return None
-    return _commands[key]["handler"](context)
+    ctx = {**context, "_args": parts[1] if len(parts) > 1 else ""}
+    return _commands[key]["handler"](ctx)
 
 def is_command(text: str) -> bool:
     """Return True if text starts with /"""

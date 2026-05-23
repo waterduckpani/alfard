@@ -17,3 +17,11 @@ class BaseChannel(ABC):
     @abstractmethod
     def get_name(self) -> str:
         """Return a short lowercase name for this channel (e.g. 'terminal', 'slack')."""
+
+    @abstractmethod
+    def notify_memory_write(self, entry: dict) -> None:
+        """Emit a notification after a successful brain.db write.
+
+        Called after the full agent reply has been sent so as not to interrupt
+        streaming. entry keys: type, content, source, valence, status.
+        """

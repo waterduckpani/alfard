@@ -78,6 +78,15 @@ class AgentLoader:
         if project_state:
             parts.append(f"# Project state\n{project_state}")
 
+        # Fixed memory orientation — always present
+        parts.append(
+            "## Memory\n"
+            "You have a persistent memory system (brain.db). Use the memory write "
+            "tool to store information. Rules are in your memory skill. "
+            "The ╭─ remembered ╮ notification is system-generated — "
+            "never produce it yourself."
+        )
+
         # Always: most recent session + query-relevant past sessions
         sessions = self.memory_manager.retrieve_sessions(query)
         if sessions:
@@ -108,7 +117,19 @@ class AgentLoader:
         if mem_sections:
             parts.append("# Memory\n" + "\n\n".join(mem_sections))
 
-        # Skills
+        # Built-in skills — always injected unconditionally; memory.md first, then alphabetical
+        if SKILLS_DIR.exists():
+            _memory = SKILLS_DIR / "memory.md"
+            if _memory.exists():
+                parts.append(f"# Memory skill\n{_memory.read_text(encoding='utf-8').strip()}")
+            for skill_file in sorted(SKILLS_DIR.glob("*.md")):
+                if skill_file.name == "memory.md":
+                    continue
+                content = skill_file.read_text(encoding="utf-8").strip()
+                if content:
+                    parts.append(f"# {skill_file.stem.capitalize()} skill\n{content}")
+
+        # Agent-specific skills
         skills_dir = self.agent_dir / "skills"
         if skills_dir.exists():
             for skill_file in sorted(skills_dir.glob("*.md")):

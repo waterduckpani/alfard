@@ -14,15 +14,20 @@ from alfard.cli.theme import p, console
 from alfard.cli.components import error_block, alfard_spinner, alfard_select
 from alfard.channels.manager import ChannelManager
 from alfard.channels.slack import SlackChannel
+from alfard.channels.telegram import TelegramChannel
+from alfard.channels.discord import DiscordChannel
 
 
 def _has_headless_channels() -> bool:
     """Return True if at least one headless channel token is configured."""
     from alfard.paths import load_env
     load_env()
-    return bool(
+    has_slack = bool(
         os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN")
     )
+    has_telegram = bool(os.environ.get("TELEGRAM_BOT_TOKEN"))
+    has_discord = bool(os.environ.get("DISCORD_BOT_TOKEN"))
+    return has_slack or has_telegram or has_discord
 
 
 def _setup_log_file(agent_name: str) -> logging.Handler:
@@ -144,8 +149,14 @@ def headless(agent: str | None, no_mcp: bool) -> None:
         channel_manager = ChannelManager()
         channel_manager.set_audit(audit)
 
+        from alfard.paths import load_env
+        load_env()
         if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN"):
             channel_manager.register(SlackChannel(agent))
+        if os.environ.get("TELEGRAM_BOT_TOKEN"):
+            channel_manager.register(TelegramChannel(agent))
+        if os.environ.get("DISCORD_BOT_TOKEN"):
+            channel_manager.register(DiscordChannel(agent))
 
         active = channel_manager.names()
         console.print(f"[{p.fg_dim}]▸ {agent} running headless on: {', '.join(active)}[/]")

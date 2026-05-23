@@ -13,6 +13,8 @@ from alfard.cli.components import dot, error_block, alfard_spinner, alfard_selec
 from alfard.channels.manager import ChannelManager
 from alfard.channels.terminal import TerminalChannel
 from alfard.channels.slack import SlackChannel
+from alfard.channels.telegram import TelegramChannel
+from alfard.channels.discord import DiscordChannel
 
 
 @click.command(cls=AlfardCommand)
@@ -161,6 +163,10 @@ def run(agent: str | None, no_mcp: bool) -> None:
         load_env()
         if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN"):
             channel_manager.register(SlackChannel(agent))
+        if os.environ.get("TELEGRAM_BOT_TOKEN"):
+            channel_manager.register(TelegramChannel(agent))
+        if os.environ.get("DISCORD_BOT_TOKEN"):
+            channel_manager.register(DiscordChannel(agent))
 
         active = channel_manager.names()
         console.print(f"[{p.fg_dim}]▸ {agent} running on: {', '.join(active)}[/]\n")

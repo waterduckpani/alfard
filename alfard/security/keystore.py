@@ -119,10 +119,20 @@ def _from_dotenv(content: str) -> dict[str, str]:
     return result
 
 
-def write_env_encrypted(alfard_home: Path, env_vars: dict[str, str]) -> None:
-    """Encrypt env_vars and write to ~/.alfard/.env.enc (chmod 600)."""
+def write_env_encrypted(alfard_home: Path, env_vars: dict[str, str], *, replace: bool = False) -> None:
+    """Encrypt env_vars and write to ~/.alfard/.env.enc (chmod 600).
+
+    By default merges with existing stored keys so partial updates don't
+    wipe unrelated credentials. Pass replace=True to overwrite entirely.
+    """
     Fernet, _ = _fernet()
     key = get_or_create_key(alfard_home)
+    if not replace:
+        try:
+            existing = decrypt_env(alfard_home)
+        except (KeystoreError, OSError):
+            existing = {}
+        env_vars = {**existing, **env_vars}
     ciphertext = Fernet(key).encrypt(_to_dotenv(env_vars).encode())
     enc_path = alfard_home / ".env.enc"
     enc_path.write_bytes(ciphertext)
