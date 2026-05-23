@@ -58,6 +58,16 @@ def _already_connected(name: str) -> bool:
     return any(s["name"] == name for s in data.get("servers", []))
 
 
+def _is_headless() -> bool:
+    """Return True when running on a server with no browser available."""
+    if sys.platform == "linux":
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            return True
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return True
+    return False
+
+
 def copy_to_clipboard(text: str) -> bool:
     """Returns True if clipboard copy succeeded."""
     try:
@@ -303,6 +313,8 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
     console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
 
+    headless = _is_headless()
+
     if not shutil.which("gws"):
         console.print(f"[{p.fg_dim}]installing gws (google workspace cli)...[/]")
         if not shutil.which("npm"):
@@ -366,14 +378,27 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 f"  click the download button to download the json file[/]"
             )
 
-            alfard_input("press enter to open google cloud console", default="")
-            webbrowser.open("https://console.cloud.google.com")
+            if headless:
+                console.print(
+                    f"\n[{p.warn}]headless server detected.[/] [{p.fg_dim}]open these urls on another device:[/]"
+                )
+            alfard_input("press enter when ready to open google cloud console", default="")
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com")
             alfard_input("step 1 done — project created? press enter to continue", default="")
 
-            webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/apis/library/gmail.googleapis.com[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
             alfard_input("step 2 done — gmail api enabled? press enter to continue", default="")
 
-            webbrowser.open("https://console.cloud.google.com/auth/clients")
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/auth/clients[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/auth/clients")
             console.print(
                 f"\n[{p.fg_dim}]configure the consent screen:[/]\n"
                 f"[{p.fg_faint}]  choose external\n"
@@ -386,7 +411,10 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 default="",
             )
 
-            webbrowser.open("https://console.cloud.google.com/apis/credentials")
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/apis/credentials[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/apis/credentials")
             console.print(
                 f"\n[{p.fg_dim}]create oauth credentials:[/]\n"
                 f"[{p.fg_faint}]  click create credentials → oauth client id\n"
@@ -394,6 +422,15 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 f"  click the download button to download the json file[/]"
             )
             alfard_input("step 4 done — credentials json downloaded? press enter to continue", default="")
+
+            if headless:
+                import socket as _sock
+                _hostname = _sock.gethostname()
+                console.print(
+                    f"\n[{p.fg_dim}]transfer the credentials json from your local machine to this server:[/]\n"
+                    f"[{p.fg_faint}]  scp ~/Downloads/client_secret_*.json {_hostname}:{creds_dest}[/]\n"
+                    f"[{p.fg_dim}]then enter the path on this server (e.g. {creds_dest}):[/]"
+                )
 
             creds_path = alfard_input("credentials json file path").strip().strip("'\"")
 
@@ -410,7 +447,6 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             shutil.copy(creds_path, creds_dest)
             console.print(f"{dot('ok')} [{p.fg_dim}]credentials saved.[/]")
 
-    console.print(f"\n[{p.fg_dim}]opening browser for google sign-in...[/]")
     import os as _os2
     load_env()
     _env = _os2.environ.copy()
@@ -420,15 +456,46 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         _env["GOOGLE_WORKSPACE_CLI_CLIENT_ID"] = _client_id
     if _client_secret:
         _env["GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"] = _client_secret
-    result = subprocess.run(["gws", "auth", "login"], env=_env)
-    if result.returncode != 0:
-        console.print(error_block(
-            agent="alfard connect",
-            state="failed",
-            headline="google sign-in failed.",
-            explanation=f"check the error above, then re-run: alfard connect {name}",
-        ))
-        return False
+
+    if headless:
+        console.print(
+            f"\n[{p.fg_dim}]headless server — starting browser-free sign-in...[/]\n"
+            f"[{p.fg_faint}]a sign-in url will be printed below. open it on any device\n"
+            f"with a browser, complete sign-in, then paste the authorization code back here.[/]\n"
+        )
+        _env["BROWSER"] = ""
+        result = subprocess.run(["gws", "auth", "login"], env=_env)
+        if result.returncode != 0:
+            import socket as _sock2
+            _hostname = _sock2.gethostname()
+            _creds_enc = Path.home() / ".config" / "gws" / "credentials.enc"
+            console.print(
+                f"\n[{p.warn}]browser-free sign-in failed.[/] [{p.fg_dim}]use the manual transfer method:[/]\n"
+                f"[{p.fg_faint}]  1. on your local machine, install gws and run: gws auth login\n"
+                f"  2. copy the credentials file to this server:\n"
+                f"       scp ~/.config/gws/credentials.enc {_hostname}:{_creds_enc}\n"
+                f"  3. press enter here once the transfer is complete[/]"
+            )
+            alfard_input("done? press enter to continue", default="")
+            if not _creds_enc.exists():
+                console.print(error_block(
+                    agent="alfard connect",
+                    state="failed",
+                    headline="credentials.enc not found on this server.",
+                    explanation=f"expected: {_creds_enc} — re-run: alfard connect {name}",
+                ))
+                return False
+    else:
+        console.print(f"\n[{p.fg_dim}]opening browser for google sign-in...[/]")
+        result = subprocess.run(["gws", "auth", "login"], env=_env)
+        if result.returncode != 0:
+            console.print(error_block(
+                agent="alfard connect",
+                state="failed",
+                headline="google sign-in failed.",
+                explanation=f"check the error above, then re-run: alfard connect {name}",
+            ))
+            return False
 
     console.print(f"[{p.fg_dim}]testing connection...[/]")
     test = subprocess.run(
