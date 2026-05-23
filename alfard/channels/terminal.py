@@ -135,7 +135,6 @@ class TerminalChannel(BaseChannel):
         _session = PromptSession(
             message=_message,
             style=_PT_STYLE,
-            refresh_interval=0.5,
         )
 
         try:
