@@ -8,6 +8,9 @@ from collections import deque
 from io import StringIO
 from typing import Optional
 
+import io
+import os
+
 import yaml
 from prompt_toolkit import Application
 from prompt_toolkit.completion import Completer, Completion
@@ -285,17 +288,24 @@ class TerminalChannel(BaseChannel):
         ui = _ChatUI(agent, notifier)
 
         def _render_approval_panel(tool_name: str, arguments: dict, source: str) -> None:
-            """Called from the executor thread; renders the gate panel into the transcript."""
-            import json as _json
-            content = (
-                f"[{p.fg_dim}]Tool:       {tool_name}\n"
-                f"Arguments:  {_json.dumps(arguments, indent=2)}\n"
-                f"Source:     {source}[/]"
+            """Called from the executor thread; renders the compact gate panel into the transcript."""
+            panel = Panel(
+                f"[{p.fg_dim}]{tool_name}  ·  {source}[/]",
+                title="approve?",
+                title_align="left",
+                border_style=p.fg_faint,
+                expand=False,
+                padding=(0, 1),
             )
-            panel = Panel(content, title="Review required", border_style=p.fg_faint)
             ui.append(_rich_to_ansi(panel))
 
         notifier.set_on_present(_render_approval_panel)
+
+        # Silence MCP subprocess stderr (Node.js server noise) during the TUI session.
+        # Errors still surface through the Python exception path and appear in the transcript.
+        import alfard.integrations.mcp_client as _mcp_mod
+        _orig_errlog = _mcp_mod._errlog
+        _mcp_mod._errlog = open(os.devnull, "w")
 
         _turns = 0
         _outcome = "abandoned"
@@ -500,6 +510,8 @@ class TerminalChannel(BaseChannel):
                 except (asyncio.CancelledError, Exception):
                     pass
         finally:
+            _mcp_mod._errlog = _orig_errlog
+
             reflect_triggers.stop_idle_watcher(agent)
 
             exc_info = sys.exc_info()[1]

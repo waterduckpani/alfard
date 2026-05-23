@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from typing import Any
+import sys
+from typing import Any, TextIO
 
 import mcp
 import mcp.client.stdio
@@ -12,6 +13,11 @@ import yaml
 
 from alfard.tools.registry import ToolRegistry
 from alfard.paths import ALFARD_HOME, load_env
+
+# Swappable stderr sink for MCP subprocess output.
+# The terminal channel replaces this with a silent writer during TUI sessions
+# so Node.js MCP server noise doesn't corrupt the full-screen display.
+_errlog: TextIO = sys.stderr
 
 _CONFIG_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
@@ -134,7 +140,8 @@ class MCPClient:
                     args=cfg.get("args", []),
                     env=_resolve_env_vars(cfg.get("env_vars", {})),
                 )
-                return mcp.client.stdio.stdio_client(params)
+                import alfard.integrations.mcp_client as _self
+                return mcp.client.stdio.stdio_client(params, errlog=_self._errlog)
             else:
                 raise ValueError(f"Unknown transport '{transport}' for server '{name}'")
 
