@@ -8,7 +8,6 @@ from collections import deque
 
 import yaml
 from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from rich.console import Console as _RichConsole
@@ -28,20 +27,11 @@ from alfard.paths import ALFARD_HOME
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 _PT_STYLE = Style.from_dict({
-    "separator":    p.rule,
-    "arrow":        f"bold {p.fg_em}",
-    "bottom-toolbar":      f"noreverse bg:{p.rule} {p.fg_faint}",
-    "bottom-toolbar.text": f"noreverse bg:{p.rule} {p.fg_faint}",
-    "approval":     f"noreverse bg:{p.rule} {p.warn}",
+    "separator": p.rule,
+    "arrow":     f"bold {p.fg_em}",
+    "hint":      p.fg_faint,
+    "approval":  p.warn,
 })
-
-
-def _prompt_message() -> FormattedText:
-    w = shutil.get_terminal_size((80, 24)).columns
-    return FormattedText([
-        ("class:separator", "─" * w + "\n"),
-        ("class:arrow", "›  "),
-    ])
 
 
 def _read_msg_interval() -> int:
@@ -123,16 +113,27 @@ class TerminalChannel(BaseChannel):
         _running = False
         _loop = asyncio.get_running_loop()
 
-        def _toolbar() -> FormattedText:
+        def _message() -> list:
+            w = shutil.get_terminal_size((80, 24)).columns
             if notifier.has_pending():
-                return FormattedText([("class:approval", "  approve?  y · yes   n · no")])
-            if _running:
-                return FormattedText([("class:bottom-toolbar.text", "  esc to interrupt")])
-            return FormattedText([("class:bottom-toolbar.text", "  esc to quit")])
+                hint = "  approve? y · yes   n · no  "
+                hint_style = "class:approval"
+            elif _running:
+                hint = "  esc to interrupt  "
+                hint_style = "class:hint"
+            else:
+                hint = "  esc to quit  "
+                hint_style = "class:hint"
+            sep_len = max(2, w - len(hint))
+            return [
+                ("class:separator", "─" * sep_len),
+                (hint_style, hint),
+                ("", "\n"),
+                ("class:arrow", "›  "),
+            ]
 
         _session = PromptSession(
-            message=_prompt_message,
-            bottom_toolbar=_toolbar,
+            message=_message,
             style=_PT_STYLE,
             refresh_interval=0.5,
         )
