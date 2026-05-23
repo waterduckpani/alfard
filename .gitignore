@@ -50,9 +50,9 @@ logs/
 agents/*/soul.md
 
 # Smoke test / dev scratch files
-main.py
-test_agent.py
-diag_web.py
+/main.py
+/test_agent.py
+/diag_web.py
 
 # Claude Code local settings
 .claude/
