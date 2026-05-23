@@ -10,6 +10,7 @@ from typing import Optional
 
 import yaml
 from prompt_toolkit import Application
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
@@ -41,6 +42,35 @@ _FAKE_NOTIFICATION_RE = re.compile(
 
 # Sentinel value placed in the input queue to signal a quit/interrupt.
 _QUIT = "\x00quit"
+
+_SLASH_COMMANDS = [
+    ("/remember", "save a fact to memory"),
+    ("/cancel",   "stop the current operation"),
+    ("/reset",    "stop the current operation"),
+    ("/que",      "queue a message for the next turn"),
+    ("/guide",    "send guidance while the agent is running"),
+    ("/help",     "list available commands"),
+]
+
+
+class _SlashCompleter(Completer):
+    """Shows slash-command suggestions when input starts with '/'."""
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text.startswith("/"):
+            return
+        # Only complete the first token (command name itself)
+        if " " in text:
+            return
+        for cmd, meta in _SLASH_COMMANDS:
+            if cmd.startswith(text):
+                yield Completion(
+                    cmd,
+                    start_position=-len(text),
+                    display=cmd,
+                    display_meta=meta,
+                )
 
 
 def _strip_fake_notifications(text: str) -> str:
@@ -132,6 +162,8 @@ class _ChatUI:
             prompt=[("class:arrow", "›  ")],
             multiline=False,
             wrap_lines=False,
+            completer=_SlashCompleter(),
+            complete_while_typing=True,
         )
 
         # --- Key bindings ---
@@ -159,6 +191,12 @@ class _ChatUI:
             "hint":      p.fg_faint,
             "approval":  f"bold {p.warn}",
             "arrow":     f"bold {p.fg_em}",
+            # completion dropdown
+            "completion-menu":                          f"bg:{p.rule} {p.fg}",
+            "completion-menu.completion":               f"bg:{p.rule} {p.fg}",
+            "completion-menu.completion.current":       f"bg:{p.fg_faint} {p.fg_em} bold",
+            "completion-menu.meta.completion":          f"bg:{p.rule} {p.fg_faint}",
+            "completion-menu.meta.completion.current":  f"bg:{p.fg_faint} {p.fg_dim}",
         })
 
         return Application(
@@ -420,6 +458,10 @@ class TerminalChannel(BaseChannel):
                     system_prompt = loader.build_system_prompt(query=stripped)
                     orchestrator._memory._system_prompt = system_prompt
                     _first_message = False
+
+                # Echo the user's message into the transcript
+                ui.append(_rich_to_ansi(f"[bold {p.fg_em}]you[/]\n"))
+                ui.append(stripped + "\n\n")
 
                 ui.set_running(True)
                 _current_task = asyncio.create_task(_run_llm(stripped))
