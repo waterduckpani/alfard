@@ -29,6 +29,9 @@ dependencies = [
     "discord.py>=2.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio"]
+
 [project.urls]
 Homepage = "https://github.com/waterduckpani/alfard"
 Repository = "https://github.com/waterduckpani/alfard"
