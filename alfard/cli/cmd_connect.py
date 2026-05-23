@@ -304,8 +304,13 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     _save_integrations(data)
 
     display = integration["display_name"]
+    _, added_to = _ask_agent_assignment(display)
+
     console.print(f"\n{dot('ok')} [{p.fg_dim}]{display} connected.[/]")
-    console.print(f"[{p.fg_faint}]run alfard status to confirm.[/]")
+    if added_to and added_to.strip():
+        console.print(f"[{p.fg_faint}]skill added to: {added_to.strip()}[/]")
+    else:
+        console.print(f"  [{p.fg_dim}]create an agent first: alfard create[/]")
     return True
 
 

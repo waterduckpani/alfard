@@ -210,26 +210,24 @@ def run_soul_wizard() -> str | None:
 
     # ── Add essential skills ──────────────────────────────────────────────────
 
-    for skill in _ESSENTIAL_SKILLS:
-        add_skill(name, skill)
+    added_essential = [s for s in _ESSENTIAL_SKILLS if add_skill(name, s)]
+    failed_essential = [s for s in _ESSENTIAL_SKILLS if s not in added_essential]
 
     # ── Add user-selected optional skills ─────────────────────────────────────
 
     essential_set = set(_ESSENTIAL_SKILLS)
-    for skill in extra_skills:
-        if skill not in essential_set:
-            add_skill(name, skill)
+    added_optional = [s for s in extra_skills if s not in essential_set and add_skill(name, s)]
 
     # ── Completion ────────────────────────────────────────────────────────────
 
     console.print()
     console.print(f"[{p.ok}]{g['check']}[/] soul.md written")
-    skills_list = ", ".join(_ESSENTIAL_SKILLS)
-    console.print(f"[{p.ok}]{g['check']}[/] Essential skills added: {skills_list}")
-    if extra_skills:
-        extras = [s for s in extra_skills if s not in essential_set]
-        if extras:
-            console.print(f"[{p.ok}]{g['check']}[/] Optional skills added: {', '.join(extras)}")
+    if added_essential:
+        console.print(f"[{p.ok}]{g['check']}[/] Essential skills added: {', '.join(added_essential)}")
+    if failed_essential:
+        console.print(f"[{p.warn}]  Skills not found in library: {', '.join(failed_essential)}[/]")
+    if added_optional:
+        console.print(f"[{p.ok}]{g['check']}[/] Optional skills added: {', '.join(added_optional)}")
     console.print(f"[{p.fg_faint}]  Edit anytime: alfard edit {name} soul[/]")
 
     return name
