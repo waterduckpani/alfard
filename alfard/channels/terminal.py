@@ -2,12 +2,15 @@
 
 import asyncio
 import re
+import shutil
 import sys
 from collections import deque
 
 import yaml
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.styles import Style
 from rich.console import Console as _RichConsole
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -23,6 +26,22 @@ from alfard.memory.tools import _propose_memory
 from alfard.paths import ALFARD_HOME
 
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+
+_PT_STYLE = Style.from_dict({
+    "separator":    p.rule,
+    "arrow":        f"bold {p.fg_em}",
+    "bottom-toolbar":      f"noreverse bg:{p.rule} {p.fg_faint}",
+    "bottom-toolbar.text": f"noreverse bg:{p.rule} {p.fg_faint}",
+    "approval":     f"noreverse bg:{p.rule} {p.warn}",
+})
+
+
+def _prompt_message() -> FormattedText:
+    w = shutil.get_terminal_size((80, 24)).columns
+    return FormattedText([
+        ("class:separator", "─" * w + "\n"),
+        ("class:arrow", "›  "),
+    ])
 
 
 def _read_msg_interval() -> int:
@@ -101,8 +120,22 @@ class TerminalChannel(BaseChannel):
 
         _turns = 0
         _outcome = "abandoned"
-        _session = PromptSession()
+        _running = False
         _loop = asyncio.get_running_loop()
+
+        def _toolbar() -> FormattedText:
+            if notifier.has_pending():
+                return FormattedText([("class:approval", "  approve?  y · yes   n · no")])
+            if _running:
+                return FormattedText([("class:bottom-toolbar.text", "  esc to interrupt")])
+            return FormattedText([("class:bottom-toolbar.text", "  esc to quit")])
+
+        _session = PromptSession(
+            message=_prompt_message,
+            bottom_toolbar=_toolbar,
+            style=_PT_STYLE,
+            refresh_interval=0.5,
+        )
 
         try:
             console.print(
@@ -114,7 +147,6 @@ class TerminalChannel(BaseChannel):
             _user_message_count = 0
             _pending_queue: deque = deque()
             _msg_interval = _read_msg_interval()
-            _running = False
             _current_task: asyncio.Task | None = None
 
             reflect_triggers.start_idle_watcher(
@@ -187,7 +219,7 @@ class TerminalChannel(BaseChannel):
 
                 while True:
                     try:
-                        user_input = await _session.prompt_async("you › ")
+                        user_input = await _session.prompt_async()
                     except (KeyboardInterrupt, EOFError):
                         if _current_task and not _current_task.done():
                             orchestrator.stop()
