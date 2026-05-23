@@ -117,22 +117,18 @@ class AgentLoader:
         if mem_sections:
             parts.append("# Memory\n" + "\n\n".join(mem_sections))
 
-        # Built-in skills — always injected unconditionally; memory.md first, then alphabetical
+        # memory.md is always injected — it defines how the memory system works
         if SKILLS_DIR.exists():
             _memory = SKILLS_DIR / "memory.md"
             if _memory.exists():
                 parts.append(f"# Memory skill\n{_memory.read_text(encoding='utf-8').strip()}")
-            for skill_file in sorted(SKILLS_DIR.glob("*.md")):
-                if skill_file.name == "memory.md":
-                    continue
-                content = skill_file.read_text(encoding="utf-8").strip()
-                if content:
-                    parts.append(f"# {skill_file.stem.capitalize()} skill\n{content}")
 
-        # Agent-specific skills
+        # Agent-specific skills (explicitly added via add_skill)
         skills_dir = self.agent_dir / "skills"
         if skills_dir.exists():
             for skill_file in sorted(skills_dir.glob("*.md")):
+                if skill_file.name == "memory.md":
+                    continue  # already loaded above
                 skill_content = skill_file.read_text(encoding="utf-8").strip()
                 if skill_content:
                     parts.append(f"# {skill_file.stem.capitalize()} skill\n{skill_content}")

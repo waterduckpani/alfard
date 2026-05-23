@@ -376,6 +376,13 @@ def run_setup() -> None:
                 (agent_dir / "memory.md").write_text(
                     f"# {agent_name} — memory\n\n", encoding="utf-8"
                 )
+                from alfard.agents.loader import add_skill as _add_skill
+                _ESSENTIAL = [
+                    "memory", "tasks", "project", "research",
+                    "reasoning", "communication", "debugging",
+                ]
+                for _skill in _ESSENTIAL:
+                    _add_skill(agent_name, _skill)
                 break
             # loop back — re-ask name, purpose, and tone
 
@@ -393,7 +400,7 @@ def run_setup() -> None:
         from alfard.agents.loader import add_skill, SKILLS_DIR
 
         console.print(
-            f"{dot('ok')} [{p.fg_dim}]Essential skills included: memory, tasks, projects, research, reasoning, communication, debugging[/]"
+            f"{dot('ok')} [{p.fg_dim}]Essential skills added: memory, tasks, project, research, reasoning, communication, debugging[/]"
         )
         console.print(
             f"  [{p.fg_faint}]Add more: alfard skill add {agent_name}[/]\n"
