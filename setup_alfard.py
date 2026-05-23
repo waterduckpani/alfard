@@ -308,7 +308,7 @@ def run_setup() -> None:
             return
         agent_name = result
 
-        steps_done = list(dict.fromkeys(steps_done + ["agent_created"]))
+        steps_done = list(dict.fromkeys(steps_done + ["agent_created", "skills"]))
         _save_checkpoint(CHECKPOINT_PATH, {
             "steps_done": steps_done,
             "provider": provider,
