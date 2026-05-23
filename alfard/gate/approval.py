@@ -11,8 +11,7 @@ from alfard.paths import ALFARD_HOME
 
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
-# Serialises stdin access between the gate (background thread) and the
-# mid-turn command poller (main thread) so they never race on the same fd.
+# Kept for non-terminal (headless/service) contexts that still use CLINotifier.
 _STDIN_LOCK = threading.Lock()
 
 
@@ -30,6 +29,42 @@ class CLINotifier:
                 choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
                 if choice in ("y", "n"):
                     return choice
+
+
+class QueueNotifier:
+    """Approval notifier for the async terminal loop.
+
+    present() is called from the executor thread; it posts a request, prints
+    the approval panel, then blocks until the async main loop calls
+    post_response().  The main loop detects has_pending() on each prompt
+    iteration and routes the user's y/n answer back here.
+    """
+
+    def __init__(self) -> None:
+        self._pending = threading.Event()
+        self._response_ready = threading.Event()
+        self._response: str = "n"
+
+    def has_pending(self) -> bool:
+        return self._pending.is_set()
+
+    def present(self, tool_name: str, arguments: dict, source: str) -> str:
+        content = (
+            f"[{theme.DIM}]Tool:       {tool_name}\n"
+            f"Arguments:  {json.dumps(arguments, indent=2)}\n"
+            f"Source:     {source}[/{theme.DIM}]"
+        )
+        rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
+        self._pending.set()
+        self._response_ready.wait()
+        self._response_ready.clear()
+        return self._response
+
+    def post_response(self, response: str) -> None:
+        """Called from the async main loop with 'y' or 'n'."""
+        self._pending.clear()
+        self._response = response
+        self._response_ready.set()
 
 
 class ApprovalGate:

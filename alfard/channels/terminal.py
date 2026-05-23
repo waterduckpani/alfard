@@ -1,22 +1,22 @@
 """Terminal channel — interactive CLI loop for a single alfard agent session."""
 
+import asyncio
 import re
-import select
 import sys
-import threading
 from collections import deque
 
 import yaml
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
-from rich.panel import Panel
+from rich.console import Console as _RichConsole
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.text import Text
 
 from alfard.channels.base import BaseChannel
 from alfard.cli.theme import p, console
 from alfard.cli.components import error_block
-from alfard.gate.approval import _STDIN_LOCK
+from alfard.gate.approval import QueueNotifier
 from alfard.memory.notifications import drain as _drain_notifications
 from alfard.memory import reflect_triggers
 from alfard.memory.tools import _propose_memory
@@ -46,7 +46,6 @@ def _strip_fake_notifications(text: str) -> str:
     return _FAKE_NOTIFICATION_RE.sub("", text).strip()
 
 
-
 class TerminalChannel(BaseChannel):
     """Interactive terminal chat loop for one agent."""
 
@@ -63,7 +62,8 @@ class TerminalChannel(BaseChannel):
     def stop(self) -> None:
         self._orchestrator.stop()
 
-    def notify_memory_write(self, entry: dict) -> None:
+    def notify_memory_write(self, entry: dict, _con=None) -> None:
+        c = _con or console
         mem_type = entry.get("type", "fact")
         content = entry.get("content", "")
         truncated = content[:80] + "…" if len(content) > 80 else content
@@ -75,7 +75,7 @@ class TerminalChannel(BaseChannel):
             label = mem_type
             border_style = p.fg_faint
 
-        text = Text(f'{label} · "{truncated}"', style=f"dim italic")
+        text = Text(f'{label} · "{truncated}"', style="dim italic")
         panel = Panel(
             text,
             title="[dim]remembered[/dim]",
@@ -84,18 +84,25 @@ class TerminalChannel(BaseChannel):
             expand=False,
             padding=(0, 1),
         )
-        console.print(panel)
+        c.print(panel)
 
-    def start(self) -> None:  # noqa: C901  (complexity lives here by necessity)
+    def start(self) -> None:
+        asyncio.run(self._run_async())
+
+    async def _run_async(self) -> None:  # noqa: C901
         agent = self._agent_name
         orchestrator = self._orchestrator
         audit = self._audit
         loader = self._loader
-        registry = self._registry
+
+        # Inject queue-based notifier so the approval gate routes through our loop.
+        notifier = QueueNotifier()
+        orchestrator._gate._notifier = notifier
 
         _turns = 0
         _outcome = "abandoned"
         _session = PromptSession()
+        _loop = asyncio.get_running_loop()
 
         try:
             console.print(
@@ -107,6 +114,9 @@ class TerminalChannel(BaseChannel):
             _user_message_count = 0
             _pending_queue: deque = deque()
             _msg_interval = _read_msg_interval()
+            _running = False
+            _current_task: asyncio.Task | None = None
+
             reflect_triggers.start_idle_watcher(
                 agent,
                 loader.memory_manager,
@@ -114,152 +124,162 @@ class TerminalChannel(BaseChannel):
                 audit.log_path,
             )
 
-            with patch_stdout():
-                while True:
-                    if _pending_queue:
-                        stripped = _pending_queue.popleft()
-                        console.print(f"[{p.fg_faint}]· auto: {stripped}[/]")
-                    else:
-                        try:
-                            user_input = _session.prompt("you › ")
-                        except (KeyboardInterrupt, EOFError):
-                            console.print(f"\n[{p.fg_dim}]goodbye.[/]")
-                            break
+            # Create a Rich console that writes to sys.stdout *after* patch_stdout
+            # has replaced it, so ANSI output is injected above the prompt correctly.
+            with patch_stdout(raw=True):
+                _con = _RichConsole(file=sys.stdout, highlight=False, force_terminal=True)
 
-                        stripped = user_input.strip()
-                        cmd = stripped.lower()
-
-                        if cmd in ("exit", "quit", "q", "bye", "done"):
-                            _outcome = "completed"
-                            console.print(f"[{p.fg_dim}]goodbye.[/]")
-                            break
-
-                        if not stripped:
-                            continue
-
-                        if stripped.lower().startswith("/remember "):
-                            content = stripped[len("/remember "):].strip()
-                            if content:
-                                result = loader.memory_manager.write(
-                                    content, memory_type="fact", valence="neutral",
-                                    source="user_explicit", confidence=1.0,
+                async def _run_llm_loop(first_msg: str) -> None:
+                    nonlocal _turns, _user_message_count, _running
+                    current_msg: str | None = first_msg
+                    try:
+                        while current_msg:
+                            audit.log_user_correction(current_msg)
+                            _propose_memory.set_user_message(current_msg)
+                            _turn_notifications: list = []
+                            try:
+                                result = await _loop.run_in_executor(
+                                    None, orchestrator.run, current_msg
                                 )
-                                console.print(f"[{p.fg_dim}]{result}[/]\n")
-                                for _entry in _drain_notifications():
-                                    self.notify_memory_write(_entry)
-                            continue
+                                _turn_notifications.extend(_drain_notifications())
+                                response = _strip_fake_notifications(result or "")
+                                _turns += 1
+                                _user_message_count += 1
+                                _con.print(f"[{p.fg_em}]{agent}[/]")
+                                _con.print(Markdown(response))
+                                _con.print()
+                                for _entry in _turn_notifications:
+                                    self.notify_memory_write(_entry, _con)
 
-                        if stripped.lower().startswith("/que "):
-                            content = stripped[5:].strip()
-                            if content:
-                                _pending_queue.append(content)
-                                console.print(f"[{p.fg_faint}]· queued for next turn[/]")
-                            continue
+                                triggered = reflect_triggers.on_user_message(
+                                    agent,
+                                    loader.memory_manager,
+                                    orchestrator._llm,
+                                    audit.log_path,
+                                    _msg_interval,
+                                )
+                                if triggered:
+                                    _con.print(
+                                        f"[{p.fg_dim}]💡 reflect triggered — "
+                                        f"review with: alfard memory review[/]"
+                                    )
 
-                        if stripped.lower().startswith("/guide"):
-                            console.print(
-                                f"[{p.fg_faint}]· /guide works while the agent is running[/]"
+                                if _user_message_count >= 15:
+                                    _user_message_count = 0
+                                    try:
+                                        orchestrator.checkpoint_session()
+                                        _con.print(f"[{p.fg_faint}]· memory updated[/]")
+                                    except Exception:
+                                        pass
+
+                            except Exception as exc:
+                                _turn_notifications.extend(_drain_notifications())
+                                _con.print(error_block(
+                                    agent=agent,
+                                    state="failed",
+                                    headline=str(exc),
+                                    explanation="",
+                                ))
+
+                            current_msg = _pending_queue.popleft() if _pending_queue else None
+                    finally:
+                        _running = False
+
+                while True:
+                    try:
+                        user_input = await _session.prompt_async("you › ")
+                    except (KeyboardInterrupt, EOFError):
+                        if _current_task and not _current_task.done():
+                            orchestrator.stop()
+                            try:
+                                await asyncio.wait_for(
+                                    asyncio.shield(_current_task), timeout=5.0
+                                )
+                            except Exception:
+                                pass
+                        _outcome = "completed"
+                        _con.print(f"\n[{p.fg_dim}]goodbye.[/]")
+                        break
+
+                    stripped = user_input.strip()
+
+                    # Approval gate takes priority over everything else.
+                    if notifier.has_pending():
+                        low = stripped.lower()
+                        if low in ("y", "yes", "approve"):
+                            notifier.post_response("y")
+                        elif low in ("n", "no", "deny", "reject"):
+                            notifier.post_response("n")
+                        else:
+                            _con.print(
+                                f"[{p.warn}]· type y to approve or n to deny[/]"
                             )
-                            continue
+                        continue
 
-                    audit.log_user_correction(stripped)
-                    _propose_memory.set_user_message(stripped)
+                    cmd = stripped.lower()
 
+                    if cmd in ("exit", "quit", "q", "bye", "done"):
+                        _outcome = "completed"
+                        _con.print(f"[{p.fg_dim}]goodbye.[/]")
+                        break
+
+                    if not stripped:
+                        continue
+
+                    if stripped.lower().startswith("/remember "):
+                        content = stripped[len("/remember "):].strip()
+                        if content:
+                            result = loader.memory_manager.write(
+                                content,
+                                memory_type="fact",
+                                valence="neutral",
+                                source="user_explicit",
+                                confidence=1.0,
+                            )
+                            _con.print(f"[{p.fg_dim}]{result}[/]\n")
+                            for _entry in _drain_notifications():
+                                self.notify_memory_write(_entry, _con)
+                        continue
+
+                    if stripped.lower().startswith("/que "):
+                        content = stripped[5:].strip()
+                        if content:
+                            _pending_queue.append(content)
+                            _con.print(f"[{p.fg_faint}]· queued[/]")
+                        continue
+
+                    # Handle input while the LLM is running.
+                    if _running:
+                        if cmd in ("/new", "/reset", "/cancel"):
+                            orchestrator.stop()
+                            _pending_queue.clear()
+                            _con.print(f"[{p.fg_faint}]· cancelled[/]")
+                            if _current_task and not _current_task.done():
+                                try:
+                                    await asyncio.wait_for(
+                                        asyncio.shield(_current_task), timeout=5.0
+                                    )
+                                except (asyncio.TimeoutError, Exception):
+                                    _running = False
+                        elif cmd.startswith("/guide "):
+                            content = stripped[7:].strip()
+                            if content:
+                                orchestrator.signal_guide(content)
+                                _con.print(f"[{p.fg_faint}]· guidance sent[/]")
+                        else:
+                            _pending_queue.append(stripped)
+                            _con.print(f"[{p.fg_faint}]· queued[/]")
+                        continue
+
+                    # First message: build the dynamic system prompt.
                     if first_message:
                         system_prompt = loader.build_system_prompt(query=stripped)
                         orchestrator._memory._system_prompt = system_prompt
                         first_message = False
 
-                    _result: list = [None, None]  # [response, exception]
-                    _turn_notifications: list = []
-                    _done = threading.Event()
-
-                    def _run_turn(msg: str = stripped) -> None:
-                        try:
-                            _result[0] = orchestrator.run(msg)
-                        except Exception as exc:
-                            _result[1] = exc
-                        finally:
-                            # Harvest notifications from this thread before signalling done.
-                            _turn_notifications.extend(_drain_notifications())
-                            _done.set()
-
-                    console.print()
-                    _thread = threading.Thread(target=_run_turn, daemon=True)
-                    _thread.start()
-
-                    try:
-                        while not _done.wait(timeout=0.1):
-                            if _STDIN_LOCK.acquire(blocking=False):
-                                try:
-                                    ready, _, _ = select.select([sys.stdin], [], [], 0)
-                                    if ready:
-                                        mid = sys.stdin.readline().rstrip("\n").strip()
-                                        if mid.lower().startswith("/que "):
-                                            content = mid[5:].strip()
-                                            if content:
-                                                _pending_queue.append(content)
-                                                console.print(f"[{p.fg_faint}]· queued: '{content}'[/]")
-                                        elif mid.lower().startswith("/guide "):
-                                            content = mid[7:].strip()
-                                            if content:
-                                                orchestrator.signal_guide(content)
-                                                console.print(
-                                                    f"[{p.fg_faint}]· guidance sent[/]"
-                                                )
-                                        elif mid:
-                                            console.print(
-                                                f"[{p.fg_faint}]· agent is running — use /que or /guide[/]"
-                                            )
-                                finally:
-                                    _STDIN_LOCK.release()
-                    except KeyboardInterrupt:
-                        orchestrator.stop()
-                        _done.wait()
-                        _thread.join(timeout=5)
-                        orchestrator.reset()
-                        console.print(f"\n[{p.fg_dim}]interrupted.[/]\n")
-                        continue
-
-                    _thread.join()
-
-                    if _result[1] is not None:
-                        console.print(error_block(
-                            agent=agent,
-                            state="failed",
-                            headline=str(_result[1]),
-                            explanation="",
-                        ))
-                        continue
-
-                    response = _strip_fake_notifications(_result[0] or "")
-                    _turns += 1
-                    _user_message_count += 1
-                    console.print(f"[{p.fg_em}]{agent}[/]")
-                    console.print(Markdown(response))
-                    console.print()
-                    for _entry in _turn_notifications:
-                        self.notify_memory_write(_entry)
-
-                    triggered = reflect_triggers.on_user_message(
-                        agent,
-                        loader.memory_manager,
-                        orchestrator._llm,
-                        audit.log_path,
-                        _msg_interval,
-                    )
-                    if triggered:
-                        console.print(
-                            f"[{p.fg_dim}]💡 reflect triggered — review with: alfard memory review[/]"
-                        )
-
-                    if _user_message_count >= 15:
-                        _user_message_count = 0
-                        try:
-                            orchestrator.checkpoint_session()
-                            console.print(f"[{p.fg_faint}]· memory updated[/]")
-                        except Exception:
-                            pass
+                    _con.print()
+                    _running = True
+                    _current_task = asyncio.create_task(_run_llm_loop(stripped))
 
         finally:
             reflect_triggers.stop_idle_watcher(agent)
