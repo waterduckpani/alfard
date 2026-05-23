@@ -41,7 +41,6 @@ def cli(ctx):
     from alfard.cli.components import header_block, alfard_select, alfard_input, alfard_confirm
 
     if not config.exists():
-        console.print()
         console.print(header_block("0.1.0"))
         console.print()
         console.print(f"[{p.fg_dim}]Run alfard setup to get started.[/]")

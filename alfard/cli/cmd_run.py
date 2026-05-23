@@ -10,11 +10,7 @@ from alfard.agents.loader import AgentLoader, list_agents
 from alfard.orchestrator.builder import build_orchestrator
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_spinner, alfard_select, alfard_input
-from alfard.channels.manager import ChannelManager
 from alfard.channels.terminal import TerminalChannel
-from alfard.channels.slack import SlackChannel
-from alfard.channels.telegram import TelegramChannel
-from alfard.channels.discord import DiscordChannel
 
 
 @click.command(cls=AlfardCommand)
@@ -75,7 +71,7 @@ def run(agent: str | None, no_mcp: bool) -> None:
                 first_line = stripped[:80]
                 break
 
-    console.print(f"\n[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
+    console.print(f"[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
 
     session_id = str(uuid.uuid4())
 
@@ -152,26 +148,8 @@ def run(agent: str | None, no_mcp: bool) -> None:
             model=orchestrator._llm.model,
         )
 
-        # Build channels
-        channel_manager = ChannelManager()
-        channel_manager.set_audit(audit)
-
         terminal = TerminalChannel(agent, orchestrator, audit, loader, registry)
-        channel_manager.register(terminal)
-
-        from alfard.paths import load_env
-        load_env()
-        if os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_APP_TOKEN"):
-            channel_manager.register(SlackChannel(agent))
-        if os.environ.get("TELEGRAM_BOT_TOKEN"):
-            channel_manager.register(TelegramChannel(agent))
-        if os.environ.get("DISCORD_BOT_TOKEN"):
-            channel_manager.register(DiscordChannel(agent))
-
-        active = channel_manager.names()
-        console.print(f"[{p.fg_dim}]▸ {agent} running on: {', '.join(active)}[/]\n")
-
-        channel_manager.start_all(main_channel="terminal")
+        terminal.start()
 
     except SystemExit:
         raise
