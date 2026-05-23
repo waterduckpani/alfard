@@ -22,7 +22,7 @@ from alfard.cli.cmd_channel import channel, connected_channels
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
-@click.version_option(version="0.1.0", prog_name="alfard")
+@click.version_option(version="0.1.1", prog_name="alfard")
 @click.pass_context
 def cli(ctx):
     """alfard — local AI agents, done right."""

@@ -294,8 +294,6 @@ def run_setup() -> None:
         _section_transition(f"provider configured: {provider} / {model}", next_step=2)
 
     # ── 4. CREATE FIRST AGENT ─────────────────────────────────────────────────
-    from alfard.agents.loader import AGENTS_DIR
-
     agent_name: str
 
     if "agent_created" in steps_done:
@@ -304,87 +302,11 @@ def run_setup() -> None:
             f"\n{c('fg_dim', f'agent already created: {agent_name} — skipping.')}"
         )
     else:
-        console.print(f"\n[{p.fg_em}]create your first agent[/]")
-        console.print(f"[{p.fg_dim}]agents are ai assistants with their own identity and skills.[/]\n")
-        console.print(f"[{p.fg_dim}]your answers define this agent's permanent identity.[/]")
-        console.print(f"[{p.fg_dim}]they become soul.md — the document that shapes every response.[/]")
-
-        agent_name = ""
-
-        while True:
-            while True:
-                agent_name = alfard_input(
-                    "agent name",
-                    hint="lowercase, hyphens ok, e.g. my-agent   ·   leave blank to exit setup",
-                ).strip().lower()
-                if not agent_name:
-                    return
-                if not re.match(r'^[a-z0-9-]+$', agent_name):
-                    console.print(
-                        f"  [{p.err}]name must be lowercase letters, numbers, and hyphens only.[/]"
-                    )
-                    continue
-                break
-
-            agent_dir = AGENTS_DIR / agent_name
-            if agent_dir.exists():
-                console.print(
-                    f"  [{p.warn}]agent '{agent_name}' already exists — using existing agent.[/]"
-                )
-                break
-
-            console.print()
-            console.print(f"[{p.fg_dim}]describe what this agent does — be as specific as possible.[/]")
-            console.print(f"[{p.fg_dim}]a couple of sentences is ideal. this becomes the core of soul.md[/]")
-            console.print(f"[{p.fg_dim}]and will define the agent's purpose in every conversation.[/]\n")
-            description = alfard_input(
-                "what does this agent do?",
-                hint="e.g. triages my gmail inbox, flags urgent emails by sender and topic, drafts replies in my voice",
-            ).strip()
-
-            personality = alfard_input(
-                "personality or tone",
-                hint="e.g. concise, direct, never uses bullet points",
-            ).strip() or "helpful and concise"
-
-            console.print(f"\n[{p.fg_faint}]soul preview[/]")
-            console.print(f"[{p.fg_dim}]name:    [/][{p.fg_em}]{agent_name}[/]")
-            console.print(f"[{p.fg_dim}]purpose: [/][{p.fg_em}]{description}[/]")
-            console.print(f"[{p.fg_dim}]tone:    [/][{p.fg_em}]{personality}[/]")
-            console.print(f"[{p.fg_faint}]edit later with: alfard edit {agent_name} soul[/]\n")
-
-            if alfard_confirm("looks good?", default=True):
-                agent_dir.mkdir(parents=True, exist_ok=True)
-                soul_content = f"""# {agent_name}
-
-## Purpose
-{description}
-
-## Personality
-{personality}
-
-## Rules
-- Always be honest about what you can and cannot do.
-- Never take irreversible actions without explicit user confirmation.
-- Keep responses concise and focused on the task.
-- If unsure, ask for clarification rather than guessing.
-"""
-                (agent_dir / "soul.md").write_text(soul_content, encoding="utf-8")
-                (agent_dir / "brain.md").write_text(
-                    f"# {agent_name} — knowledge\n\n", encoding="utf-8"
-                )
-                (agent_dir / "memory.md").write_text(
-                    f"# {agent_name} — memory\n\n", encoding="utf-8"
-                )
-                from alfard.agents.loader import add_skill as _add_skill
-                _ESSENTIAL = [
-                    "memory", "tasks", "project", "research",
-                    "reasoning", "communication", "debugging",
-                ]
-                for _skill in _ESSENTIAL:
-                    _add_skill(agent_name, _skill)
-                break
-            # loop back — re-ask name, purpose, and tone
+        from alfard.cli.soul_wizard import run_soul_wizard
+        result = run_soul_wizard()
+        if result is None:
+            return
+        agent_name = result
 
         steps_done = list(dict.fromkeys(steps_done + ["agent_created"]))
         _save_checkpoint(CHECKPOINT_PATH, {
