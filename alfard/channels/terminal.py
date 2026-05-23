@@ -284,6 +284,19 @@ class TerminalChannel(BaseChannel):
 
         ui = _ChatUI(agent, notifier)
 
+        def _render_approval_panel(tool_name: str, arguments: dict, source: str) -> None:
+            """Called from the executor thread; renders the gate panel into the transcript."""
+            import json as _json
+            content = (
+                f"[{p.fg_dim}]Tool:       {tool_name}\n"
+                f"Arguments:  {_json.dumps(arguments, indent=2)}\n"
+                f"Source:     {source}[/]"
+            )
+            panel = Panel(content, title="Review required", border_style=p.fg_faint)
+            ui.append(_rich_to_ansi(panel))
+
+        notifier.set_on_present(_render_approval_panel)
+
         _turns = 0
         _outcome = "abandoned"
         _pending_queue: deque = deque()
@@ -391,8 +404,10 @@ class TerminalChannel(BaseChannel):
                     low = stripped.lower()
                     if low in ("y", "yes", "approve"):
                         notifier.post_response("y")
+                        ui.append(_rich_to_ansi(f"[{p.ok}]· approved[/]\n\n"))
                     elif low in ("n", "no", "deny", "reject"):
                         notifier.post_response("n")
+                        ui.append(_rich_to_ansi(f"[{p.warn}]· rejected[/]\n\n"))
                     else:
                         ui.append(_rich_to_ansi(
                             f"[{p.warn}]· type y to approve or n to deny[/]\n"

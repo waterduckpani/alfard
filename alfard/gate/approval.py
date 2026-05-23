@@ -2,6 +2,7 @@
 
 import json
 import threading
+from typing import Callable, Optional
 import yaml
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -34,27 +35,35 @@ class CLINotifier:
 class QueueNotifier:
     """Approval notifier for the async terminal loop.
 
-    present() is called from the executor thread; it posts a request, prints
-    the approval panel, then blocks until the async main loop calls
-    post_response().  The main loop detects has_pending() on each prompt
-    iteration and routes the user's y/n answer back here.
+    present() is called from the executor thread; it invokes the optional
+    on_present callback (for UI rendering), sets the pending flag, then blocks
+    until the async main loop calls post_response().
     """
 
     def __init__(self) -> None:
         self._pending = threading.Event()
         self._response_ready = threading.Event()
         self._response: str = "n"
+        self._on_present: Optional[Callable[[str, dict, str], None]] = None
+
+    def set_on_present(self, fn: Callable[[str, dict, str], None]) -> None:
+        """Register a callback that renders the approval panel into the UI."""
+        self._on_present = fn
 
     def has_pending(self) -> bool:
         return self._pending.is_set()
 
     def present(self, tool_name: str, arguments: dict, source: str) -> str:
-        content = (
-            f"[{theme.DIM}]Tool:       {tool_name}\n"
-            f"Arguments:  {json.dumps(arguments, indent=2)}\n"
-            f"Source:     {source}[/{theme.DIM}]"
-        )
-        rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
+        if self._on_present is not None:
+            self._on_present(tool_name, arguments, source)
+        else:
+            # Fallback for non-Application contexts (e.g. headless).
+            content = (
+                f"[{theme.DIM}]Tool:       {tool_name}\n"
+                f"Arguments:  {json.dumps(arguments, indent=2)}\n"
+                f"Source:     {source}[/{theme.DIM}]"
+            )
+            rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
         self._pending.set()
         self._response_ready.wait()
         self._response_ready.clear()
