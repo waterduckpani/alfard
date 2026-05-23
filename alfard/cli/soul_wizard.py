@@ -2,20 +2,23 @@
 
 import re
 
-import questionary
-from alfard.agents.loader import AGENTS_DIR, add_skill, list_available_skills
+from alfard.agents.loader import AGENTS_DIR, add_skill
 from alfard.cli.theme import p, console
 from alfard.cli.components import (
     g,
     alfard_input,
     alfard_select,
-    alfard_multiselect,
+    alfard_confirm,
 )
 
 
 _ESSENTIAL_SKILLS = [
     "memory", "tasks", "project", "research",
     "reasoning", "communication", "debugging",
+]
+
+_INTEGRATION_SKILLS = [
+    "notion", "github", "gmail", "gdrive", "slack",
 ]
 
 _TONE_OPTIONS = ["professional", "friendly", "direct", "casual", "custom"]
@@ -128,13 +131,24 @@ def run_soul_wizard() -> str | None:
 
     # ── Section 6 — Skills ────────────────────────────────────────────────────
 
-    _section("Skills  (optional — space to toggle, enter to confirm)")
+    _section("Skills")
 
-    available = list_available_skills()
-    extra_skills: list[str] = []
-    if available:
-        choices = [questionary.Choice(s, value=s) for s in available]
-        extra_skills = alfard_multiselect("add skills from the library:", choices)
+    console.print(
+        f"  [{p.ok}]{g['check']}[/] [{p.fg_em}]essential skills[/]  "
+        f"[{p.fg_faint}]auto-loaded[/]"
+    )
+    console.print(
+        f"    [{p.fg_dim}]{', '.join(_ESSENTIAL_SKILLS)}[/]\n"
+    )
+    console.print(
+        f"  [{p.fg_dim}]+[/] [{p.fg_em}]integration skills[/]  "
+        f"[{p.fg_faint}]auto-added during alfard connect[/]"
+    )
+    console.print(
+        f"    [{p.fg_dim}]{', '.join(_INTEGRATION_SKILLS)}[/]\n"
+    )
+
+    want_custom = alfard_confirm("create a custom skill for this agent now?", default=False)
 
     # ── Create agent directory ────────────────────────────────────────────────
 
@@ -213,21 +227,21 @@ def run_soul_wizard() -> str | None:
     added_essential = [s for s in _ESSENTIAL_SKILLS if add_skill(name, s)]
     failed_essential = [s for s in _ESSENTIAL_SKILLS if s not in added_essential]
 
-    # ── Add user-selected optional skills ─────────────────────────────────────
+    # ── Custom skill ──────────────────────────────────────────────────────────
 
-    essential_set = set(_ESSENTIAL_SKILLS)
-    added_optional = [s for s in extra_skills if s not in essential_set and add_skill(name, s)]
+    if want_custom:
+        from alfard.cli.cmd_skill import create as _skill_create
+        console.print()
+        _skill_create.callback()
 
     # ── Completion ────────────────────────────────────────────────────────────
 
     console.print()
     console.print(f"[{p.ok}]{g['check']}[/] soul.md written")
     if added_essential:
-        console.print(f"[{p.ok}]{g['check']}[/] Essential skills added: {', '.join(added_essential)}")
+        console.print(f"[{p.ok}]{g['check']}[/] Essential skills loaded: {', '.join(added_essential)}")
     if failed_essential:
         console.print(f"[{p.warn}]  Skills not found in library: {', '.join(failed_essential)}[/]")
-    if added_optional:
-        console.print(f"[{p.ok}]{g['check']}[/] Optional skills added: {', '.join(added_optional)}")
     console.print(f"[{p.fg_faint}]  Edit anytime: alfard edit {name} soul[/]")
 
     return name
