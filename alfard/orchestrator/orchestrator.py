@@ -28,11 +28,12 @@ _INJECTION_EXEMPT = {
     "lazy-tool.search_tools",
     "lazy-tool.list_tools",
     "lazy-tool.get_tool_schema",
-    # invoke_proxy_tool is a pass-through dispatcher — approval is handled per underlying tool.
     "lazy-tool.invoke_proxy_tool",
     # deterministic infra tools registered by alfard
     "mcp_list_sources",
     "mcp_list_tools",
+    "mcp_invoke",
+    "mcp_get_schema",
 }
 
 
@@ -152,7 +153,7 @@ class Orchestrator:
                                 "Discovery loop detected. Stop calling search_tools. "
                                 "Use mcp_list_sources() to see connected integrations, "
                                 "then mcp_list_tools(source=...) to list available tools, "
-                                "then lazy-tool.invoke_proxy_tool(...) to execute."
+                                "then mcp_invoke(source=..., tool=..., arguments={}) to execute."
                             ),
                             "connected_sources": sources,
                         })
@@ -160,6 +161,19 @@ class Orchestrator:
                         continue
 
                 classification = classify(name, self._registry)
+
+                # mcp_invoke is registered as reversible so it doesn't unconditionally
+                # gate read-only calls, but irreversible underlying tools must still
+                # go through the approval gate. Re-classify from the catalogue.
+                if name == "mcp_invoke":
+                    import json as _json
+                    from alfard.integrations.catalogue import CATALOGUE
+                    _src = arguments.get("source", "")
+                    _tool = arguments.get("tool", "")
+                    _cat = CATALOGUE.get(_src, {})
+                    if _tool in _cat.get("irreversible_tools", []):
+                        from alfard.tools.classifier import IRREVERSIBLE
+                        classification = IRREVERSIBLE
                 source = "user_instruction" if self._user_triggered else "tool_result"
 
                 self._audit.log_tool_call(name, arguments, source)
