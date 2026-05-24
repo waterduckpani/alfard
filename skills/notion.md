@@ -1,5 +1,16 @@
 # Notion Skill
 
+## How to reach Notion tools (lazy-tool proxy)
+Notion tools are NOT directly registered. They are proxied through lazy-tool.
+You MUST use this three-step pattern every time:
+
+1. `lazy-tool.list_tools(source="notion")` — get the full list of Notion tools
+2. `lazy-tool.get_tool_schema(tool="<tool_name>", source="notion")` — get the schema
+3. `lazy-tool.invoke_proxy_tool(tool="<tool_name>", source="notion", arguments={...})` — call it
+
+Never try to call a Notion tool (e.g. API-post-search) directly — it is not registered.
+Always go through lazy-tool. If list_tools returns empty, tell the user rather than guessing.
+
 ## How Notion MCP works
 The Notion MCP server uses the 2025-09-03 API. Databases are
 called "data sources" in this version.

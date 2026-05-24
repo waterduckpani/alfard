@@ -1,5 +1,16 @@
 # GitHub Skill
 
+## How to reach GitHub tools (lazy-tool proxy)
+GitHub tools are NOT directly registered. They are proxied through lazy-tool.
+You MUST use this three-step pattern every time:
+
+1. `lazy-tool.list_tools(source="github")` — get the full list of GitHub tools
+2. `lazy-tool.get_tool_schema(tool="<tool_name>", source="github")` — get the schema
+3. `lazy-tool.invoke_proxy_tool(tool="<tool_name>", source="github", arguments={...})` — call it
+
+Never try to call a GitHub tool (e.g. list_repos) directly — it is not registered.
+Always go through lazy-tool.
+
 Interact with GitHub repositories: read issues, explore code, and perform write operations with explicit user approval.
 
 ## When to use it
