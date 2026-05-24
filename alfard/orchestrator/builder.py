@@ -1,7 +1,9 @@
 """Orchestrator factory — shared bootstrap used by CLI and
 Slack bot to avoid duplicating wiring logic."""
 
+import atexit
 import shutil
+import subprocess
 
 from alfard.agents.loader import AgentLoader
 from alfard.llm.client import LLMClient
@@ -11,9 +13,55 @@ from alfard.gate.approval import ApprovalGate
 from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
+from alfard.integrations.catalogue import CATALOGUE
+from alfard.integrations.lazy_tool import (
+    lazy_tool_is_available,
+    LAZY_TOOL_CONFIG,
+    start_lazy_tool_server,
+)
 from alfard.orchestrator.orchestrator import Orchestrator
 from alfard.commands.handlers import register_all
 from alfard.memory.tools import register_memory_tools
+
+# Servers whose schemas are proxied through lazy-tool instead of direct connection.
+_LAZY_ROUTED: frozenset[str] = frozenset(
+    name for name, info in CATALOGUE.items() if info.get("routed_via_lazy_tool")
+)
+
+
+def _cleanup_proc(proc: subprocess.Popen) -> None:
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+    except Exception:
+        pass
+
+
+def _connect_mcp_via_lazy_tool(mcp: MCPClient, lt_proc: subprocess.Popen) -> None:
+    """Register lazy-tool as the single MCP proxy for routed servers.
+
+    Collects the combined reversible_tools list from all routed catalogue entries so
+    the approval gate still works correctly.  Non-routed servers connect directly.
+    """
+    reversible: list[str] = []
+    for server_name in _LAZY_ROUTED:
+        reversible.extend(CATALOGUE.get(server_name, {}).get("reversible_tools", []))
+
+    lazy_cfg = {
+        "name": "lazy-tool",
+        "transport": "stdio",
+        "command": "lazy-tool",
+        "args": ["serve", "--config", str(LAZY_TOOL_CONFIG), "--stdio"],
+        "env_vars": {},
+        "tools": {"reversible": reversible, "irreversible": []},
+    }
+    mcp._connect(lazy_cfg)
+
+    for cfg in mcp._server_configs:
+        if cfg["name"] not in _LAZY_ROUTED:
+            mcp._connect(cfg)
+
+    atexit.register(_cleanup_proc, lt_proc)
 
 
 def build_orchestrator(
@@ -44,7 +92,14 @@ def build_orchestrator(
 
     mcp = MCPClient(registry)
     if connect_mcp:
-        mcp.connect_all()
+        if lazy_tool_is_available():
+            lt_proc = start_lazy_tool_server()
+            if lt_proc:
+                _connect_mcp_via_lazy_tool(mcp, lt_proc)
+            else:
+                mcp.connect_all()
+        else:
+            mcp.connect_all()
 
     # gog-based tools
     from alfard.paths import ALFARD_HOME

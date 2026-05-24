@@ -445,6 +445,21 @@ def run_setup() -> None:
                 f"[{p.fg_faint}]connect integrations later: alfard connect[/]"
             )
 
+        # Offer lazy-tool install when at least one lazy-routed integration was connected
+        from alfard.integrations.catalogue import CATALOGUE as _CAT
+        _lazy_routed_names = {n for n, i in _CAT.items() if i.get("routed_via_lazy_tool")}
+        _connected_lazy = _lazy_routed_names & set(_selected or [])
+        if _connected_lazy:
+            from alfard.integrations.lazy_tool import (
+                ensure_lazy_tool, update_lazy_tool_catalog, lazy_tool_is_available,
+            )
+            if ensure_lazy_tool():
+                if update_lazy_tool_catalog():
+                    console.print(
+                        f"\n{dot('ok')} [{p.fg_dim}]lazy-tool catalog updated — "
+                        f"mcp schemas will load on demand.[/]"
+                    )
+
         steps_done = list(dict.fromkeys(steps_done + ["integrations"]))
         _save_checkpoint(CHECKPOINT_PATH, {
             "steps_done": steps_done,

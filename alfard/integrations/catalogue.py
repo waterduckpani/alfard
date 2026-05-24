@@ -8,6 +8,7 @@ CATALOGUE: dict[str, dict] = {
     "notion": {
         "display_name": "Notion",
         "auth": AUTH_APIKEY,
+        "routed_via_lazy_tool": True,
         "description": "Read and write pages, databases and tasks in your Notion workspace.",
         "credential_env": "NOTION_TOKEN",
         "get_token_url": "https://www.notion.so/my-integrations",
@@ -48,6 +49,7 @@ CATALOGUE: dict[str, dict] = {
     "github": {
         "display_name": "GitHub",
         "auth": AUTH_APIKEY,
+        "routed_via_lazy_tool": True,
         "description": "Manage repos, issues, pull requests and code on GitHub.",
         "credential_env": "GITHUB_TOKEN",
         "mcp_env_var": "GITHUB_PERSONAL_ACCESS_TOKEN",

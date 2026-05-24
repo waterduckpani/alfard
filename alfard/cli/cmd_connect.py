@@ -19,6 +19,15 @@ _ENV_PATH = ALFARD_HOME / ".env"
 _INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 
 
+def _refresh_lazy_tool_catalog() -> None:
+    """Silently rebuild the lazy-tool catalog when it is already installed."""
+    from alfard.integrations.lazy_tool import lazy_tool_is_available, update_lazy_tool_catalog
+    if not lazy_tool_is_available():
+        return
+    if update_lazy_tool_catalog():
+        console.print(f"{dot('ok')} [{p.fg_dim}]lazy-tool catalog updated — mcp schemas will load on demand.[/]")
+
+
 def _update_env(key: str, value: str) -> None:
     lines: list[str] = []
     if _ENV_PATH.exists():
@@ -250,6 +259,7 @@ def _connect_slack(name: str, integration: dict) -> bool:
     _, added_to = _ask_agent_assignment(integration["display_name"])
 
     console.print(f"\n{dot('ok')} [{p.fg_dim}]slack connected.[/]")
+
     if added_to and added_to.strip():
         console.print(f"[{p.fg_faint}]skill added to: {added_to.strip()}[/]")
     else:
@@ -302,6 +312,9 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     data["servers"] = [s for s in data["servers"] if s["name"] != name]
     data["servers"].append(entry)
     _save_integrations(data)
+
+    if integration.get("routed_via_lazy_tool"):
+        _refresh_lazy_tool_catalog()
 
     display = integration["display_name"]
     _, added_to = _ask_agent_assignment(display)
@@ -619,6 +632,9 @@ def _connect_oauth(name: str, integration: dict) -> bool:
     data["servers"] = [s for s in data["servers"] if s["name"] != name]
     data["servers"].append(entry)
     _save_integrations(data)
+
+    if integration.get("routed_via_lazy_tool"):
+        _refresh_lazy_tool_catalog()
 
     display = integration["display_name"]
     _, added_to = _ask_agent_assignment(display)
