@@ -196,6 +196,7 @@ def write_lazy_tool_config(mcp_servers: dict) -> None:
         config["sources"].append({
             "id": name,
             "name": name,
+            "type": "server",
             "transport": "stdio",
             "command": server["command"],
             "args": server.get("args", []),
