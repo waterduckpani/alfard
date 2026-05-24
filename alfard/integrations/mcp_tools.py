@@ -110,7 +110,11 @@ def _direct_mcp_call(source: str, tool: str, arguments: dict, entry: dict) -> st
     try:
         result = asyncio.run(_call())
         return str(result)
-    except Exception as exc:
+    except BaseException as exc:
+        # Flatten ExceptionGroup (Python 3.11 / anyio) so the inner errors are visible.
+        if hasattr(exc, "exceptions"):
+            inner = "; ".join(f"{type(e).__name__}: {e}" for e in exc.exceptions)  # type: ignore[attr-defined]
+            return json.dumps({"error": f"ExceptionGroup — inner errors: {inner}"})
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
 
 
