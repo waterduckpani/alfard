@@ -42,17 +42,18 @@ def handle_status(context: dict) -> str:
             "notion", "github", "slack", "linear",
             "gmail", "gdrive", "drive"
         }
-        if mcp_tools:
-            servers = sorted(set(
+        proxied = registry.list_proxied_integrations()
+        if mcp_tools or proxied:
+            direct_servers = sorted(set(
                 t["name"].split(".")[0] for t in mcp_tools
-                if "." in t["name"]
+                if "." in t["name"] and t["name"].split(".")[0] != "lazy-tool"
             ))
             gws_services = sorted(set(
                 t["name"].split("_")[0] for t in mcp_tools
                 if "." not in t["name"]
                 and t["name"].split("_")[0] in KNOWN_INTEGRATIONS
             ))
-            all_services = servers + gws_services
+            all_services = sorted(set(direct_servers + gws_services + proxied))
             if all_services:
                 lines.append(
                     f"**Integrations:** {', '.join(all_services)}"

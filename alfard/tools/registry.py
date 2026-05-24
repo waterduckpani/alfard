@@ -5,6 +5,7 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, dict] = {}
+        self._proxied_integrations: set[str] = set()
 
     def register(
         self,
@@ -49,6 +50,13 @@ class ToolRegistry:
             }
             for tool in self._tools.values()
         ]
+
+    def register_proxied_integration(self, name: str) -> None:
+        """Record an integration name that is connected via a proxy (e.g. lazy-tool)."""
+        self._proxied_integrations.add(name)
+
+    def list_proxied_integrations(self) -> list[str]:
+        return sorted(self._proxied_integrations)
 
     def all_tools(self) -> list[dict]:
         return list(self._tools.values())

@@ -42,10 +42,7 @@ _ARCH_MAP: dict[str, str] = {
 
 def lazy_tool_is_available() -> bool:
     """Return True when lazy-tool is on PATH and its config exists."""
-    on_path = shutil.which("lazy-tool") is not None
-    config_exists = LAZY_TOOL_CONFIG.exists()
-    print(f"[lazy-tool] binary on PATH={on_path} config={LAZY_TOOL_CONFIG} exists={config_exists}")
-    return on_path and config_exists
+    return shutil.which("lazy-tool") is not None and LAZY_TOOL_CONFIG.exists()
 
 
 # ── Installation ────────────────────────────────────────────────────────────
@@ -305,9 +302,10 @@ def start_lazy_tool_server() -> subprocess.Popen | None:
 
     if proc.poll() is not None:
         stderr = proc.stderr.read().decode("utf-8", errors="replace").strip()
-        print(f"[lazy-tool] process exited with code {proc.returncode}")
+        msg = f"[lazy-tool] process exited (code {proc.returncode})"
         if stderr:
-            print(f"[lazy-tool] stderr: {stderr}")
+            msg += f": {stderr}"
+        print(msg)
         return None
 
     return proc

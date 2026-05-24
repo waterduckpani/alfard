@@ -21,7 +21,14 @@ MAX_TURNS = 20
 _WEB_TOOLS = {"web_search", "web_fetch"}
 # Lazy-tool catalog meta-tools are internal read-only operations and cannot
 # be used as injection pivot points — exempt them from the injection gate.
-_INJECTION_EXEMPT = {"lazy-tool.search_tools", "lazy-tool.list_tools", "lazy-tool.get_tool_schema"}
+_INJECTION_EXEMPT = {
+    "lazy-tool.search_tools",
+    "lazy-tool.list_tools",
+    "lazy-tool.get_tool_schema",
+    # invoke_proxy_tool is a pass-through dispatcher — it is not itself an
+    # injection pivot; the downstream MCP tool handles its own approval.
+    "lazy-tool.invoke_proxy_tool",
+}
 
 
 class Orchestrator:
