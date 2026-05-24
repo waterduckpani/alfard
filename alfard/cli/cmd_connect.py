@@ -341,7 +341,12 @@ def _connect_oauth(name: str, integration: dict) -> bool:
             return False
 
     creds_dest = Path.home() / ".config" / "gws" / "client_secret.json"
-    if not creds_dest.exists():
+    _skip_creds = False
+
+    if creds_dest.exists():
+        _skip_creds = alfard_confirm("google credentials already saved. use existing?", default=True)
+
+    if not _skip_creds:
         import os as _os
         load_env()
         ALFARD_CLIENT_ID = _os.environ.get("ALFARD_GOOGLE_CLIENT_ID", "")
@@ -380,7 +385,8 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 f"  go to apis & services → credentials\n"
                 f"  click create credentials → oauth client id\n"
                 f"  application type: desktop app → name it alfard → create\n"
-                f"  click the download button to download the json file[/]"
+                f"  after clicking create, google shows a dialog with your credentials\n"
+                f"  don't click download — just copy the two values shown[/]"
             )
 
             if headless:
@@ -424,32 +430,31 @@ def _connect_oauth(name: str, integration: dict) -> bool:
                 f"\n[{p.fg_dim}]create oauth credentials:[/]\n"
                 f"[{p.fg_faint}]  click create credentials → oauth client id\n"
                 f"  application type: desktop app → name it alfard → create\n"
-                f"  click the download button to download the json file[/]"
+                f"  after clicking create, google shows a dialog with your credentials\n"
+                f"  don't click download — just copy the two values shown[/]"
             )
-            alfard_input("step 4 done — credentials json downloaded? press enter to continue", default="")
 
-            if headless:
-                import socket as _sock
-                _hostname = _sock.gethostname()
-                console.print(
-                    f"\n[{p.fg_dim}]transfer the credentials json from your local machine to this server:[/]\n"
-                    f"[{p.fg_faint}]  scp ~/Downloads/client_secret_*.json {_hostname}:{creds_dest}[/]\n"
-                    f"[{p.fg_dim}]then enter the path on this server (e.g. {creds_dest}):[/]"
-                )
-
-            creds_path = alfard_input("credentials json file path").strip().strip("'\"")
-
-            if not creds_path or not Path(creds_path).exists():
-                console.print(error_block(
-                    agent="alfard connect",
-                    state="failed",
-                    headline="file not found.",
-                    explanation=f"re-run alfard connect {name} and provide a valid path.",
-                ))
+            client_id = alfard_input("client id (ends in .apps.googleusercontent.com)").strip()
+            if not client_id.endswith(".apps.googleusercontent.com"):
+                console.print(f"\n  [{p.err}]invalid client id — must end with .apps.googleusercontent.com[/]")
                 return False
 
+            client_secret = alfard_input("client secret", password=True).strip()
+
+            import json as _json
+            client_secret_data = {
+                "installed": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": ["http://localhost"],
+                }
+            }
             creds_dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(creds_path, creds_dest)
+            creds_dest.write_text(_json.dumps(client_secret_data))
+            _update_env("ALFARD_GOOGLE_CLIENT_ID", client_id)
+            _update_env("ALFARD_GOOGLE_CLIENT_SECRET", client_secret)
             console.print(f"{dot('ok')} [{p.fg_dim}]credentials saved.[/]")
 
     import os as _os2
