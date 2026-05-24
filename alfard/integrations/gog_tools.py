@@ -1,8 +1,14 @@
 """gog tools — registers gogcli commands as native alfard tools using subprocess."""
 
 import os
+import re
 import subprocess
 from alfard.tools.registry import ToolRegistry
+
+
+def _strip_osc8(text: str) -> str:
+    """Remove OSC 8 terminal hyperlink sequences from gog output."""
+    return re.sub(r'\x1b]8;[^;]*;[^\x1b]*\x1b\\', '', text)
 
 
 def _gog_env() -> dict:
@@ -24,7 +30,7 @@ def _run_gog(*args) -> str:
     )
     if result.returncode not in (0, 1):
         raise RuntimeError(f"gog error: {result.stderr.strip()}")
-    return result.stdout.strip()
+    return _strip_osc8(result.stdout).strip()
 
 
 # ── Gmail ──────────────────────────────────────────────────────────────────
