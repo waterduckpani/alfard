@@ -273,6 +273,7 @@ def register_mcp_infra_tools(registry: "ToolRegistry") -> None:
         ),
         function=_make_invoke(registry),
         reversible=True,  # Reversibility is re-evaluated per-call in the orchestrator.
+        is_mcp=True,  # Closure + async internals — must bypass the sandbox.
         parameters={
             "type": "object",
             "properties": {
@@ -301,6 +302,7 @@ def register_mcp_infra_tools(registry: "ToolRegistry") -> None:
         ),
         function=_make_get_schema(registry),
         reversible=True,
+        is_mcp=True,  # Closure + async internals — must bypass the sandbox.
         parameters={
             "type": "object",
             "properties": {
