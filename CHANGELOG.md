@@ -5,6 +5,30 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.2] — 2026-05-24
+
+### Added
+- `mcp_invoke` and `mcp_get_schema` tools replace LLM-synthesised proxy names — MCP tool invocation is now deterministic and does not depend on the LLM guessing a server prefix
+- GitHub and Notion skills updated to use `mcp_invoke` directly
+- Guided GCP setup wizard (`alfard connect gmail`) always walks through all three setup steps (enable APIs, create OAuth client, download credentials) so users are never dropped into a partial flow
+
+### Changed
+- Gmail and GDrive OAuth migrated from `gws` to `gogcli` — simpler installation, better error messages, no GCP project required for bundled credentials
+- `gogcli` is auto-installed during `alfard connect gmail` when not already present
+- Headless auth flow: OAuth URLs are printed to stdout and an `scp` fallback is shown when a browser cannot be opened (server / SSH environments)
+- Conversation history capped at 20 messages to keep context windows bounded; oldest turns are pruned automatically when the limit is reached
+- System prompt re-injection every 5 turns removed — injecting the system prompt mid-conversation caused context pollution and inconsistent behaviour
+
+### Fixed
+- Keyring path corrected to `gog/data/keyring` so Gmail tool registration resolves credentials at runtime
+- OSC 8 hyperlink escape codes stripped from `gogcli` stdout before the output is parsed, preventing broken token extraction on terminals that emit hyperlink annotations
+- `invoke_proxy_tool` hidden from LLM tool schema so the model never tries to call the internal proxy directly
+- `mcp_invoke` and `mcp_get_schema` marked `is_mcp=True` so the sanitizer is applied and the sandbox can pickle the closures correctly
+- `ExceptionGroup` errors from MCP connections are recursively flattened into readable single-line messages
+- `mcp_list_tools` now queries the live MCP server for accurate tool names instead of reading a stale catalogue snapshot
+
+---
+
 ## [0.1.0] — 2026-05-23
 
 ### Added
