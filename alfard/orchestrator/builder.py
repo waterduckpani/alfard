@@ -51,7 +51,7 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, lt_proc: subprocess.Popen) -> Non
         "name": "lazy-tool",
         "transport": "stdio",
         "command": "lazy-tool",
-        "args": ["serve", "--config", str(LAZY_TOOL_CONFIG), "--stdio"],
+        "args": ["serve", "--config", str(LAZY_TOOL_CONFIG), "--transport", "stdio"],
         "env_vars": {},
         "tools": {"reversible": reversible, "irreversible": []},
     }

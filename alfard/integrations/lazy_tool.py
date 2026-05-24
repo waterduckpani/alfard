@@ -296,7 +296,7 @@ def start_lazy_tool_server() -> subprocess.Popen | None:
         return None
 
     proc = subprocess.Popen(
-        ["lazy-tool", "serve", "--config", str(LAZY_TOOL_CONFIG), "--stdio"],
+        ["lazy-tool", "serve", "--config", str(LAZY_TOOL_CONFIG), "--transport", "stdio"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
