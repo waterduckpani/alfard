@@ -189,6 +189,9 @@ def write_lazy_tool_config(mcp_servers: dict) -> None:
     config: dict = {
         "sources": [],
         "mode": "search",
+        "storage": {
+            "sqlite_path": str(ALFARD_HOME / "lazy-tool" / "catalog.db"),
+        },
         "cache": {"enabled": True, "ttl": 300},
     }
 
