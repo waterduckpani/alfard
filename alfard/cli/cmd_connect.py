@@ -314,6 +314,78 @@ def _connect_apikey(name: str, integration: dict) -> bool:
     return True
 
 
+def _install_gogcli_linux() -> bool:
+    import platform
+    import urllib.request
+    import tarfile
+    import stat
+    import json
+
+    arch = platform.machine()
+    arch_map = {"x86_64": "amd64", "aarch64": "arm64"}
+    gog_arch = arch_map.get(arch)
+    if not gog_arch:
+        console.print(f"[{p.err}]unsupported architecture: {arch}[/]")
+        return False
+
+    try:
+        with urllib.request.urlopen(
+            "https://api.github.com/repos/openclaw/gogcli/releases/latest",
+            timeout=10,
+        ) as r:
+            version = json.loads(r.read())["tag_name"].lstrip("v")
+    except Exception:
+        console.print(f"[{p.err}]could not fetch latest gogcli version. check your connection.[/]")
+        return False
+
+    url = (
+        f"https://github.com/openclaw/gogcli/releases/download/v{version}/"
+        f"gogcli_{version}_linux_{gog_arch}.tar.gz"
+    )
+    install_dir = Path.home() / ".local" / "bin"
+    install_dir.mkdir(parents=True, exist_ok=True)
+    dest = install_dir / "gog"
+
+    console.print(f"[{p.fg_dim}]downloading gogcli v{version}...[/]")
+    try:
+        tmp_tar = Path(f"/tmp/gogcli_{version}.tar.gz")
+        urllib.request.urlretrieve(url, tmp_tar)
+        with tarfile.open(tmp_tar) as tar:
+            member = next(m for m in tar.getmembers() if m.name.endswith("gog"))
+            member.name = "gog"
+            tar.extract(member, path=install_dir)
+        dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
+        tmp_tar.unlink()
+    except Exception as exc:
+        console.print(f"[{p.err}]install failed: {exc}[/]")
+        return False
+
+    os.environ["PATH"] = f"{install_dir}:{os.environ.get('PATH', '')}"
+    console.print(f"[{p.fg_dim}]gogcli installed to {dest}[/]")
+    console.print(
+        f"[{p.fg_faint}]add to your shell permanently:\n"
+        f"  echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc[/]"
+    )
+    return True
+
+
+def _install_gogcli() -> bool:
+    if sys.platform == "darwin":
+        if shutil.which("brew"):
+            result = subprocess.run(["brew", "install", "gogcli"])
+            return result.returncode == 0
+        else:
+            console.print(f"[{p.err}]homebrew not found.[/] [{p.fg_faint}]install from https://brew.sh then re-run.[/]")
+            return False
+
+    if sys.platform == "linux":
+        return _install_gogcli_linux()
+
+    console.print(f"[{p.fg_dim}]auto-install not supported on windows.[/]")
+    console.print(f"[{p.fg_faint}]download from: https://gogcli.sh/install.html[/]")
+    return False
+
+
 def _gog_env() -> dict:
     from alfard.security.keystore import get_or_create_gog_password
     env = os.environ.copy()
@@ -332,14 +404,16 @@ def _connect_oauth(name: str, integration: dict) -> bool:
 
     headless = _is_headless()
 
-    # Install check — do NOT auto-install
+    # Install check — offer to auto-install
     if not shutil.which("gog"):
-        console.print(f"[{p.err}]gogcli is not installed.[/]")
-        if sys.platform == "darwin":
-            console.print(f"[{p.fg_dim}]install with: brew install gogcli[/]")
-        else:
-            console.print(f"[{p.fg_faint}]install instructions: https://gogcli.sh/install.html[/]")
-        return False
+        console.print(f"[{p.fg_dim}]gogcli is required for Gmail.[/]")
+        if not alfard_confirm("install gogcli?", default=True):
+            return False
+        _install_gogcli()
+        if not shutil.which("gog"):
+            console.print(f"[{p.err}]installed but gog not found on PATH.[/]")
+            console.print(f"[{p.fg_faint}]open a new terminal and re-run: alfard connect {name}[/]")
+            return False
 
     # Credentials check
     creds_file = ALFARD_HOME / "gog" / "credentials"
