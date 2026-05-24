@@ -304,6 +304,10 @@ def start_lazy_tool_server() -> subprocess.Popen | None:
     time.sleep(0.5)
 
     if proc.poll() is not None:
+        stderr = proc.stderr.read().decode("utf-8", errors="replace").strip()
+        print(f"[lazy-tool] process exited with code {proc.returncode}")
+        if stderr:
+            print(f"[lazy-tool] stderr: {stderr}")
         return None
 
     return proc
