@@ -48,7 +48,7 @@ def build_orchestrator(
 
     # gog-based tools
     from alfard.paths import ALFARD_HOME
-    gog_tokens = ALFARD_HOME / "gog" / "keyring"
+    gog_tokens = ALFARD_HOME / "gog" / "data" / "keyring"
     if shutil.which("gog") and gog_tokens.exists():
         from alfard.integrations.gog_tools import register_gmail_tools, register_gdrive_tools
         register_gmail_tools(registry)
