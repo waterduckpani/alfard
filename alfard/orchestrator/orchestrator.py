@@ -19,7 +19,6 @@ from alfard.commands.registry import is_command, dispatch
 
 MAX_TURNS = 20
 _WEB_TOOLS = {"web_search", "web_fetch"}
-SYSTEM_REINJECT_EVERY = 5
 
 
 class Orchestrator:
@@ -94,12 +93,6 @@ class Orchestrator:
                 self._guide_text = ""
                 self._guide_event.clear()
                 self._memory.add_user(f"[USER GUIDANCE] {guide}")
-
-            if (
-                self._memory.turn_count() > 0
-                and self._memory.turn_count() % SYSTEM_REINJECT_EVERY == 0
-            ):
-                self._memory.add_user(f"[SYSTEM REMINDER] {self._system_prompt}")
 
             messages = self._memory.get_messages()
             tools = self._registry.get_schemas()
