@@ -2,14 +2,14 @@
 
 ## How to reach Notion tools (lazy-tool proxy)
 Notion tools are NOT directly registered. They are proxied through lazy-tool.
-You MUST use this three-step pattern every time:
+Use this routing pattern — strictly in order:
 
-1. `lazy-tool.list_tools(source="notion")` — get the full list of Notion tools
-2. `lazy-tool.get_tool_schema(tool="<tool_name>", source="notion")` — get the schema
-3. `lazy-tool.invoke_proxy_tool(tool="<tool_name>", source="notion", arguments={...})` — call it
+1. `mcp_list_tools(source="notion")` — get the full list of available Notion tools
+2. `lazy-tool.invoke_proxy_tool(source="notion", tool="<tool_name>", arguments={...})` — execute it
 
-Never try to call a Notion tool (e.g. API-post-search) directly — it is not registered.
-Always go through lazy-tool. If list_tools returns empty, tell the user rather than guessing.
+**Never call `lazy-tool.search_tools`** — it is disabled. Use `mcp_list_tools` instead.
+**Never call `lazy-tool.list_tools` or `lazy-tool.get_tool_schema`** — they are hidden. `mcp_list_tools` replaces both.
+If you are unsure which integrations are connected, call `mcp_list_sources()` first.
 
 ## How Notion MCP works
 The Notion MCP server uses the 2025-09-03 API. Databases are
@@ -54,6 +54,7 @@ Steps:
    Never pass a page_id as the parent when creating a database entry.
 
 ## Common mistakes to avoid
+- Calling search_tools — it is disabled; use mcp_list_tools(source="notion") instead
 - Using "database" instead of "data_source" in search filters
 - Using a nested ID instead of the top-level ID
 - Using API-post-page to create a database entry — this causes a permissions error

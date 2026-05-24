@@ -18,16 +18,21 @@ from alfard.orchestrator.memory import Memory
 from alfard.commands.registry import is_command, dispatch
 
 MAX_TURNS = 20
+# How many times the model may call search_tools before we force-fail with structured info.
+_SEARCH_TOOL_LOOP_LIMIT = 3
+
 _WEB_TOOLS = {"web_search", "web_fetch"}
-# Lazy-tool catalog meta-tools are internal read-only operations and cannot
-# be used as injection pivot points — exempt them from the injection gate.
+# MCP infra meta-tools are read-only infra operations — exempt from the injection gate.
 _INJECTION_EXEMPT = {
+    # lazy-tool meta-tools (hidden from schemas but may still be called internally)
     "lazy-tool.search_tools",
     "lazy-tool.list_tools",
     "lazy-tool.get_tool_schema",
-    # invoke_proxy_tool is a pass-through dispatcher — it is not itself an
-    # injection pivot; the downstream MCP tool handles its own approval.
+    # invoke_proxy_tool is a pass-through dispatcher — approval is handled per underlying tool.
     "lazy-tool.invoke_proxy_tool",
+    # deterministic infra tools registered by alfard
+    "mcp_list_sources",
+    "mcp_list_tools",
 }
 
 
@@ -60,6 +65,7 @@ class Orchestrator:
         self._guide_event = threading.Event()
         self._guide_text: str = ""
         self._stop_event = threading.Event()
+        self._search_tool_calls: int = 0  # loop-protection counter
 
     def signal_guide(self, text: str) -> None:
         """Thread-safe: inject user guidance at the next inter-step boundary."""
@@ -72,6 +78,7 @@ class Orchestrator:
 
     def run(self, task: str) -> str:
         self._stop_event.clear()
+        self._search_tool_calls = 0
         self._memory.add_user(task)
         self._gate.reset_job()
 
@@ -130,6 +137,27 @@ class Orchestrator:
                 if not self._registry.is_registered(name):
                     self._memory.add_tool_result(tool_call_id, f"Error: tool '{name}' is not registered")
                     continue
+
+                # Loop protection: abort semantic search spirals.
+                # search_tools is hidden from schemas; if the model somehow still
+                # calls it, count consecutive calls and force a structured failure
+                # after the limit so the model cannot loop indefinitely.
+                if name == "lazy-tool.search_tools":
+                    self._search_tool_calls += 1
+                    if self._search_tool_calls >= _SEARCH_TOOL_LOOP_LIMIT:
+                        import json as _json
+                        sources = self._registry.list_proxied_integrations()
+                        msg = _json.dumps({
+                            "error": (
+                                "Discovery loop detected. Stop calling search_tools. "
+                                "Use mcp_list_sources() to see connected integrations, "
+                                "then mcp_list_tools(source=...) to list available tools, "
+                                "then lazy-tool.invoke_proxy_tool(...) to execute."
+                            ),
+                            "connected_sources": sources,
+                        })
+                        self._memory.add_tool_result(tool_call_id, msg)
+                        continue
 
                 classification = classify(name, self._registry)
                 source = "user_instruction" if self._user_triggered else "tool_result"

@@ -16,6 +16,7 @@ from alfard.integrations.lazy_tool import (
     lazy_tool_is_available,
     LAZY_TOOL_CONFIG,
 )
+from alfard.integrations.mcp_tools import register_mcp_infra_tools
 from alfard.orchestrator.orchestrator import Orchestrator
 from alfard.commands.handlers import register_all
 from alfard.memory.tools import register_memory_tools
@@ -58,6 +59,15 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, registry) -> None:
     for name in _LAZY_ROUTED:
         if name in configured_names:
             registry.register_proxied_integration(name)
+
+    # Hide search_tools from the LLM — semantic search is not a valid MCP
+    # traversal path. The model must use mcp_list_sources + mcp_list_tools instead.
+    for hidden in ("lazy-tool.search_tools", "lazy-tool.list_tools", "lazy-tool.get_tool_schema"):
+        if registry.is_registered(hidden):
+            registry.hide(hidden)
+
+    # Register deterministic infra tools that replace semantic discovery.
+    register_mcp_infra_tools(registry)
 
 
 def build_orchestrator(

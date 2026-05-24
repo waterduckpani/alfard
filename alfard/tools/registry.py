@@ -25,7 +25,17 @@ class ToolRegistry:
             "reversible": reversible,
             "parameters": parameters,
             "is_mcp": is_mcp,
+            "hidden": False,
         }
+
+    def hide(self, name: str) -> None:
+        """Remove a tool from LLM-visible schemas without unregistering it.
+
+        Hidden tools remain callable internally but the model never sees them,
+        preventing accidental or hallucinated calls.
+        """
+        if name in self._tools:
+            self._tools[name]["hidden"] = True
 
     def get(self, name: str) -> dict:
         if name not in self._tools:
@@ -49,6 +59,7 @@ class ToolRegistry:
                 },
             }
             for tool in self._tools.values()
+            if not tool.get("hidden")
         ]
 
     def register_proxied_integration(self, name: str) -> None:

@@ -2,14 +2,14 @@
 
 ## How to reach GitHub tools (lazy-tool proxy)
 GitHub tools are NOT directly registered. They are proxied through lazy-tool.
-You MUST use this three-step pattern every time:
+Use this routing pattern — strictly in order:
 
-1. `lazy-tool.list_tools(source="github")` — get the full list of GitHub tools
-2. `lazy-tool.get_tool_schema(tool="<tool_name>", source="github")` — get the schema
-3. `lazy-tool.invoke_proxy_tool(tool="<tool_name>", source="github", arguments={...})` — call it
+1. `mcp_list_tools(source="github")` — get the full list of available GitHub tools
+2. `lazy-tool.invoke_proxy_tool(source="github", tool="<tool_name>", arguments={...})` — execute it
 
-Never try to call a GitHub tool (e.g. list_repos) directly — it is not registered.
-Always go through lazy-tool.
+**Never call `lazy-tool.search_tools`** — it is disabled. Use `mcp_list_tools` instead.
+**Never call `lazy-tool.list_tools` or `lazy-tool.get_tool_schema`** — they are hidden. `mcp_list_tools` replaces both.
+If you are unsure which integrations are connected, call `mcp_list_sources()` first.
 
 Interact with GitHub repositories: read issues, explore code, and perform write operations with explicit user approval.
 
