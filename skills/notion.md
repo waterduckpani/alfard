@@ -1,14 +1,13 @@
 # Notion Skill
 
-## How to reach Notion tools (lazy-tool proxy)
-Notion tools are NOT directly registered. They are proxied through lazy-tool.
+## How to reach Notion tools
 Use this routing pattern — strictly in order:
 
 1. `mcp_list_tools(source="notion")` — get the full list of available Notion tools
-2. `lazy-tool.invoke_proxy_tool(source="notion", tool="<tool_name>", arguments={...})` — execute it
+2. `mcp_invoke(source="notion", tool="<tool_name>", arguments={...})` — execute it
 
-**Never call `lazy-tool.search_tools`** — it is disabled. Use `mcp_list_tools` instead.
-**Never call `lazy-tool.list_tools` or `lazy-tool.get_tool_schema`** — they are hidden. `mcp_list_tools` replaces both.
+**Never call `lazy-tool.invoke_proxy_tool`** — it is hidden and will fail.
+**Never call `lazy-tool.search_tools`, `lazy-tool.list_tools`, or `lazy-tool.get_tool_schema`** — they are hidden.
 If you are unsure which integrations are connected, call `mcp_list_sources()` first.
 
 ## How Notion MCP works
