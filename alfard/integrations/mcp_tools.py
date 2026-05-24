@@ -48,6 +48,14 @@ def list_tools(source: str) -> str:
     })
 
 
+def _flatten_exc(exc: BaseException) -> str:
+    """Recursively unwrap ExceptionGroup to expose the actual leaf error messages."""
+    if hasattr(exc, "exceptions"):
+        parts = [_flatten_exc(e) for e in exc.exceptions]  # type: ignore[attr-defined]
+        return " | ".join(parts)
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _direct_mcp_call(source: str, tool: str, arguments: dict, entry: dict) -> str:
     """Spawn a direct MCP connection to the source server and invoke the tool.
 
@@ -111,11 +119,7 @@ def _direct_mcp_call(source: str, tool: str, arguments: dict, entry: dict) -> st
         result = asyncio.run(_call())
         return str(result)
     except BaseException as exc:
-        # Flatten ExceptionGroup (Python 3.11 / anyio) so the inner errors are visible.
-        if hasattr(exc, "exceptions"):
-            inner = "; ".join(f"{type(e).__name__}: {e}" for e in exc.exceptions)  # type: ignore[attr-defined]
-            return json.dumps({"error": f"ExceptionGroup — inner errors: {inner}"})
-        return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
+        return json.dumps({"error": _flatten_exc(exc)})
 
 
 def _make_invoke(registry: "ToolRegistry"):
