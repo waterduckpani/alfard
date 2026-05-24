@@ -136,10 +136,13 @@ class MCPClient:
             if transport == "http":
                 return mcp.client.streamable_http.streamablehttp_client(cfg["url"])
             elif transport == "stdio":
+                resolved_env = _resolve_env_vars(cfg.get("env_vars", {}))
                 params = mcp.StdioServerParameters(
                     command=cfg["command"],
                     args=cfg.get("args", []),
-                    env=_resolve_env_vars(cfg.get("env_vars", {})),
+                    # None → subprocess inherits parent env (preserves PATH, HOME, etc.)
+                    # Only override when there are actual env vars to inject.
+                    env=resolved_env if resolved_env else None,
                 )
                 import alfard.integrations.mcp_client as _self
                 return mcp.client.stdio.stdio_client(params, errlog=_self._errlog)

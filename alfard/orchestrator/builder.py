@@ -1,9 +1,7 @@
 """Orchestrator factory — shared bootstrap used by CLI and
 Slack bot to avoid duplicating wiring logic."""
 
-import atexit
 import shutil
-import subprocess
 
 from alfard.agents.loader import AgentLoader
 from alfard.llm.client import LLMClient
@@ -17,7 +15,6 @@ from alfard.integrations.catalogue import CATALOGUE
 from alfard.integrations.lazy_tool import (
     lazy_tool_is_available,
     LAZY_TOOL_CONFIG,
-    start_lazy_tool_server,
 )
 from alfard.orchestrator.orchestrator import Orchestrator
 from alfard.commands.handlers import register_all
@@ -29,17 +26,8 @@ _LAZY_ROUTED: frozenset[str] = frozenset(
 )
 
 
-def _cleanup_proc(proc: subprocess.Popen) -> None:
-    try:
-        proc.terminate()
-        proc.wait(timeout=3)
-    except Exception:
-        pass
 
-
-def _connect_mcp_via_lazy_tool(
-    mcp: MCPClient, lt_proc: subprocess.Popen, registry
-) -> None:
+def _connect_mcp_via_lazy_tool(mcp: MCPClient, registry) -> None:
     """Register lazy-tool as the single MCP proxy for routed servers.
 
     Collects the combined irreversible_tools list from all routed catalogue entries so
@@ -71,8 +59,6 @@ def _connect_mcp_via_lazy_tool(
         if name in configured_names:
             registry.register_proxied_integration(name)
 
-    atexit.register(_cleanup_proc, lt_proc)
-
 
 def build_orchestrator(
     agent_name: str,
@@ -103,12 +89,7 @@ def build_orchestrator(
     mcp = MCPClient(registry)
     if connect_mcp:
         if lazy_tool_is_available():
-            lt_proc = start_lazy_tool_server()
-            if lt_proc:
-                _connect_mcp_via_lazy_tool(mcp, lt_proc, registry)
-            else:
-                print("[lazy-tool] warning: server failed to start — falling back to direct MCP")
-                mcp.connect_all()
+            _connect_mcp_via_lazy_tool(mcp, registry)
         else:
             mcp.connect_all()
 
