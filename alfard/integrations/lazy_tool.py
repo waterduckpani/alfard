@@ -42,7 +42,10 @@ _ARCH_MAP: dict[str, str] = {
 
 def lazy_tool_is_available() -> bool:
     """Return True when lazy-tool is on PATH and its config exists."""
-    return shutil.which("lazy-tool") is not None and LAZY_TOOL_CONFIG.exists()
+    on_path = shutil.which("lazy-tool") is not None
+    config_exists = LAZY_TOOL_CONFIG.exists()
+    print(f"[lazy-tool] binary on PATH={on_path} config={LAZY_TOOL_CONFIG} exists={config_exists}")
+    return on_path and config_exists
 
 
 # ── Installation ────────────────────────────────────────────────────────────

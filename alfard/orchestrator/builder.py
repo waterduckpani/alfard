@@ -55,8 +55,11 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, lt_proc: subprocess.Popen) -> Non
         "env_vars": {},
         "tools": {"reversible": reversible, "irreversible": []},
     }
+    print(f"[lazy-tool] connecting lazy-tool proxy with reversible_tools={reversible}")
     mcp._connect(lazy_cfg)
 
+    direct = [cfg["name"] for cfg in mcp._server_configs if cfg["name"] not in _LAZY_ROUTED]
+    print(f"[lazy-tool] connecting direct (non-routed) servers: {direct}")
     for cfg in mcp._server_configs:
         if cfg["name"] not in _LAZY_ROUTED:
             mcp._connect(cfg)
@@ -92,13 +95,19 @@ def build_orchestrator(
 
     mcp = MCPClient(registry)
     if connect_mcp:
-        if lazy_tool_is_available():
+        _lt_avail = lazy_tool_is_available()
+        print(f"[lazy-tool] available={_lt_avail}")
+        if _lt_avail:
             lt_proc = start_lazy_tool_server()
+            print(f"[lazy-tool] process started={lt_proc is not None} pid={getattr(lt_proc, 'pid', None)}")
             if lt_proc:
+                print(f"[lazy-tool] routing via lazy-tool, skipping direct: {sorted(_LAZY_ROUTED)}")
                 _connect_mcp_via_lazy_tool(mcp, lt_proc)
             else:
+                print("[lazy-tool] server failed to start — falling back to direct MCP")
                 mcp.connect_all()
         else:
+            print("[lazy-tool] not available — connecting MCP servers directly")
             mcp.connect_all()
 
     # gog-based tools
