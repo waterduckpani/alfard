@@ -386,6 +386,19 @@ def _install_gogcli() -> bool:
     return False
 
 
+def _copy_to_terminal_clipboard(text: str) -> bool:
+    """Push text to the user's local clipboard via OSC 52 escape sequence.
+    Works over SSH if the terminal supports it (iTerm2, Kitty, WezTerm)."""
+    import base64
+    try:
+        encoded = base64.b64encode(text.encode()).decode()
+        sys.stdout.write(f"\033]52;c;{encoded}\007")
+        sys.stdout.flush()
+        return True
+    except Exception:
+        return False
+
+
 def _gog_env() -> dict:
     from alfard.security.keystore import get_or_create_gog_password
     env = os.environ.copy()
@@ -422,10 +435,63 @@ def _connect_oauth(name: str, integration: dict) -> bool:
         _skip_creds = alfard_confirm("google credentials already saved — use existing?", default=True)
 
     if not _skip_creds:
-        console.print(
-            f"\n[{p.fg_em}]step 4 — in the credentials dialog, don't click download[/]\n"
-            f"[{p.fg_faint}]just copy the two values shown:[/]\n"
+        # Always ask whether user needs the GCP setup walkthrough
+        already_setup = alfard_confirm(
+            "have you already set up a google cloud project for alfard?",
+            default=False,
         )
+
+        if already_setup:
+            console.print(f"[{p.fg_dim}]skipping gcp setup — jumping straight to credentials.[/]\n")
+        else:
+            # Full GCP wizard — steps 1-3
+            console.print(f"\n[{p.fg_dim}]one-time google setup — about 5 minutes.[/]\n")
+
+            console.print(f"[{p.fg_em}]step 1 — create a project[/]")
+            console.print(
+                f"[{p.fg_faint}]  open google cloud console\n"
+                f"  click new project, name it anything (e.g. alfard)\n"
+                f"  click create[/]"
+            )
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com")
+            alfard_input("step 1 done — project created? press enter to continue", default="")
+
+            console.print(f"\n[{p.fg_em}]step 2 — enable gmail api[/]")
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/apis/library/gmail.googleapis.com[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/apis/library/gmail.googleapis.com")
+            alfard_input("step 2 done — gmail api enabled? press enter to continue", default="")
+
+            console.print(f"\n[{p.fg_em}]step 3 — configure consent screen[/]")
+            console.print(
+                f"[{p.fg_faint}]  choose external\n"
+                f"  fill in app name alfard and your email\n"
+                f"  click save through all screens\n"
+                f"  click add users and add your gmail address as a test user[/]"
+            )
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/auth/clients[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/auth/clients")
+            alfard_input("step 3 done — consent screen configured? press enter to continue", default="")
+
+            console.print(f"\n[{p.fg_em}]step 4 — create credentials[/]")
+            console.print(
+                f"[{p.fg_faint}]  go to apis & services → credentials\n"
+                f"  click create credentials → oauth client id\n"
+                f"  application type: desktop app → name it alfard → create\n"
+                f"  don't click download — just copy the two values shown[/]"
+            )
+            if headless:
+                console.print(f"  [{p.fg_faint}]open: https://console.cloud.google.com/apis/credentials[/]")
+            else:
+                webbrowser.open("https://console.cloud.google.com/apis/credentials")
+            alfard_input("step 4 done — credentials created? press enter to continue", default="")
+
         client_id = alfard_input("client id (ends in .apps.googleusercontent.com)").strip()
         if not client_id.endswith(".apps.googleusercontent.com"):
             console.print(f"\n  [{p.err}]invalid client id — must end with .apps.googleusercontent.com[/]")
@@ -469,11 +535,27 @@ def _connect_oauth(name: str, integration: dict) -> bool:
 
     # Auth flow
     if headless:
-        subprocess.run(
+        step1 = subprocess.run(
             ["gog", "auth", "add", email, "--services", "gmail,drive",
              "--remote", "--step", "1"],
             env=_gog_env(),
+            capture_output=True,
+            text=True,
         )
+        auth_url_to_open = step1.stdout.strip()
+
+        console.print("")
+        console.print(f"[{p.fg_em}]open this url in your browser to sign in:[/]")
+        console.print("")
+        print(auth_url_to_open)
+        console.print("")
+
+        copied = _copy_to_terminal_clipboard(auth_url_to_open)
+        if copied:
+            console.print(f"{dot('ok')} [{p.fg_dim}]url copied to clipboard[/]")
+        else:
+            console.print(f"[{p.fg_faint}](select and copy the url above)[/]")
+
         auth_url = alfard_input("paste the redirect url after signing in").strip()
         result2 = subprocess.run(
             ["gog", "auth", "add", email, "--services", "gmail,drive",
