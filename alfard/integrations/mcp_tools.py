@@ -28,32 +28,87 @@ def _make_list_sources(registry: "ToolRegistry"):
     return list_sources
 
 
-def list_tools(source: str) -> str:
-    """Return all tool names for a given source from the catalogue."""
-    from alfard.integrations.catalogue import CATALOGUE
-    entry = CATALOGUE.get(source)
-    if entry is None:
-        known = sorted(CATALOGUE.keys())
-        return json.dumps({
-            "error": f"Unknown source '{source}'.",
-            "known_sources": known,
-        })
-    reversible = entry.get("reversible_tools", [])
-    irreversible = entry.get("irreversible_tools", [])
-    return json.dumps({
-        "source": source,
-        "reversible_tools": reversible,
-        "irreversible_tools": irreversible,
-        "note": "Use mcp_invoke(source=SOURCE, tool=TOOL, arguments={...}) to call any of these tools.",
-    })
-
-
 def _flatten_exc(exc: BaseException) -> str:
-    """Recursively unwrap ExceptionGroup to expose the actual leaf error messages."""
+    """Recursively unwrap ExceptionGroup to expose actual leaf error messages."""
     if hasattr(exc, "exceptions"):
         parts = [_flatten_exc(e) for e in exc.exceptions]  # type: ignore[attr-defined]
         return " | ".join(parts)
     return f"{type(exc).__name__}: {exc}"
+
+
+def list_tools(source: str) -> str:
+    """Return actual tool names for a source by querying the live MCP server.
+
+    Falls back to the catalogue if the server cannot be reached.
+    This ensures tool names are always accurate regardless of server version.
+    """
+    import mcp
+    import mcp.client.stdio
+    import alfard.integrations.mcp_client as _mcp_mod
+    from alfard.integrations.catalogue import CATALOGUE
+    from alfard.paths import load_env
+
+    entry = CATALOGUE.get(source)
+    if entry is None:
+        return json.dumps({
+            "error": f"Unknown source '{source}'.",
+            "known_sources": sorted(CATALOGUE.keys()),
+        })
+
+    transport = entry.get("mcp_transport", "stdio")
+    catalogue_reversible = entry.get("reversible_tools", [])
+    catalogue_irreversible = entry.get("irreversible_tools", [])
+    note = "Use mcp_invoke(source=SOURCE, tool=TOOL, arguments={...}) to call any of these tools."
+
+    if transport != "stdio":
+        return json.dumps({
+            "source": source,
+            "reversible_tools": catalogue_reversible,
+            "irreversible_tools": catalogue_irreversible,
+            "note": note,
+        })
+
+    credential_env = entry.get("credential_env", "")
+    mcp_env_var = entry.get("mcp_env_var", credential_env)
+    load_env()
+    env: dict[str, str] | None = None
+    if credential_env:
+        token = os.environ.get(credential_env, "")
+        if token:
+            env = {mcp_env_var: token}
+
+    known_irreversible = set(catalogue_irreversible)
+
+    async def _fetch():
+        params = mcp.StdioServerParameters(
+            command=entry["mcp_command"],
+            args=entry.get("mcp_args", []),
+            env=env,
+        )
+        async with mcp.client.stdio.stdio_client(params, errlog=_mcp_mod._errlog) as (read, write):
+            async with mcp.ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.list_tools()
+                return result.tools
+
+    try:
+        tools = asyncio.run(_fetch())
+        reversible = [t.name for t in tools if t.name not in known_irreversible]
+        irreversible = [t.name for t in tools if t.name in known_irreversible]
+        return json.dumps({
+            "source": source,
+            "reversible_tools": reversible,
+            "irreversible_tools": irreversible,
+            "note": note,
+        })
+    except BaseException as exc:
+        return json.dumps({
+            "source": source,
+            "reversible_tools": catalogue_reversible,
+            "irreversible_tools": catalogue_irreversible,
+            "note": note,
+            "warning": f"Live query failed ({_flatten_exc(exc)}); showing catalogue defaults — actual names may differ.",
+        })
 
 
 def _direct_mcp_call(source: str, tool: str, arguments: dict, entry: dict) -> str:
@@ -253,12 +308,13 @@ def register_mcp_infra_tools(registry: "ToolRegistry") -> None:
     registry.register(
         name="mcp_list_tools",
         description=(
-            "List all available tool names for a connected MCP source. "
+            "List all available tool names for a connected MCP source by querying the live server. "
             "Returns reversible_tools (read-only) and irreversible_tools (write/delete). "
-            "Use this instead of lazy-tool.search_tools — it is deterministic and instant."
+            "Always call this before mcp_invoke to get accurate tool names."
         ),
         function=list_tools,
         reversible=True,
+        is_mcp=True,  # Spawns an MCP subprocess — must bypass the sandbox.
         parameters={
             "type": "object",
             "properties": {
