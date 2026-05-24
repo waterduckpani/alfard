@@ -19,6 +19,9 @@ from alfard.commands.registry import is_command, dispatch
 
 MAX_TURNS = 20
 _WEB_TOOLS = {"web_search", "web_fetch"}
+# Lazy-tool catalog meta-tools are internal read-only operations and cannot
+# be used as injection pivot points — exempt them from the injection gate.
+_INJECTION_EXEMPT = {"lazy-tool.search_tools", "lazy-tool.list_tools", "lazy-tool.get_tool_schema"}
 
 
 class Orchestrator:
@@ -131,6 +134,7 @@ class Orchestrator:
                     self._web_access_enabled
                     and self._web_context_active
                     and name not in _WEB_TOOLS
+                    and name not in _INJECTION_EXEMPT
                 ):
                     injection_intercepted = True
                     rprint(Panel(

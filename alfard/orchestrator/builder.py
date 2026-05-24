@@ -43,9 +43,9 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, lt_proc: subprocess.Popen) -> Non
     Collects the combined reversible_tools list from all routed catalogue entries so
     the approval gate still works correctly.  Non-routed servers connect directly.
     """
-    reversible: list[str] = []
+    irreversible: list[str] = []
     for server_name in _LAZY_ROUTED:
-        reversible.extend(CATALOGUE.get(server_name, {}).get("reversible_tools", []))
+        irreversible.extend(CATALOGUE.get(server_name, {}).get("irreversible_tools", []))
 
     lazy_cfg = {
         "name": "lazy-tool",
@@ -53,9 +53,9 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, lt_proc: subprocess.Popen) -> Non
         "command": "lazy-tool",
         "args": ["serve", "--config", str(LAZY_TOOL_CONFIG), "--transport", "stdio"],
         "env_vars": {},
-        "tools": {"reversible": reversible, "irreversible": []},
+        "tools": {"reversible": [], "irreversible": irreversible},
     }
-    print(f"[lazy-tool] connecting lazy-tool proxy with reversible_tools={reversible}")
+    print(f"[lazy-tool] connecting lazy-tool proxy with irreversible_tools={irreversible}")
     mcp._connect(lazy_cfg)
 
     direct = [cfg["name"] for cfg in mcp._server_configs if cfg["name"] not in _LAZY_ROUTED]

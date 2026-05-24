@@ -130,6 +130,7 @@ class MCPClient:
         name = cfg["name"]
         transport = cfg["transport"]
         reversible_tools: list[str] = cfg.get("tools", {}).get("reversible", [])
+        irreversible_tools: list[str] = cfg.get("tools", {}).get("irreversible", [])
 
         def _make_transport_context():
             if transport == "http":
@@ -188,7 +189,14 @@ class MCPClient:
             return caller
 
         for tool in tools:
-            is_reversible = tool.name in reversible_tools
+            # Blacklist mode: if irreversible_tools is provided, everything NOT
+            # in that list is reversible (used by lazy-tool proxy so its own
+            # meta-tools are correctly classified without enumerating them).
+            # Whitelist mode (legacy): tool must be explicitly in reversible_tools.
+            if irreversible_tools:
+                is_reversible = tool.name not in irreversible_tools
+            else:
+                is_reversible = tool.name in reversible_tools
             parameters = (
                 tool.inputSchema
                 if tool.inputSchema
