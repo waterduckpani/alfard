@@ -167,3 +167,20 @@ def encrypt_env(alfard_home: Path) -> None:
 def using_keyring(alfard_home: Path) -> bool:
     """Return True if the encryption key is currently stored in the OS keyring."""
     return _keyring_get() is not None
+
+
+def get_or_create_gog_password(alfard_home: Path | None = None) -> str:
+    """Return a stable random password for gog's file keyring, generating one if absent."""
+    import secrets
+    if alfard_home is None:
+        from alfard.paths import ALFARD_HOME
+        alfard_home = ALFARD_HOME
+    try:
+        existing = decrypt_env(alfard_home)
+        if "GOG_KEYRING_PASSWORD" in existing:
+            return existing["GOG_KEYRING_PASSWORD"]
+    except (KeystoreError, OSError):
+        pass
+    password = secrets.token_hex(32)
+    write_env_encrypted(alfard_home, {"GOG_KEYRING_PASSWORD": password})
+    return password

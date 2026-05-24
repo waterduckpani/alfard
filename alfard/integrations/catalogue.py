@@ -131,15 +131,15 @@ CATALOGUE: dict[str, dict] = {
         "display_name": "Gmail",
         "auth": AUTH_OAUTH,
         "description": "Read, organise and send emails in your Gmail inbox.",
-        "credential_env": "GMAIL_OAUTH_CREDENTIALS",
+        "credential_env": "GOG_ACCOUNT",
         "get_token_url": "",
         "get_token_steps": (
             "1. alfard will guide you through connecting your Google account\n"
             "2. A browser window will open — sign in and click Allow\n"
             "3. Your credentials are stored locally and never leave your machine"
         ),
-        "mcp_transport": "gws",
-        "mcp_command": "gws",
+        "mcp_transport": "gog",
+        "mcp_command": "gog",
         "mcp_args": [],
         "mcp_url": "",
         "reversible_tools": [
@@ -160,15 +160,15 @@ CATALOGUE: dict[str, dict] = {
         "display_name": "Google Drive",
         "auth": AUTH_OAUTH,
         "description": "Search, read and manage files in your Google Drive.",
-        "credential_env": "GDRIVE_OAUTH_CREDENTIALS",
+        "credential_env": "GOG_ACCOUNT",
         "get_token_url": "",
         "get_token_steps": (
             "1. alfard will guide you through connecting your Google account\n"
             "2. A browser window will open — sign in and click Allow\n"
             "3. Your credentials are stored locally and never leave your machine"
         ),
-        "mcp_transport": "gws",
-        "mcp_command": "gws",
+        "mcp_transport": "gog",
+        "mcp_command": "gog",
         "mcp_args": [],
         "mcp_url": "",
         "reversible_tools": [

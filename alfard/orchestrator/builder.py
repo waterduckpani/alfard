@@ -2,7 +2,6 @@
 Slack bot to avoid duplicating wiring logic."""
 
 import shutil
-from pathlib import Path
 
 from alfard.agents.loader import AgentLoader
 from alfard.llm.client import LLMClient
@@ -47,12 +46,11 @@ def build_orchestrator(
     if connect_mcp:
         mcp.connect_all()
 
-    # gws-based tools
-    gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
-    if shutil.which("gws") and gws_creds.exists():
-        from alfard.integrations.gws_tools import (
-            register_gmail_tools, register_gdrive_tools
-        )
+    # gog-based tools
+    from alfard.paths import ALFARD_HOME
+    gog_tokens = ALFARD_HOME / "gog" / "keyring"
+    if shutil.which("gog") and gog_tokens.exists():
+        from alfard.integrations.gog_tools import register_gmail_tools, register_gdrive_tools
         register_gmail_tools(registry)
         register_gdrive_tools(registry)
 
