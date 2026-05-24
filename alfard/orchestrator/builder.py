@@ -60,9 +60,16 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, registry) -> None:
         if name in configured_names:
             registry.register_proxied_integration(name)
 
-    # Hide search_tools from the LLM — semantic search is not a valid MCP
-    # traversal path. The model must use mcp_list_sources + mcp_list_tools instead.
-    for hidden in ("lazy-tool.search_tools", "lazy-tool.list_tools", "lazy-tool.get_tool_schema"):
+    # Hide all lazy-tool meta-tools from the LLM.
+    # The model must use mcp_list_sources → mcp_list_tools → mcp_invoke.
+    # invoke_proxy_tool requires proxy name synthesis which the model cannot
+    # do reliably; hiding it forces the correct deterministic path.
+    for hidden in (
+        "lazy-tool.search_tools",
+        "lazy-tool.list_tools",
+        "lazy-tool.get_tool_schema",
+        "lazy-tool.invoke_proxy_tool",
+    ):
         if registry.is_registered(hidden):
             registry.hide(hidden)
 
