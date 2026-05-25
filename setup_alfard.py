@@ -445,20 +445,26 @@ def run_setup() -> None:
                 f"[{p.fg_faint}]connect integrations later: alfard connect[/]"
             )
 
-        # Offer lazy-tool install when at least one lazy-routed integration was connected
+        # lazy-tool is required when any lazy-routed integration is connected — auto-install
         from alfard.integrations.catalogue import CATALOGUE as _CAT
         _lazy_routed_names = {n for n, i in _CAT.items() if i.get("routed_via_lazy_tool")}
         _connected_lazy = _lazy_routed_names & set(_selected or [])
         if _connected_lazy:
+            import shutil as _shutil
             from alfard.integrations.lazy_tool import (
-                ensure_lazy_tool, update_lazy_tool_catalog, lazy_tool_is_available,
+                _install_lazy_tool, update_lazy_tool_catalog,
             )
-            if ensure_lazy_tool():
-                if update_lazy_tool_catalog():
-                    console.print(
-                        f"\n{dot('ok')} [{p.fg_dim}]lazy-tool catalog updated — "
-                        f"mcp schemas will load on demand.[/]"
-                    )
+            console.print(f"\n[{p.fg_dim}]▸ installing lazy-tool (required for tool routing)...[/]")
+            _lt_ready = _shutil.which("lazy-tool") is not None or _install_lazy_tool()
+            if _lt_ready:
+                console.print(f"{dot('ok')} [{p.fg_dim}]✓ lazy-tool ready[/]")
+                update_lazy_tool_catalog()
+            else:
+                console.print(
+                    f"\n[{p.err}]lazy-tool is required and could not be installed. "
+                    f"Fix the error above and re-run alfard setup.[/]"
+                )
+                return
 
         steps_done = list(dict.fromkeys(steps_done + ["integrations"]))
         _save_checkpoint(CHECKPOINT_PATH, {
