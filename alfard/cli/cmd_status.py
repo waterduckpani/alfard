@@ -4,7 +4,6 @@ import os
 import click
 from alfard.cli.help_formatter import AlfardCommand
 import yaml
-from pathlib import Path
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -29,9 +28,6 @@ def _connected_set() -> set[str]:
             name = s.get("name", "")
             if name:
                 connected.add(name)
-    gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
-    if gws_creds.exists():
-        connected.update({"gmail", "gdrive"})
     load_env()
     if os.environ.get("SLACK_BOT_TOKEN"):
         connected.add("slack")

@@ -7,7 +7,7 @@ from alfard.memory.manager import MemoryManager
 from alfard.paths import ALFARD_HOME, USER_SKILLS_DIR
 
 AGENTS_DIR = ALFARD_HOME / "agents"
-SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
+SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 SOUL_FILE = "soul.md"
 BRAIN_FILE = "brain.md"

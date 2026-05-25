@@ -1,6 +1,6 @@
 [project]
 name = "alfard"
-version = "0.1.2"
+version = "0.1.3"
 description = "Local AI agent runtime — secure by default, private by design."
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -19,7 +19,7 @@ dependencies = [
     "apscheduler>=3.10",
     "sqlalchemy",
     "slack-sdk",
-    "numpy>=1.24",
+    "numpy>=2.0",
     "questionary",
     "art",
     "ddgs",

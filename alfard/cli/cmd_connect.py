@@ -683,8 +683,6 @@ def connect(integration: str | None):
         load_env()
         data = _load_integrations()
         connected = {s["name"] for s in data.get("servers", [])}
-        if (ALFARD_HOME / "gog" / "data" / "keyring").exists():
-            connected.update({"gmail", "gdrive"})
         web_configured = any(
             _WebConfig(AGENTS_DIR / a).enabled for a in list_agents()
         )
