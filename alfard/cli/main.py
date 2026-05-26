@@ -214,6 +214,7 @@ def cli(ctx):
                     questionary.Separator(),
                     "re-run setup",
                     "reset alfard",
+                    "uninstall alfard",
                     questionary.Separator(),
                     "← back",
                 ],
@@ -224,6 +225,12 @@ def cli(ctx):
                 alfard_input("press enter to continue", default="")
             elif sub == "re-run setup":
                 ctx.invoke(setup)
+            elif sub == "uninstall alfard":
+                try:
+                    ctx.invoke(uninstall)
+                    return  # binary is gone — exit the menu loop
+                except SystemExit:
+                    pass  # user cancelled — back to settings
             elif sub == "reset alfard":
                 console.print()
                 console.print(
