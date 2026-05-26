@@ -5,6 +5,20 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.3] — 2026-05-26
+
+### Added
+- `alfard doctor` command — checks binary install, Python dependencies, agents directory, and skills availability; prints a clear pass/fail report
+- `alfard uninstall` command — removes the installed binary, user data at `~/.alfard`, and any stale PATH entries
+- Uninstall option added to the settings and setup menu
+
+### Fixed
+- Skills directory moved inside the package so `pipx` installs no longer ship an empty skills list
+- Lazy-tool auto-installs during `alfard setup` with no option to skip, preventing partially configured setups
+- OSC 11 background-colour probe added for accurate light-terminal detection on terminals that support it
+
+---
+
 ## [0.1.2] — 2026-05-24
 
 ### Added

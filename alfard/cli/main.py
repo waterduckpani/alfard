@@ -24,7 +24,7 @@ from alfard.cli.cmd_doctor import doctor
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
-@click.version_option(version="0.1.1", prog_name="alfard")
+@click.version_option(version="0.1.3", prog_name="alfard")
 @click.pass_context
 def cli(ctx):
     """alfard — local AI agents, done right."""
