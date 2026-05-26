@@ -25,6 +25,22 @@ Always use API-post-search with this exact filter format:
   filter: {value: "data_source", property: "object"}
 Never use "database" as the filter value — it returns a 400 error.
 
+## CRITICAL: Matching database names from search results
+Notion database names often contain leading emoji or mixed capitalisation
+(e.g. "✅ Tasks", "📋 projects", "🗂 Notes").
+
+When the user refers to a database by name, you MUST normalise before matching:
+1. Strip all leading emoji and non-alphanumeric characters from both the
+   user's term and every result name before comparing.
+2. Compare case-insensitively.
+3. If multiple results survive normalisation, prefer the closest match.
+
+Example: user says "Tasks" → normalise result "✅ Tasks" → "Tasks" → match found.
+
+**Never declare a database "not found" before applying this normalisation.**
+If after normalising you still find no match, list all database names you
+can see so the user can clarify — do not guess or fabricate an ID.
+
 ## IDs
 The correct ID for querying a database is the top-level "id"
 field from search results. Never use nested IDs from inside
@@ -61,3 +77,4 @@ Steps:
 - Skipping API-post-search and guessing or reusing a database ID
 - Retrying a 404 with a different ID instead of telling the user
 - Answering from memory instead of calling the tool
+- Declaring a database "not found" without first stripping emoji and normalising case
