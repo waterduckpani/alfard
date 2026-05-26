@@ -19,6 +19,7 @@ from alfard.cli.cmd_memory import memory
 from alfard.cli.cmd_headless import headless, _has_headless_channels
 from alfard.cli.cmd_service import service
 from alfard.cli.cmd_channel import channel, connected_channels
+from alfard.cli.cmd_uninstall import uninstall
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
@@ -268,6 +269,7 @@ cli.add_command(mount)
 cli.add_command(memory)
 cli.add_command(service)
 cli.add_command(channel)
+cli.add_command(uninstall)
 
 if __name__ == "__main__":
     cli()

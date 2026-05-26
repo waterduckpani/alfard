@@ -12,3 +12,12 @@ from setup_alfard import run_setup
 def setup():
     """Set up alfard — configure provider, create your first agent."""
     run_setup()
+
+    import shutil
+    if not shutil.which("alfard"):
+        click.echo("")
+        click.echo("  ⚠  alfard is not on your PATH yet.")
+        click.echo("  Run this, then restart your terminal:")
+        click.echo("")
+        click.echo("      pipx ensurepath")
+        click.echo("")
