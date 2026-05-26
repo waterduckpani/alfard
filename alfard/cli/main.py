@@ -74,6 +74,8 @@ def cli(ctx):
         "view status",
         "view logs",
         questionary.Separator(),
+        "run doctor",
+        questionary.Separator(),
         "settings & setup",
         questionary.Separator(),
         "exit",
@@ -206,6 +208,9 @@ def cli(ctx):
         elif selection == "view logs":
             ctx.invoke(log)
             alfard_input("press enter to continue", default="")
+        elif selection == "run doctor":
+            ctx.invoke(doctor)
+            alfard_input("press enter to continue", default="")
         elif selection == "settings & setup":
             from alfard.paths import ALFARD_HOME
             import shutil
@@ -213,6 +218,7 @@ def cli(ctx):
                 "settings & setup",
                 [
                     "change provider / model / api key",
+                    "change theme",
                     questionary.Separator(),
                     "re-run setup",
                     "reset alfard",
@@ -225,6 +231,36 @@ def cli(ctx):
                 from setup_alfard import run_provider_settings
                 run_provider_settings()
                 alfard_input("press enter to continue", default="")
+            elif sub == "change theme":
+                import yaml
+                _cfg_path = ALFARD_HOME / "config" / "alfard.yaml"
+                _cfg = {}
+                if _cfg_path.exists():
+                    with open(_cfg_path) as _f:
+                        _cfg = yaml.safe_load(_f) or {}
+                _current = _cfg.get("ui", {}).get("theme", "auto")
+                theme_choice = alfard_select(
+                    f"theme (current: {_current})",
+                    ["auto", "light", "dark", "← back"],
+                )
+                if theme_choice and theme_choice != "← back":
+                    if "ui" not in _cfg:
+                        _cfg["ui"] = {}
+                    if theme_choice == "auto":
+                        _cfg["ui"].pop("theme", None)
+                        if not _cfg["ui"]:
+                            _cfg.pop("ui")
+                    else:
+                        _cfg["ui"]["theme"] = theme_choice
+                    with open(_cfg_path, "w") as _f:
+                        yaml.dump(_cfg, _f, default_flow_style=False, allow_unicode=True)
+                    console.print()
+                    if theme_choice == "auto":
+                        console.print(f"  [{p.ok}]theme set to auto — will detect on next launch.[/]")
+                    else:
+                        console.print(f"  [{p.ok}]theme set to {theme_choice} — takes effect on next launch.[/]")
+                    console.print()
+                    alfard_input("press enter to continue", default="")
             elif sub == "re-run setup":
                 ctx.invoke(setup)
             elif sub == "uninstall alfard":

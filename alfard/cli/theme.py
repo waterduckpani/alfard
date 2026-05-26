@@ -156,6 +156,21 @@ def _osc11_query(timeout: float = 0.05) -> tuple[int, int, int] | None:
 
 
 def detect_theme() -> str:
+    # 0. Saved user preference in alfard.yaml (ui.theme: light|dark).
+    #    Only honoured when explicitly set — "auto" falls through.
+    try:
+        import yaml
+        from alfard.paths import ALFARD_HOME
+        _cfg_path = ALFARD_HOME / "config" / "alfard.yaml"
+        if _cfg_path.exists():
+            with open(_cfg_path) as _f:
+                _cfg = yaml.safe_load(_f) or {}
+            _saved = str(_cfg.get("ui", {}).get("theme", "")).lower()
+            if _saved in ("light", "dark"):
+                return _saved
+    except Exception:
+        pass
+
     # 1. Explicit override always wins.
     env = os.environ.get("ALFARD_THEME", "").lower()
     if env in ("light", "dark"):
