@@ -1,7 +1,9 @@
 """alfard CLI theme — palette, detection, and Rich helpers."""
 
 import os
+import select
 import sys
+import time
 from dataclasses import dataclass
 from rich.console import Console
 
@@ -100,11 +102,71 @@ def _detect_capabilities() -> Capabilities:
     )
 
 
+def _osc11_query(timeout: float = 0.05) -> tuple[int, int, int] | None:
+    """Query the terminal background color via OSC 11 escape sequence.
+
+    Sends ESC ] 11 ; ? BEL to /dev/tty and reads back
+    ESC ] 11 ; rgb:RRRR/GGGG/BBBB BEL. Returns (r, g, b) or None on failure.
+    Only runs on Unix TTY terminals with non-dumb TERM.
+    """
+    if not sys.stdout.isatty():
+        return None
+    if os.environ.get("TERM", "") == "dumb":
+        return None
+    if sys.platform not in ("darwin", "linux"):
+        return None
+
+    try:
+        import re
+        import termios
+        import tty
+
+        tty_fd = os.open("/dev/tty", os.O_RDWR)
+        old = termios.tcgetattr(tty_fd)
+        try:
+            tty.setraw(tty_fd)
+            os.write(tty_fd, b"\x1b]11;?\x07")
+
+            buf = b""
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                readable, _, _ = select.select([tty_fd], [], [], remaining)
+                if not readable:
+                    break
+                buf += os.read(tty_fd, 64)
+                m = re.search(
+                    rb"\x1b\]11;rgb:"
+                    rb"([0-9a-fA-F]{2,4})/([0-9a-fA-F]{2,4})/([0-9a-fA-F]{2,4})",
+                    buf,
+                )
+                if m:
+                    return (
+                        int(m.group(1)[:2], 16),
+                        int(m.group(2)[:2], 16),
+                        int(m.group(3)[:2], 16),
+                    )
+        finally:
+            termios.tcsetattr(tty_fd, termios.TCSADRAIN, old)
+            os.close(tty_fd)
+    except Exception:
+        pass
+
+    return None
+
+
 def detect_theme() -> str:
+    # 1. Explicit override always wins.
     env = os.environ.get("ALFARD_THEME", "").lower()
     if env in ("light", "dark"):
         return env
+    if "--theme=light" in sys.argv:
+        return "light"
+    if "--theme=dark" in sys.argv:
+        return "dark"
 
+    # 2. COLORFGBG — set by rxvt, konsole, some xterm derivatives.
+    #    Last segment is the bg ANSI index; 7 or 15 means light terminal.
     colorfgbg = os.environ.get("COLORFGBG", "")
     if colorfgbg:
         parts = colorfgbg.split(";")
@@ -112,9 +174,18 @@ def detect_theme() -> str:
             last = int(parts[-1])
             if last in (7, 15):
                 return "light"
+            return "dark"
         except (ValueError, IndexError):
             pass
 
+    # 3. OSC 11 probe — ask the terminal its actual background color.
+    rgb = _osc11_query()
+    if rgb is not None:
+        r, g, b = rgb
+        lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+        return "light" if lum > 0.5 else "dark"
+
+    # 4. Fallback — most terminals are dark.
     return "dark"
 
 
