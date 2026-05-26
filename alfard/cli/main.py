@@ -1,5 +1,6 @@
 """CLI entry point — defines the alfard command group and registers all subcommands."""
 
+from importlib.metadata import version as pkg_version
 import click
 from alfard.cli.help_formatter import AlfardGroup, AlfardCommand
 from alfard.cli.cmd_setup import setup
@@ -24,7 +25,7 @@ from alfard.cli.cmd_doctor import doctor
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
-@click.version_option(version="0.1.3", prog_name="alfard")
+@click.version_option(version=pkg_version("alfard"), prog_name="alfard")
 @click.pass_context
 def cli(ctx):
     """alfard — local AI agents, done right."""
@@ -43,7 +44,7 @@ def cli(ctx):
     from alfard.cli.components import header_block, alfard_select, alfard_input, alfard_confirm
 
     if not config.exists():
-        console.print(header_block("0.1.0"))
+        console.print(header_block(pkg_version("alfard")))
         console.print()
         console.print(f"[{p.fg_dim}]Run alfard setup to get started.[/]")
         return
@@ -81,7 +82,7 @@ def cli(ctx):
     while True:
         console.clear()
         console.print()
-        console.print(header_block("0.1.0"))
+        console.print(header_block(pkg_version("alfard")))
         console.print()
         selection = alfard_select("what would you like to do?", choices)
 

@@ -22,8 +22,8 @@ def check_brew() -> bool:
     return shutil.which("brew") is not None
 
 
-def check_gws() -> bool:
-    return shutil.which("gws") is not None
+def check_gogcli() -> bool:
+    return shutil.which("gogcli") is not None
 
 
 def install_brew() -> bool:
@@ -90,11 +90,11 @@ def install_node() -> bool:
     return False
 
 
-def install_gws() -> bool:
-    """Install gws via npm. Returns True if successful."""
-    console.print("[dim]Installing gws (Google Workspace CLI)...[/dim]")
+def install_gogcli() -> bool:
+    """Install gogcli via npm. Returns True if successful."""
+    console.print("[dim]Installing gogcli (Google Workspace CLI)...[/dim]")
     result = subprocess.run(
-        ["npm", "install", "-g", "@googleworkspace/cli"],
+        ["npm", "install", "-g", "gogcli"],
         check=False
     )
     return result.returncode == 0
@@ -116,16 +116,16 @@ def ensure_dependencies() -> bool:
         else:
             return False
 
-    # gws — only needed for Gmail/GDrive, not fatal if missing
-    if check_gws():
-        console.print("[dim]✓ gws found[/dim]")
+    # gogcli — only needed for Gmail/GDrive, not fatal if missing
+    if check_gogcli():
+        console.print("[dim]✓ gogcli found[/dim]")
     else:
-        console.print("[dim]gws not found — installing...[/dim]")
-        if install_gws():
-            console.print("[dim]✓ gws installed[/dim]")
+        console.print("[dim]gogcli not found — installing...[/dim]")
+        if install_gogcli():
+            console.print("[dim]✓ gogcli installed[/dim]")
         else:
             console.print(
-                "[dim]Could not install gws now. "
+                "[dim]Could not install gogcli now. "
                 "It will be installed when you connect Gmail.[/dim]"
             )
 
