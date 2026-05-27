@@ -84,49 +84,72 @@ async def _ipc_send(sock_path: Path, task: str, timeout: float = 300.0) -> str:
 async def _run_ipc_session(agent: str, sock_path: Path) -> None:
     """Interactive terminal session routed through the daemon IPC socket."""
     from rich.markdown import Markdown
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.formatted_text import HTML
-    from prompt_toolkit.styles import Style
+    from alfard.channels.terminal import _ChatUI, _rich_to_ansi, _QUIT
+    from alfard.gate.approval import QueueNotifier
 
-    prompt_style = Style.from_dict({"": ""})
-    session: PromptSession = PromptSession()
+    notifier = QueueNotifier()
+    ui = _ChatUI(agent, notifier)
 
-    console.print(
-        f"[{p.fg_dim}]connected to live daemon · "
-        f"channels and crons active.[/]\n"
-        f"[{p.fg_faint}]type exit to quit.[/]\n"
+    ui.append(_rich_to_ansi(
+        f"[{p.fg_faint}]type your message and press enter. "
+        f"type exit or quit to stop.[/]\n"
+        f"[{p.fg_dim}]connected to live daemon · channels and crons active.[/]\n"
+    ))
+
+    async def _input_loop() -> None:
+        while True:
+            raw = await ui.input_queue.get()
+
+            if raw == _QUIT:
+                ui.append(_rich_to_ansi(f"[{p.fg_dim}]goodbye.[/]\n"))
+                await asyncio.sleep(0.15)
+                ui.exit()
+                return
+
+            stripped = raw.strip()
+            if stripped.lower() in ("exit", "quit", "q", "bye", "done"):
+                ui.append(_rich_to_ansi(f"[{p.fg_dim}]goodbye.[/]\n"))
+                await asyncio.sleep(0.15)
+                ui.exit()
+                return
+            if not stripped:
+                continue
+
+            ui.append(_rich_to_ansi(f"[bold {p.fg_em}]you[/]\n"))
+            ui.append(stripped + "\n\n")
+            ui.set_running(True)
+
+            try:
+                result = await _ipc_send(sock_path, stripped)
+                ui.append(_rich_to_ansi(f"[{p.fg_em}]{agent}[/]"))
+                ui.append(_rich_to_ansi(Markdown(result)))
+                ui.append("\n")
+            except RuntimeError as exc:
+                ui.append(_rich_to_ansi(f"[{p.err}]error: {exc}[/]\n"))
+            except asyncio.TimeoutError:
+                ui.append(_rich_to_ansi(f"[{p.warn}]timed out waiting for response.[/]\n"))
+            except OSError as exc:
+                ui.append(_rich_to_ansi(f"[{p.err}]connection lost: {exc}[/]\n"))
+                ui.append(_rich_to_ansi(f"[{p.fg_dim}]goodbye.[/]\n"))
+                await asyncio.sleep(0.15)
+                ui.exit()
+                return
+            finally:
+                ui.set_running(False)
+
+    app_task = asyncio.create_task(ui.run_async())
+    inp_task = asyncio.create_task(_input_loop())
+
+    done, pending = await asyncio.wait(
+        {app_task, inp_task},
+        return_when=asyncio.FIRST_COMPLETED,
     )
-
-    while True:
+    for t in pending:
+        t.cancel()
         try:
-            raw = await session.prompt_async(
-                HTML(f"<b>› </b>"),
-                style=prompt_style,
-            )
-        except (EOFError, KeyboardInterrupt):
-            break
-
-        stripped = raw.strip()
-        if not stripped:
-            continue
-        if stripped.lower() in ("exit", "quit", "q", "bye", "done"):
-            break
-
-        console.print(f"[{p.fg_faint}]·[/]")
-        try:
-            result = await _ipc_send(sock_path, stripped)
-            console.print(f"\n[{p.fg_em}]{agent}[/]")
-            console.print(Markdown(result))
-            console.print()
-        except RuntimeError as exc:
-            console.print(f"[{p.err}]error: {exc}[/]\n")
-        except asyncio.TimeoutError:
-            console.print(f"[{p.warn}]timed out waiting for response.[/]\n")
-        except OSError as exc:
-            console.print(f"[{p.err}]connection lost: {exc}[/]\n")
-            break
-
-    console.print(f"[{p.fg_dim}]goodbye.[/]\n")
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 @click.command(cls=AlfardCommand)
