@@ -1,4 +1,4 @@
-"""Manage alfard agents as system services (Linux systemd · macOS launchd)."""
+"""Manage alfard agents as system services (Linux systemd · macOS launchd · Windows Task Scheduler)."""
 
 import os
 import shutil
@@ -27,9 +27,15 @@ def _assert_supported() -> None:
         if not shutil.which("systemctl"):
             console.print(f"\n[{p.err}]systemctl not found — is systemd installed?[/]\n")
             raise SystemExit(1)
+    elif sys.platform == "win32":
+        if not shutil.which("schtasks"):
+            console.print(
+                f"\n[{p.err}]schtasks not found — Task Scheduler requires Windows.[/]\n"
+            )
+            raise SystemExit(1)
     else:
         console.print(
-            f"\n[{p.err}]alfard service is only supported on Linux and macOS.[/]\n"
+            f"\n[{p.err}]alfard service is only supported on Linux, macOS, and Windows.[/]\n"
         )
         raise SystemExit(1)
 
@@ -41,12 +47,16 @@ def _alfard_bin() -> str:
 def _is_installed(agent: str) -> bool:
     if sys.platform == "darwin":
         return _mac_plist_path(agent).exists()
+    if sys.platform == "win32":
+        return _win_is_installed(agent)
     return _unit_path(agent).exists()
 
 
 def _is_active(agent: str) -> bool:
     if sys.platform == "darwin":
         return _mac_is_running(agent)
+    if sys.platform == "win32":
+        return _win_is_running(agent)
     rc, _, _ = _ctl("is-active", "--quiet", _service_name(agent))
     return rc == 0
 
@@ -242,6 +252,76 @@ def _mac_status_markup(props: dict[str, str]) -> tuple[str, str | None, str | No
 
 
 # ---------------------------------------------------------------------------
+# Windows (Task Scheduler) helpers
+# ---------------------------------------------------------------------------
+
+def _win_task_name(agent: str) -> str:
+    return f"Alfard\\{agent}"
+
+
+def _schtasks(*args: str) -> tuple[int, str, str]:
+    """Run schtasks.exe <args> without shell. Returns (returncode, stdout, stderr)."""
+    r = subprocess.run(
+        ["schtasks", *args],
+        capture_output=True, text=True,
+    )
+    return r.returncode, r.stdout, r.stderr
+
+
+def _win_is_installed(agent: str) -> bool:
+    rc, _, _ = _schtasks("/query", "/tn", _win_task_name(agent))
+    return rc == 0
+
+
+def _win_is_running(agent: str) -> bool:
+    rc, out, _ = _schtasks("/query", "/tn", _win_task_name(agent), "/fo", "LIST")
+    if rc != 0:
+        return False
+    for line in out.splitlines():
+        if line.strip().startswith("Status:"):
+            return "Running" in line
+    return False
+
+
+def _win_status_props(agent: str) -> dict[str, str]:
+    """Parse schtasks /query /fo LIST output into a flat dict."""
+    rc, out, _ = _schtasks("/query", "/tn", _win_task_name(agent), "/fo", "LIST")
+    props: dict[str, str] = {"_found": "true" if rc == 0 else "false"}
+    if rc != 0:
+        return props
+    for line in out.splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            props[k.strip()] = v.strip()
+    return props
+
+
+def _win_status_markup(props: dict[str, str]) -> tuple[str, str | None]:
+    """Return (state_markup, last_run_or_None)."""
+    if props.get("_found") != "true":
+        return f"[{p.fg_faint}]not installed[/]", None
+    raw_status = props.get("Status", "").lower()
+    if "running" in raw_status:
+        state = f"[{p.ok}]running[/]"
+    elif "disabled" in raw_status:
+        state = f"[{p.warn}]disabled[/]"
+    elif "ready" in raw_status:
+        state = f"[{p.fg_faint}]stopped[/]"
+    else:
+        state = f"[{p.fg_faint}]{props.get('Status', 'unknown')}[/]"
+    last_run = props.get("Last Run Time") or props.get("Letzte Startzeit")
+    return state, last_run or None
+
+
+def _win_sock_alive(agent: str) -> bool:
+    """True if either a Unix socket or a TCP port file exists for the agent."""
+    base = AGENTS_DIR / agent
+    if (base / "agent.sock").exists():
+        return True
+    return (base / "agent.port").exists()
+
+
+# ---------------------------------------------------------------------------
 # Command group
 # ---------------------------------------------------------------------------
 
@@ -250,8 +330,9 @@ def _mac_status_markup(props: dict[str, str]) -> tuple[str, str | None, str | No
 def service(ctx: click.Context) -> None:
     """Manage alfard agents as system services.
 
-    Linux: systemd user units in ~/.config/systemd/user/
-    macOS: launchd agents in ~/Library/LaunchAgents/
+    Linux:   systemd user units in ~/.config/systemd/user/
+    macOS:   launchd agents in ~/Library/LaunchAgents/
+    Windows: Task Scheduler tasks under Alfard\\<agent>
 
     \b
     Examples:
@@ -273,8 +354,9 @@ def install(agent: str | None) -> None:
     """Install an agent as a system service. No sudo required.
 
     \b
-    Linux: writes a systemd unit, enables and starts it.
-    macOS: writes a launchd plist, loads it (starts at login).
+    Linux:   writes a systemd unit, enables and starts it.
+    macOS:   writes a launchd plist, loads it (starts at login).
+    Windows: registers a Task Scheduler task (ONLOGON) and starts it.
     \b
     Example:
       alfard service install postman
@@ -326,6 +408,34 @@ def install(agent: str | None) -> None:
             raise SystemExit(1)
         console.print(f"\n[{p.ok}]installed and loaded.[/]  [{p.fg_em}]{label}[/]")
         console.print(f"[{p.fg_faint}]plist  → {plist}[/]")
+        console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]")
+        console.print(f"\n[{p.ok}]✓ Agent will start automatically on login[/]\n")
+
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        try:
+            user = os.getlogin()
+        except OSError:
+            user = os.environ.get("USERNAME", "")
+        rc, _, err = _schtasks(
+            "/create",
+            "/tn", task,
+            "/tr", f"{_alfard_bin()} daemon {agent}",
+            "/sc", "ONLOGON",
+            "/ru", user,
+            "/rl", "LIMITED",
+            "/f",
+        )
+        if rc != 0:
+            console.print(error_block(
+                agent="alfard service install",
+                state="failed",
+                headline="schtasks /create failed.",
+                explanation=err.strip() or f"task: {task}",
+            ))
+            raise SystemExit(1)
+        _schtasks("/run", "/tn", task)
+        console.print(f"\n[{p.ok}]installed and started.[/]  [{p.fg_em}]{task}[/]")
         console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]")
         console.print(f"\n[{p.ok}]✓ Agent will start automatically on login[/]\n")
 
@@ -408,6 +518,26 @@ def remove(agent: str | None) -> None:
         plist.unlink(missing_ok=True)
         console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{label}[/]\n")
 
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        if not _win_is_installed(agent):
+            console.print(
+                f"\n[{p.warn}]no task found for '{agent}'.[/]\n"
+                f"[{p.fg_faint}]task: {task}[/]\n"
+            )
+            raise SystemExit(1)
+        _schtasks("/end", "/tn", task)
+        rc, _, err = _schtasks("/delete", "/tn", task, "/f")
+        if rc != 0:
+            console.print(error_block(
+                agent="alfard service remove",
+                state="failed",
+                headline="schtasks /delete failed.",
+                explanation=err.strip() or f"task: {task}",
+            ))
+            raise SystemExit(1)
+        console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{task}[/]\n")
+
     else:  # linux
         unit = _unit_path(agent)
         svc = _service_name(agent)
@@ -457,6 +587,19 @@ def start(agent: str | None) -> None:
             raise SystemExit(1)
         console.print(f"\n[{p.ok}]started.[/]  [{p.fg_em}]{label}[/]\n")
 
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        rc, _, err = _schtasks("/run", "/tn", task)
+        if rc != 0:
+            console.print(error_block(
+                agent="alfard service start",
+                state="failed",
+                headline=f"could not start '{agent}'.",
+                explanation=err.strip() or f"task: {task}",
+            ))
+            raise SystemExit(1)
+        console.print(f"\n[{p.ok}]started.[/]  [{p.fg_em}]{task}[/]\n")
+
     else:  # linux
         svc = _service_name(agent)
         rc, _, err = _ctl("start", svc)
@@ -500,6 +643,19 @@ def stop(agent: str | None) -> None:
             ))
             raise SystemExit(1)
         console.print(f"\n[{p.ok}]stopped.[/]  [{p.fg_em}]{label}[/]\n")
+
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        rc, _, err = _schtasks("/end", "/tn", task)
+        if rc != 0:
+            console.print(error_block(
+                agent="alfard service stop",
+                state="failed",
+                headline=f"could not stop '{agent}'.",
+                explanation=err.strip() or f"task: {task}",
+            ))
+            raise SystemExit(1)
+        console.print(f"\n[{p.ok}]stopped.[/]  [{p.fg_em}]{task}[/]\n")
 
     else:  # linux
         svc = _service_name(agent)
@@ -549,6 +705,20 @@ def restart(agent: str | None) -> None:
             raise SystemExit(1)
         console.print(f"\n[{p.ok}]restarted.[/]  [{p.fg_em}]{label}[/]\n")
 
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        _schtasks("/end", "/tn", task)
+        rc, _, err = _schtasks("/run", "/tn", task)
+        if rc != 0:
+            console.print(error_block(
+                agent="alfard service restart",
+                state="failed",
+                headline=f"could not restart '{agent}'.",
+                explanation=err.strip() or f"task: {task}",
+            ))
+            raise SystemExit(1)
+        console.print(f"\n[{p.ok}]restarted.[/]  [{p.fg_em}]{task}[/]\n")
+
     else:  # linux
         svc = _service_name(agent)
         rc, _, err = _ctl("restart", svc)
@@ -597,6 +767,19 @@ def status(agent: str | None) -> None:
         if exit_code:
             console.print(f"  [{p.fg_faint}]{'exit status':<14}[/] [{p.err}]{exit_code}[/]")
         console.print(f"  [{p.fg_faint}]{'plist':<14}[/] [{p.fg_dim}]{_mac_plist_path(agent)}[/]")
+
+    elif sys.platform == "win32":
+        task = _win_task_name(agent)
+        props = _win_status_props(agent)
+        state_markup, last_run = _win_status_markup(props)
+        console.print(f"  [{p.fg_faint}]{'agent':<14}[/] [{p.fg_em}]{agent}[/]")
+        console.print(f"  [{p.fg_faint}]{'task':<14}[/] [{p.fg_dim}]{task}[/]")
+        console.print(f"  [{p.fg_faint}]{'state':<14}[/] {state_markup}")
+        if last_run:
+            console.print(f"  [{p.fg_faint}]{'last run':<14}[/] [{p.fg_dim}]{last_run}[/]")
+        next_run = props.get("Next Run Time")
+        if next_run:
+            console.print(f"  [{p.fg_faint}]{'next run':<14}[/] [{p.fg_dim}]{next_run}[/]")
 
     else:  # linux
         svc = _service_name(agent)
@@ -713,7 +896,10 @@ def list_services() -> None:
             inst_str = c("fg_faint", "no")
             run_str = c("fg_faint", "—")
 
-        sock_alive = (AGENTS_DIR / ag / "agent.sock").exists()
+        if sys.platform == "win32":
+            sock_alive = _win_sock_alive(ag)
+        else:
+            sock_alive = (AGENTS_DIR / ag / "agent.sock").exists()
         sock_str = c("ok", "yes") if sock_alive else c("fg_faint", "no")
 
         rows.append({

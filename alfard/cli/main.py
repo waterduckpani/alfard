@@ -69,6 +69,7 @@ def cli(ctx):
         "manage skills",
         "manage mounts",
         "manage cron jobs",
+        "manage services",
         questionary.Separator(),
         "manage memory",
         questionary.Separator(),
@@ -197,6 +198,74 @@ def cli(ctx):
             ctx.invoke(mount)
         elif selection == "manage cron jobs":
             ctx.invoke(cron)
+        elif selection == "manage services":
+            from alfard.agents.loader import list_agents as _svc_list_agents
+            while True:
+                svc_pick = alfard_select(
+                    "manage services",
+                    [
+                        "list service status",
+                        "install agent as service",
+                        "start / stop / restart service",
+                        "remove service",
+                        questionary.Separator(),
+                        "view agent logs",
+                        questionary.Separator(),
+                        "← back",
+                    ],
+                )
+                if not svc_pick or svc_pick == "← back":
+                    break
+
+                if svc_pick == "list service status":
+                    ctx.invoke(service.commands["list"])
+                    alfard_input("press enter to continue", default="")
+
+                elif svc_pick == "install agent as service":
+                    _agents = _svc_list_agents()
+                    if not _agents:
+                        console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                        alfard_input("press enter to continue", default="")
+                    else:
+                        _pick = alfard_select("which agent?", _agents + ["← back"])
+                        if _pick and _pick != "← back":
+                            ctx.invoke(service.commands["install"], agent=_pick)
+                            alfard_input("press enter to continue", default="")
+
+                elif svc_pick == "start / stop / restart service":
+                    _agents = _svc_list_agents()
+                    if not _agents:
+                        console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                        alfard_input("press enter to continue", default="")
+                    else:
+                        _pick = alfard_select("which agent?", _agents + ["← back"])
+                        if _pick and _pick != "← back":
+                            _action = alfard_select("action?", ["start", "stop", "restart", "← back"])
+                            if _action and _action != "← back":
+                                ctx.invoke(service.commands[_action], agent=_pick)
+                                alfard_input("press enter to continue", default="")
+
+                elif svc_pick == "remove service":
+                    _agents = _svc_list_agents()
+                    if not _agents:
+                        console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                        alfard_input("press enter to continue", default="")
+                    else:
+                        _pick = alfard_select("which agent?", _agents + ["← back"])
+                        if _pick and _pick != "← back":
+                            ctx.invoke(service.commands["remove"], agent=_pick)
+                            alfard_input("press enter to continue", default="")
+
+                elif svc_pick == "view agent logs":
+                    _agents = _svc_list_agents()
+                    if not _agents:
+                        console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                        alfard_input("press enter to continue", default="")
+                    else:
+                        _pick = alfard_select("which agent?", _agents + ["← back"])
+                        if _pick and _pick != "← back":
+                            ctx.invoke(service.commands["logs"], agent=_pick)
+
         elif selection == "manage memory":
             ctx.invoke(memory)
             alfard_input("press enter to continue", default="")
