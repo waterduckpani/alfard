@@ -216,6 +216,9 @@ def cron(ctx: click.Context):
                         )
                         if not name or name == "← done":
                             break
+                        if not alfard_confirm(f"remove '{name}'?", default=False):
+                            console.print(f"[{p.fg_faint}]cancelled.[/]")
+                            continue
                         _save_crons(agent, [j for j in jobs if j["name"] != name])
                         console.print(f"{dot('ok')} [{p.fg_dim}]removed '{name}' from {agent}.[/]")
             continue
@@ -320,7 +323,11 @@ def add(agent: str | None):
     })
     _save_crons(agent, jobs)
     console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]")
-    console.print(f"[{p.fg_faint}]start scheduler: alfard cron run[/]")
+    from alfard.cli.cmd_service import _is_installed
+    if _is_installed(agent):
+        console.print(f"[{p.fg_faint}]cron job will run automatically — your agent is running as a service.[/]")
+    else:
+        console.print(f"[{p.fg_faint}]start scheduler: alfard cron run[/]")
 
 
 @cron.command(name="remove")
@@ -592,3 +599,5 @@ def run(background: bool):
     """Start the cron scheduler."""
     from alfard.cron.scheduler import start
     start(background=background)
+    if not background:
+        console.print(f"[{p.fg_dim}]scheduler stopped.[/]")

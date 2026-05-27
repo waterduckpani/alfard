@@ -718,7 +718,7 @@ def connect(integration: str | None):
             headline=f"unknown integration: '{integration}'",
             explanation="run alfard connect to see available integrations.",
         ))
-        raise SystemExit(1)
+        return
 
     info = CATALOGUE[integration]
 

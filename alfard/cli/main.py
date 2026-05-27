@@ -74,7 +74,7 @@ def cli(ctx):
         "manage memory",
         questionary.Separator(),
         "view status",
-        "view logs",
+        "view audit log",
         questionary.Separator(),
         "run doctor",
         questionary.Separator(),
@@ -209,7 +209,7 @@ def cli(ctx):
                         "start / stop / restart service",
                         "remove service",
                         questionary.Separator(),
-                        "view agent logs",
+                        "view agent log",
                         questionary.Separator(),
                         "← back",
                     ],
@@ -236,14 +236,13 @@ def cli(ctx):
                     _agents = _svc_list_agents()
                     if not _agents:
                         console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
-                        alfard_input("press enter to continue", default="")
-                    else:
-                        _pick = alfard_select("which agent?", _agents + ["← back"])
-                        if _pick and _pick != "← back":
-                            _action = alfard_select("action?", ["start", "stop", "restart", "← back"])
-                            if _action and _action != "← back":
-                                ctx.invoke(service.commands[_action], agent=_pick)
-                                alfard_input("press enter to continue", default="")
+                        continue
+                    _pick = alfard_select("which agent?", _agents + ["← back"])
+                    if _pick and _pick != "← back":
+                        _action = alfard_select("action?", ["start", "stop", "restart", "← back"])
+                        if _action and _action != "← back":
+                            ctx.invoke(service.commands[_action], agent=_pick)
+                            alfard_input("press enter to continue", default="")
 
                 elif svc_pick == "remove service":
                     _agents = _svc_list_agents()
@@ -256,7 +255,7 @@ def cli(ctx):
                             ctx.invoke(service.commands["remove"], agent=_pick)
                             alfard_input("press enter to continue", default="")
 
-                elif svc_pick == "view agent logs":
+                elif svc_pick == "view agent log":
                     _agents = _svc_list_agents()
                     if not _agents:
                         console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
@@ -275,7 +274,7 @@ def cli(ctx):
         elif selection == "view status":
             ctx.invoke(status)
             alfard_input("press enter to continue", default="")
-        elif selection == "view logs":
+        elif selection == "view audit log":
             ctx.invoke(log)
             alfard_input("press enter to continue", default="")
         elif selection == "run doctor":

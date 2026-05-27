@@ -101,7 +101,7 @@ def disconnect(integration: str | None):
             headline=f"unknown integration: '{integration}'",
             explanation="run alfard connect to see connected integrations.",
         ))
-        raise SystemExit(1)
+        return
 
     info = CATALOGUE[integration]
     display = info["display_name"]

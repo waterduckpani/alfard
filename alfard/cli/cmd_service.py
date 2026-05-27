@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 from alfard.agents.loader import AGENTS_DIR, list_agents
-from alfard.cli.components import alfard_select, alfard_table, error_block
+from alfard.cli.components import alfard_select, alfard_table, alfard_input, error_block
 from alfard.cli.help_formatter import AlfardCommand, AlfardGroup
 from alfard.cli.theme import c, console, p
 
@@ -340,8 +340,77 @@ def service(ctx: click.Context) -> None:
       alfard service list
       alfard service status postman
     """
-    if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
+    if ctx.invoked_subcommand is not None:
+        return
+
+    import questionary
+
+    while True:
+        console.clear()
+        console.print(f"\n[{p.fg_em}]manage services[/]\n")
+        svc_pick = alfard_select(
+            "what would you like to do?",
+            [
+                "list service status",
+                "install agent as service",
+                "start / stop / restart service",
+                "remove service",
+                questionary.Separator(),
+                "view agent log",
+                questionary.Separator(),
+                "← back",
+            ],
+        )
+        if not svc_pick or svc_pick == "← back":
+            return
+
+        if svc_pick == "list service status":
+            ctx.invoke(list_services)
+            alfard_input("press enter to continue", default="")
+
+        elif svc_pick == "install agent as service":
+            _agents = list_agents()
+            if not _agents:
+                console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                _pick = alfard_select("which agent?", _agents + ["← back"])
+                if _pick and _pick != "← back":
+                    ctx.invoke(install, agent=_pick)
+                    alfard_input("press enter to continue", default="")
+
+        elif svc_pick == "start / stop / restart service":
+            _agents = list_agents()
+            if not _agents:
+                console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                continue
+            _pick = alfard_select("which agent?", _agents + ["← back"])
+            if _pick and _pick != "← back":
+                _action = alfard_select("action?", ["start", "stop", "restart", "← back"])
+                if _action and _action != "← back":
+                    ctx.invoke(ctx.command.commands[_action], agent=_pick)
+                    alfard_input("press enter to continue", default="")
+
+        elif svc_pick == "remove service":
+            _agents = list_agents()
+            if not _agents:
+                console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                _pick = alfard_select("which agent?", _agents + ["← back"])
+                if _pick and _pick != "← back":
+                    ctx.invoke(remove, agent=_pick)
+                    alfard_input("press enter to continue", default="")
+
+        elif svc_pick == "view agent log":
+            _agents = list_agents()
+            if not _agents:
+                console.print(f"[{p.fg_dim}]no agents found. create one with alfard create.[/]")
+                alfard_input("press enter to continue", default="")
+            else:
+                _pick = alfard_select("which agent?", _agents + ["← back"])
+                if _pick and _pick != "← back":
+                    ctx.invoke(logs, agent=_pick)
 
 
 # ---------------------------------------------------------------------------

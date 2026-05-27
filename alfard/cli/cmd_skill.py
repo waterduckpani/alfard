@@ -118,7 +118,7 @@ def add(agent: str | None):
     if not agent:
         agent = _ask_agent("add skills to which agent?")
         if not agent:
-            raise SystemExit(1)
+            return
     elif agent not in list_agents():
         console.print(f"[{p.err}]agent '{agent}' not found.[/]")
         raise SystemExit(1)
