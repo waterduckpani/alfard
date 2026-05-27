@@ -142,7 +142,58 @@ def doctor():
         else:
             _ok(f"{agent} — ok")
 
-    # 11. Stale binaries
+    # 11. Service health and stale sockets
+    if sys.platform in ("linux", "darwin", "win32") and agents:
+        import socket as _socket
+        from alfard.cli.cmd_service import _is_installed, _is_active
+
+        for agent in agents:
+            agent_dir = agents_dir / agent
+
+            try:
+                if _is_installed(agent) and not _is_active(agent):
+                    _warn(
+                        f"{agent} — service installed but stopped · "
+                        f"run: alfard service start {agent}"
+                    )
+                    issues += 1
+            except Exception:
+                pass
+
+            sock_path = agent_dir / "agent.sock"
+            port_file = agent_dir / "agent.port"
+            sock_present = sock_path.exists()
+            port_present = port_file.exists()
+
+            if sock_present or port_present:
+                alive = False
+                if sock_present and sys.platform != "win32":
+                    try:
+                        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+                        s.settimeout(0.5)
+                        s.connect(str(sock_path))
+                        s.close()
+                        alive = True
+                    except OSError:
+                        pass
+                if not alive and port_present:
+                    try:
+                        port = int(port_file.read_text(encoding="utf-8").strip())
+                        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+                        s.settimeout(0.5)
+                        s.connect(("127.0.0.1", port))
+                        s.close()
+                        alive = True
+                    except (OSError, ValueError):
+                        pass
+                if not alive:
+                    _warn(
+                        f"{agent} — stale socket, daemon not responding · "
+                        f"run: alfard service restart {agent}"
+                    )
+                    issues += 1
+
+    # 12. Stale binaries
     pipx_binary = str(pipx_venv / "bin" / "alfard")
     stale_paths: list[str] = []
 

@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import stat
+import sys
 import uuid
 from pathlib import Path
 
@@ -58,7 +59,7 @@ def _load_agent_crons(agent_name: str) -> list[dict]:
 # Lane worker — one coroutine, sequential processing
 # ---------------------------------------------------------------------------
 
-async def _lane_worker(queue: asyncio.Queue, orchestrator) -> None:
+async def _lane_worker(queue: asyncio.Queue, orchestrator, worker_idle: asyncio.Event) -> None:
     loop = asyncio.get_running_loop()
     while True:
         item = await queue.get()
@@ -66,6 +67,7 @@ async def _lane_worker(queue: asyncio.Queue, orchestrator) -> None:
             queue.task_done()
             break
         task, fut = item
+        worker_idle.clear()
         try:
             result = await loop.run_in_executor(None, orchestrator.run, task)
             if fut is not None and not fut.done():
@@ -76,6 +78,7 @@ async def _lane_worker(queue: asyncio.Queue, orchestrator) -> None:
                 fut.set_exception(exc)
         finally:
             queue.task_done()
+            worker_idle.set()
 
 
 # ---------------------------------------------------------------------------
@@ -205,25 +208,43 @@ async def _run_daemon(
     queue: asyncio.Queue = asyncio.Queue()
     idle_reset = asyncio.Event()
     shutdown_event = asyncio.Event()
+    worker_idle = asyncio.Event()
+    worker_idle.set()
 
     def on_activity() -> None:
         """Reset the idle timer; safe to call from any thread."""
         loop.call_soon_threadsafe(idle_reset.set)
 
     # Lane worker
-    worker_task = asyncio.create_task(_lane_worker(queue, orchestrator))
+    worker_task = asyncio.create_task(_lane_worker(queue, orchestrator, worker_idle))
 
-    # IPC socket
+    # IPC socket / TCP server
+    sock_path = sock_path.resolve()
     sock_path.parent.mkdir(parents=True, exist_ok=True)
-    if sock_path.exists():
-        sock_path.unlink()
+    port_file: Path | None = None
 
-    ipc_server = await asyncio.start_unix_server(
-        lambda r, w: _handle_ipc_client(r, w, queue, on_activity),
-        path=str(sock_path),
-    )
-    os.chmod(sock_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
-    _log.info("IPC socket ready: %s", sock_path)
+    if sys.platform == "win32":
+        import socket as _socket
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
+            _s.bind(("127.0.0.1", 0))
+            _port = _s.getsockname()[1]
+        ipc_server = await asyncio.start_server(
+            lambda r, w: _handle_ipc_client(r, w, queue, on_activity),
+            "127.0.0.1",
+            _port,
+        )
+        port_file = sock_path.parent / "agent.port"
+        port_file.write_text(str(_port), encoding="utf-8")
+        _log.info("IPC TCP server ready: 127.0.0.1:%d", _port)
+    else:
+        if sock_path.exists():
+            sock_path.unlink()
+        ipc_server = await asyncio.start_unix_server(
+            lambda r, w: _handle_ipc_client(r, w, queue, on_activity),
+            path=str(sock_path),
+        )
+        os.chmod(sock_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+        _log.info("IPC socket ready: %s", sock_path)
 
     # Cron scheduler
     scheduler = _start_crons(agent_name, queue, loop, on_activity)
@@ -245,6 +266,7 @@ async def _run_daemon(
                 await asyncio.wait_for(idle_reset.wait(), timeout=float(IDLE_TIMEOUT_SEC))
                 idle_reset.clear()
             except asyncio.TimeoutError:
+                await worker_idle.wait()  # don't interrupt a running task
                 _log.info(
                     "idle timeout (%d min) — triggering session checkpoint",
                     IDLE_TIMEOUT_SEC // 60,
@@ -268,9 +290,14 @@ async def _run_daemon(
 
         ipc_server.close()
         await ipc_server.wait_closed()
-        if sock_path.exists():
+        if sys.platform != "win32" and sock_path.exists():
             try:
                 sock_path.unlink()
+            except OSError:
+                pass
+        if port_file is not None and port_file.exists():
+            try:
+                port_file.unlink()
             except OSError:
                 pass
 

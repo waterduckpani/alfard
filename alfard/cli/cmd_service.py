@@ -481,7 +481,7 @@ def install(agent: str | None) -> None:
         console.print(f"[{p.fg_faint}]unit   → {unit}[/]")
         console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]\n")
         console.print(
-            f"[{p.fg_dim}]To persist across reboots without login:[/]\n"
+            f"[{p.fg_dim}]To keep the agent running after logout, run once:[/]\n"
             f"  [{p.fg_faint}]loginctl enable-linger {os.environ.get('USER', '')}[/]\n"
         )
 

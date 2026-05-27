@@ -23,6 +23,22 @@ from alfard.channels.terminal import TerminalChannel
 def _socket_alive(sock_path: Path) -> bool:
     """Return True if the daemon socket exists and accepts connections."""
     import socket as _socket
+    import sys
+
+    if sys.platform == "win32":
+        port_file = sock_path.parent / "agent.port"
+        if not port_file.exists():
+            return False
+        try:
+            port = int(port_file.read_text(encoding="utf-8").strip())
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            return True
+        except (OSError, ValueError):
+            return False
+
     if not sock_path.exists():
         return False
     try:
@@ -37,12 +53,23 @@ def _socket_alive(sock_path: Path) -> bool:
 
 async def _ipc_send(sock_path: Path, task: str, timeout: float = 300.0) -> str:
     """Send one task to the daemon and return its response text."""
-    reader, writer = await asyncio.open_unix_connection(str(sock_path))
+    import sys
+
+    if sys.platform == "win32":
+        port_file = sock_path.parent / "agent.port"
+        port = int(port_file.read_text(encoding="utf-8").strip())
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    else:
+        reader, writer = await asyncio.open_unix_connection(str(sock_path))
+
     try:
         writer.write((json.dumps({"task": task}) + "\n").encode())
         await writer.drain()
         raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
-        resp = json.loads(raw.decode())
+        try:
+            resp = json.loads(raw.decode())
+        except json.JSONDecodeError:
+            raise RuntimeError("invalid response from daemon") from None
         if "error" in resp:
             raise RuntimeError(resp["error"])
         return resp.get("result", "")
@@ -162,7 +189,7 @@ def run(agent: str | None, no_mcp: bool) -> None:
 
     console.print(f"[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
 
-    sock_path = AGENTS_DIR / agent / "agent.sock"
+    sock_path = (AGENTS_DIR / agent / "agent.sock").resolve()
     if _socket_alive(sock_path):
         asyncio.run(_run_ipc_session(agent, sock_path))
         return
