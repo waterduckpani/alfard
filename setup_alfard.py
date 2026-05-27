@@ -6,6 +6,7 @@ import sys
 import time
 import shutil
 import subprocess
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 import yaml
@@ -90,7 +91,7 @@ def _section_transition(summary: str, next_step: int) -> None:
     time.sleep(0.6)
     console.clear()
     console.print()
-    console.print(header_block("0.1.0"))
+    console.print(header_block(pkg_version("alfard")))
     console.print()
     label = STEP_LABELS.get(next_step, "")
     console.print(f"[{p.fg_dim}]step {next_step} of 6 — {label}[/]\n")
@@ -183,7 +184,7 @@ def run_setup() -> None:
 
     # ── 1. WELCOME ────────────────────────────────────────────────────────────
     console.print()
-    console.print(header_block("0.1.0"))
+    console.print(header_block(pkg_version("alfard")))
     console.print()
     console.print(f"[{p.fg_dim}]secure by default. every action logged. your data stays on your machine.[/]")
     console.print(f"[{p.fg_dim}]this wizard sets up alfard in about 2 minutes.[/]")
@@ -586,7 +587,7 @@ def run_setup() -> None:
     CHECKPOINT_PATH.unlink(missing_ok=True)
     console.clear()
     console.print()
-    console.print(header_block("0.1.0"))
+    console.print(header_block(pkg_version("alfard")))
     console.print()
     console.print(f"{dot('ok')} [{p.fg_em}]alfard is ready.[/]\n")
     console.print(f"[{p.fg_dim}]before you start — a few things worth knowing:[/]\n")

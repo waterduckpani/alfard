@@ -5,6 +5,20 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.4] — 2026-05-27
+
+### Added
+- Cross-platform persistent agent service (Linux systemd, macOS launchd, Windows Task Scheduler)
+- `alfard daemon` — unified channels + crons + IPC server running in the background
+- `alfard run` connects to a live daemon when one is running, falling back to in-process mode
+- `alfard doctor` — 2 new service health checks (daemon socket, service registration)
+
+### Changed
+- Top-level menu restructured to 8 items with clean submenus
+- 16 UX fixes across all menus (Rich style removed from uninstall, service menu clear, edit help, mount confirm/restart, service remove hint, create gate, TUI menu labels, cron confirm/hints)
+
+---
+
 ## [0.1.3] — 2026-05-26
 
 ### Added
