@@ -1,64 +1,154 @@
-"""Manage alfard agents as systemd services (Linux only)."""
+"""Manage alfard agents as systemd user services (Linux only)."""
 
 import os
 import shutil
 import subprocess
 import sys
+import time
+from pathlib import Path
 
 import click
+from alfard.agents.loader import AGENTS_DIR, list_agents
+from alfard.cli.components import alfard_select, alfard_table, error_block
 from alfard.cli.help_formatter import AlfardCommand, AlfardGroup
-from alfard.agents.loader import list_agents
-from alfard.cli.theme import p, console
-from alfard.cli.components import error_block, alfard_select
+from alfard.cli.theme import c, console, p
 
 
-def _assert_linux_systemd() -> None:
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _assert_linux() -> None:
     if sys.platform != "linux":
-        console.print(
-            f"\n[{p.err}]service install is only supported on Linux with systemd.[/]\n"
-        )
+        console.print(f"\n[{p.err}]alfard service requires Linux with systemd.[/]\n")
         raise SystemExit(1)
     if not shutil.which("systemctl"):
-        console.print(
-            f"\n[{p.err}]service install is only supported on Linux with systemd.[/]\n"
-        )
+        console.print(f"\n[{p.err}]systemctl not found — is systemd installed?[/]\n")
         raise SystemExit(1)
 
 
-def _service_name(agent_name: str) -> str:
-    return f"alfard-{agent_name}"
+def _service_name(agent: str) -> str:
+    return f"alfard-{agent}"
 
 
-def _service_path(agent_name: str) -> str:
-    return f"/etc/systemd/system/{_service_name(agent_name)}.service"
+def _unit_dir() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME", "")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    d = base / "systemd" / "user"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _unit_path(agent: str) -> Path:
+    return _unit_dir() / f"{_service_name(agent)}.service"
 
 
 def _alfard_bin() -> str:
-    binary = shutil.which("alfard")
-    if binary:
-        return binary
-    return f"{sys.executable} -m alfard"
+    return shutil.which("alfard") or f"{sys.executable} -m alfard"
 
 
-@click.group(cls=AlfardGroup)
-def service() -> None:
-    """Manage alfard agents as system services."""
+def _ctl(*args: str) -> tuple[int, str, str]:
+    """Run systemctl --user <args>. Returns (returncode, stdout, stderr)."""
+    r = subprocess.run(
+        ["systemctl", "--user", *args],
+        capture_output=True, text=True,
+    )
+    return r.returncode, r.stdout, r.stderr
 
+
+def _is_installed(agent: str) -> bool:
+    return _unit_path(agent).exists()
+
+
+def _is_active(agent: str) -> bool:
+    rc, _, _ = _ctl("is-active", "--quiet", _service_name(agent))
+    return rc == 0
+
+
+def _service_props(agent: str) -> dict[str, str]:
+    """Return selected properties from systemctl show as a dict."""
+    rc, out, _ = _ctl(
+        "show", _service_name(agent),
+        "--property=ActiveState,SubState,MainPID,"
+        "ExecMainStartTimestamp,Result",
+    )
+    props: dict[str, str] = {}
+    if rc != 0:
+        return props
+    for line in out.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            props[k.strip()] = v.strip()
+    return props
+
+
+def _pick_installed(cmd: str) -> str | None:
+    """Prompt for an agent that has a unit file, or return None."""
+    agents = list_agents()
+    installed = [a for a in agents if _is_installed(a)]
+    if not installed:
+        console.print(
+            f"\n[{p.warn}]no installed services found.[/]\n"
+            f"[{p.fg_faint}]Run: alfard service install <agent>[/]\n"
+        )
+        return None
+    if len(installed) == 1:
+        return installed[0]
+    return alfard_select(f"which agent? (alfard service {cmd})", installed)
+
+
+def _pick_any(cmd: str) -> str | None:
+    """Prompt for any known agent, or return None."""
+    agents = list_agents()
+    if not agents:
+        console.print(error_block(
+            agent=f"alfard service {cmd}",
+            state="failed",
+            headline="no agents found.",
+            explanation="create one first: alfard create",
+        ))
+        return None
+    if len(agents) == 1:
+        return agents[0]
+    return alfard_select(f"which agent?", agents)
+
+
+# ---------------------------------------------------------------------------
+# Command group
+# ---------------------------------------------------------------------------
+
+@click.group(cls=AlfardGroup, invoke_without_command=True)
+@click.pass_context
+def service(ctx: click.Context) -> None:
+    """Manage alfard agents as systemd user services (Linux only).
+
+    \b
+    Examples:
+      alfard service install postman
+      alfard service list
+      alfard service status postman
+    """
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+
+
+# ---------------------------------------------------------------------------
+# install
+# ---------------------------------------------------------------------------
 
 @service.command(cls=AlfardCommand, name="install")
 @click.argument("agent", required=False)
 def install(agent: str | None) -> None:
-    """Install an agent as a systemd service.
+    """Install an agent as a systemd user service.
 
-    Writes a service file to /etc/systemd/system/ and enables it.
-    Run with sudo.
+    Writes a unit file to ~/.config/systemd/user/ and enables it.
+    No sudo required.
 
     \b
     Example:
-      sudo alfard service install postman
+      alfard service install postman
     """
-    _assert_linux_systemd()
-
+    _assert_linux()
     agents = list_agents()
     if not agents:
         console.print(error_block(
@@ -68,12 +158,10 @@ def install(agent: str | None) -> None:
             explanation="create one first: alfard create",
         ))
         raise SystemExit(1)
-
     if not agent:
-        agent = alfard_select("which agent?", agents)
+        agent = _pick_any("install")
         if not agent:
             return
-
     if agent not in agents:
         console.print(error_block(
             agent="alfard service install",
@@ -83,112 +171,326 @@ def install(agent: str | None) -> None:
         ))
         raise SystemExit(1)
 
-    try:
-        current_user = os.getlogin()
-    except OSError:
-        import getpass
-        current_user = getpass.getuser()
+    unit = _unit_path(agent)
+    svc = _service_name(agent)
 
-    cwd = os.getcwd()
-    alfard_bin = _alfard_bin()
-    svc_name = _service_name(agent)
-    svc_path = _service_path(agent)
-
-    unit_content = f"""\
-[Unit]
-Description=Alfard agent: {agent}
-After=network.target
-
-[Service]
-Type=simple
-User={current_user}
-WorkingDirectory={cwd}
-ExecStart={alfard_bin} headless {agent}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-"""
+    unit_content = (
+        "[Unit]\n"
+        f"Description=alfard agent: {agent}\n"
+        "After=network.target\n"
+        "\n"
+        "[Service]\n"
+        "Type=simple\n"
+        f"ExecStart={_alfard_bin()} daemon {agent}\n"
+        "Restart=on-failure\n"
+        "RestartSec=10\n"
+        f"Environment=HOME={Path.home()}\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
 
     try:
-        with open(svc_path, "w", encoding="utf-8") as fh:
-            fh.write(unit_content)
-    except PermissionError:
+        unit.write_text(unit_content, encoding="utf-8")
+    except OSError as exc:
         console.print(error_block(
             agent="alfard service install",
             state="failed",
-            headline="permission denied writing to /etc/systemd/system/.",
-            explanation="run with sudo: sudo alfard service install " + agent,
+            headline=f"could not write unit file.",
+            explanation=str(exc),
         ))
         raise SystemExit(1)
 
-    subprocess.run(["systemctl", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "enable", svc_name], check=False)
+    _ctl("daemon-reload")
+    rc, _, err = _ctl("enable", "--now", svc)
+    if rc != 0:
+        console.print(error_block(
+            agent="alfard service install",
+            state="failed",
+            headline="systemctl enable failed.",
+            explanation=err.strip() or f"unit: {unit}",
+        ))
+        raise SystemExit(1)
 
-    console.print(f"\n[{p.ok}]service installed.[/]  [{p.fg_em}]{svc_name}[/]\n")
+    console.print(f"\n[{p.ok}]installed and started.[/]  [{p.fg_em}]{svc}[/]")
+    console.print(f"[{p.fg_faint}]unit   → {unit}[/]")
+    console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]\n")
     console.print(
-        f"  [{p.fg_faint}]start  [/][{p.fg_dim}]sudo systemctl start {svc_name}[/]"
+        f"[{p.fg_dim}]To persist across reboots without login:[/]\n"
+        f"  [{p.fg_faint}]loginctl enable-linger {os.environ.get('USER', '')}[/]\n"
     )
-    console.print(
-        f"  [{p.fg_faint}]logs   [/][{p.fg_dim}]journalctl -u {svc_name} -f[/]"
-    )
-    console.print()
 
+
+# ---------------------------------------------------------------------------
+# remove
+# ---------------------------------------------------------------------------
 
 @service.command(cls=AlfardCommand, name="remove")
 @click.argument("agent", required=False)
 def remove(agent: str | None) -> None:
-    """Remove a previously installed systemd service.
-
-    Stops, disables, and deletes the service file.
-    Run with sudo.
+    """Stop, disable, and remove the systemd unit for an agent.
 
     \b
     Example:
-      sudo alfard service remove postman
+      alfard service remove postman
     """
-    _assert_linux_systemd()
-
-    agents = list_agents()
-    if not agents:
-        console.print(error_block(
-            agent="alfard service remove",
-            state="failed",
-            headline="no agents found.",
-            explanation="",
-        ))
-        raise SystemExit(1)
-
+    _assert_linux()
     if not agent:
-        agent = alfard_select("which agent?", agents)
+        agent = _pick_installed("remove")
         if not agent:
             return
 
-    svc_name = _service_name(agent)
-    svc_path = _service_path(agent)
+    unit = _unit_path(agent)
+    svc = _service_name(agent)
 
-    if not os.path.exists(svc_path):
+    if not unit.exists():
         console.print(
-            f"\n[{p.warn}]no service file found for '{agent}'.[/]  "
-            f"[{p.fg_faint}]{svc_path}[/]\n"
+            f"\n[{p.warn}]no unit file found for '{agent}'.[/]\n"
+            f"[{p.fg_faint}]expected: {unit}[/]\n"
         )
         raise SystemExit(1)
 
-    subprocess.run(["systemctl", "stop", svc_name], check=False)
-    subprocess.run(["systemctl", "disable", svc_name], check=False)
+    _ctl("stop", svc)
+    _ctl("disable", svc)
+    unit.unlink(missing_ok=True)
+    _ctl("daemon-reload")
 
-    try:
-        os.remove(svc_path)
-    except PermissionError:
+    console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{svc}[/]\n")
+
+
+# ---------------------------------------------------------------------------
+# start / stop / restart
+# ---------------------------------------------------------------------------
+
+@service.command(cls=AlfardCommand, name="start")
+@click.argument("agent", required=False)
+def start(agent: str | None) -> None:
+    """Start an installed agent service."""
+    _assert_linux()
+    if not agent:
+        agent = _pick_installed("start")
+        if not agent:
+            return
+    if not _is_installed(agent):
+        console.print(
+            f"\n[{p.err}]'{agent}' has no unit file.[/]\n"
+            f"[{p.fg_faint}]Run: alfard service install {agent}[/]\n"
+        )
+        raise SystemExit(1)
+    rc, _, err = _ctl("start", _service_name(agent))
+    if rc != 0:
         console.print(error_block(
-            agent="alfard service remove",
+            agent="alfard service start",
             state="failed",
-            headline="permission denied removing /etc/systemd/system/ file.",
-            explanation="run with sudo: sudo alfard service remove " + agent,
+            headline=f"could not start '{agent}'.",
+            explanation=err.strip(),
         ))
         raise SystemExit(1)
+    console.print(f"\n[{p.ok}]started.[/]  [{p.fg_em}]{_service_name(agent)}[/]\n")
 
-    subprocess.run(["systemctl", "daemon-reload"], check=False)
 
-    console.print(f"\n[{p.ok}]service removed.[/]  [{p.fg_em}]{svc_name}[/]\n")
+@service.command(cls=AlfardCommand, name="stop")
+@click.argument("agent", required=False)
+def stop(agent: str | None) -> None:
+    """Stop a running agent service."""
+    _assert_linux()
+    if not agent:
+        agent = _pick_installed("stop")
+        if not agent:
+            return
+    if not _is_installed(agent):
+        console.print(
+            f"\n[{p.err}]'{agent}' has no unit file.[/]\n"
+        )
+        raise SystemExit(1)
+    rc, _, err = _ctl("stop", _service_name(agent))
+    if rc != 0:
+        console.print(error_block(
+            agent="alfard service stop",
+            state="failed",
+            headline=f"could not stop '{agent}'.",
+            explanation=err.strip(),
+        ))
+        raise SystemExit(1)
+    console.print(f"\n[{p.ok}]stopped.[/]  [{p.fg_em}]{_service_name(agent)}[/]\n")
+
+
+@service.command(cls=AlfardCommand, name="restart")
+@click.argument("agent", required=False)
+def restart(agent: str | None) -> None:
+    """Restart an agent service."""
+    _assert_linux()
+    if not agent:
+        agent = _pick_installed("restart")
+        if not agent:
+            return
+    if not _is_installed(agent):
+        console.print(
+            f"\n[{p.err}]'{agent}' has no unit file.[/]\n"
+            f"[{p.fg_faint}]Run: alfard service install {agent}[/]\n"
+        )
+        raise SystemExit(1)
+    rc, _, err = _ctl("restart", _service_name(agent))
+    if rc != 0:
+        console.print(error_block(
+            agent="alfard service restart",
+            state="failed",
+            headline=f"could not restart '{agent}'.",
+            explanation=err.strip(),
+        ))
+        raise SystemExit(1)
+    console.print(f"\n[{p.ok}]restarted.[/]  [{p.fg_em}]{_service_name(agent)}[/]\n")
+
+
+# ---------------------------------------------------------------------------
+# status
+# ---------------------------------------------------------------------------
+
+@service.command(cls=AlfardCommand, name="status")
+@click.argument("agent", required=False)
+def status(agent: str | None) -> None:
+    """Show the service status for an agent in human-readable form."""
+    _assert_linux()
+    if not agent:
+        agent = _pick_any("status")
+        if not agent:
+            return
+    if not _is_installed(agent):
+        console.print(
+            f"\n[{p.warn}]'{agent}' is not installed as a service.[/]\n"
+            f"[{p.fg_faint}]Run: alfard service install {agent}[/]\n"
+        )
+        return
+
+    props = _service_props(agent)
+    active = props.get("ActiveState", "unknown")
+    sub = props.get("SubState", "")
+    pid = props.get("MainPID", "0")
+    started = props.get("ExecMainStartTimestamp", "")
+    result = props.get("Result", "")
+
+    if active == "active":
+        state_markup = f"[{p.ok}]running[/]"
+    elif active == "failed":
+        state_markup = f"[{p.err}]failed[/]"
+    elif active in ("activating", "deactivating"):
+        state_markup = f"[{p.warn}]{active}…[/]"
+    elif active == "inactive":
+        state_markup = f"[{p.fg_faint}]stopped[/]"
+    else:
+        state_markup = f"[{p.fg_faint}]{active}[/]"
+
+    console.print()
+    console.print(f"  [{p.fg_faint}]{'agent':<14}[/] [{p.fg_em}]{agent}[/]")
+    console.print(f"  [{p.fg_faint}]{'service':<14}[/] [{p.fg_dim}]{_service_name(agent)}[/]")
+    console.print(f"  [{p.fg_faint}]{'state':<14}[/] {state_markup}")
+    if sub and sub not in (active, ""):
+        console.print(f"  [{p.fg_faint}]{'detail':<14}[/] [{p.fg_dim}]{sub}[/]")
+    if pid and pid != "0":
+        console.print(f"  [{p.fg_faint}]{'pid':<14}[/] [{p.fg_dim}]{pid}[/]")
+    if started:
+        console.print(f"  [{p.fg_faint}]{'started':<14}[/] [{p.fg_dim}]{started}[/]")
+    if result and result not in ("success", ""):
+        console.print(f"  [{p.fg_faint}]{'exit reason':<14}[/] [{p.err}]{result}[/]")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# logs
+# ---------------------------------------------------------------------------
+
+@service.command(cls=AlfardCommand, name="logs")
+@click.argument("agent", required=False)
+@click.option("--lines", "-n", default=50, show_default=True,
+              help="Recent lines to show before following")
+def logs(agent: str | None, lines: int) -> None:
+    """Tail the agent's log file live.
+
+    Does not require systemd — reads ~/.alfard/agents/<agent>/logs/agent.log.
+
+    \b
+    Examples:
+      alfard service logs postman
+      alfard service logs postman -n 100
+    """
+    if not agent:
+        agent = _pick_any("logs")
+        if not agent:
+            return
+
+    log_path = AGENTS_DIR / agent / "logs" / "agent.log"
+    if not log_path.exists():
+        console.print(
+            f"\n[{p.warn}]no log file found for '{agent}'.[/]\n"
+            f"[{p.fg_faint}]path: {log_path}[/]\n"
+            f"[{p.fg_faint}]start the service first: alfard service start {agent}[/]\n"
+        )
+        return
+
+    console.print(f"[{p.fg_faint}]{log_path}  ·  ctrl+c to stop[/]\n")
+
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as fh:
+            all_lines = fh.readlines()
+            for line in all_lines[-lines:]:
+                console.print(line.rstrip(), highlight=False)
+            fh.seek(0, 2)  # seek to end before following
+            try:
+                while True:
+                    line = fh.readline()
+                    if line:
+                        console.print(line.rstrip(), highlight=False)
+                    else:
+                        time.sleep(0.2)
+            except KeyboardInterrupt:
+                pass
+    except OSError as exc:
+        console.print(f"\n[{p.err}]could not read log: {exc}[/]\n")
+
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+
+@service.command(cls=AlfardCommand, name="list")
+def list_services() -> None:
+    """List all agents with their service install and run state."""
+    _assert_linux()
+    agents = list_agents()
+    if not agents:
+        console.print(
+            f"[{p.fg_dim}]no agents found.[/]\n"
+            f"[{p.fg_faint}]create one: alfard create[/]"
+        )
+        return
+
+    rows = []
+    for ag in agents:
+        installed = _is_installed(ag)
+        if installed:
+            running = _is_active(ag)
+            inst_str = c("ok", "yes")
+            run_str = c("ok", "yes") if running else c("fg_faint", "no")
+        else:
+            inst_str = c("fg_faint", "no")
+            run_str = c("fg_faint", "—")
+
+        sock_alive = (AGENTS_DIR / ag / "agent.sock").exists()
+        sock_str = c("ok", "yes") if sock_alive else c("fg_faint", "no")
+
+        rows.append({
+            "agent":     ag,
+            "installed": inst_str,
+            "running":   run_str,
+            "socket":    sock_str,
+        })
+
+    console.print(alfard_table(
+        [
+            {"header": "agent",     "key": "agent"},
+            {"header": "installed", "key": "installed"},
+            {"header": "running",   "key": "running"},
+            {"header": "socket",    "key": "socket"},
+        ],
+        rows,
+    ))

@@ -22,6 +22,7 @@ from alfard.cli.cmd_service import service
 from alfard.cli.cmd_channel import channel, connected_channels
 from alfard.cli.cmd_uninstall import uninstall
 from alfard.cli.cmd_doctor import doctor
+from alfard.cli.cmd_daemon import daemon
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
@@ -316,6 +317,7 @@ cli.add_command(service)
 cli.add_command(channel)
 cli.add_command(uninstall)
 cli.add_command(doctor)
+cli.add_command(daemon)
 
 if __name__ == "__main__":
     cli()

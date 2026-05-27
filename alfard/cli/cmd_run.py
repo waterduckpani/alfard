@@ -1,16 +1,105 @@
 """Starts a named agent and enters its interactive ReAct loop."""
 
+import asyncio
+import json
 import os
 import sys
 import uuid
+from pathlib import Path
 
 import click
 from alfard.cli.help_formatter import AlfardCommand
-from alfard.agents.loader import AgentLoader, list_agents
+from alfard.agents.loader import AgentLoader, list_agents, AGENTS_DIR
 from alfard.orchestrator.builder import build_orchestrator
 from alfard.cli.theme import p, c, console
 from alfard.cli.components import dot, error_block, alfard_spinner, alfard_select, alfard_input
 from alfard.channels.terminal import TerminalChannel
+
+
+# ---------------------------------------------------------------------------
+# IPC helpers
+# ---------------------------------------------------------------------------
+
+def _socket_alive(sock_path: Path) -> bool:
+    """Return True if the daemon socket exists and accepts connections."""
+    import socket as _socket
+    if not sock_path.exists():
+        return False
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        s.connect(str(sock_path))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+async def _ipc_send(sock_path: Path, task: str, timeout: float = 300.0) -> str:
+    """Send one task to the daemon and return its response text."""
+    reader, writer = await asyncio.open_unix_connection(str(sock_path))
+    try:
+        writer.write((json.dumps({"task": task}) + "\n").encode())
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
+        resp = json.loads(raw.decode())
+        if "error" in resp:
+            raise RuntimeError(resp["error"])
+        return resp.get("result", "")
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+async def _run_ipc_session(agent: str, sock_path: Path) -> None:
+    """Interactive terminal session routed through the daemon IPC socket."""
+    from rich.markdown import Markdown
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.styles import Style
+
+    prompt_style = Style.from_dict({"": ""})
+    session: PromptSession = PromptSession()
+
+    console.print(
+        f"[{p.fg_dim}]connected to live daemon · "
+        f"channels and crons active.[/]\n"
+        f"[{p.fg_faint}]type exit to quit.[/]\n"
+    )
+
+    while True:
+        try:
+            raw = await session.prompt_async(
+                HTML(f"<b>› </b>"),
+                style=prompt_style,
+            )
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped.lower() in ("exit", "quit", "q", "bye", "done"):
+            break
+
+        console.print(f"[{p.fg_faint}]·[/]")
+        try:
+            result = await _ipc_send(sock_path, stripped)
+            console.print(f"\n[{p.fg_em}]{agent}[/]")
+            console.print(Markdown(result))
+            console.print()
+        except RuntimeError as exc:
+            console.print(f"[{p.err}]error: {exc}[/]\n")
+        except asyncio.TimeoutError:
+            console.print(f"[{p.warn}]timed out waiting for response.[/]\n")
+        except OSError as exc:
+            console.print(f"[{p.err}]connection lost: {exc}[/]\n")
+            break
+
+    console.print(f"[{p.fg_dim}]goodbye.[/]\n")
 
 
 @click.command(cls=AlfardCommand)
@@ -72,6 +161,17 @@ def run(agent: str | None, no_mcp: bool) -> None:
                 break
 
     console.print(f"[{p.fg_em}]{agent}[/]  [{p.fg_faint}]·[/]  [{p.fg_dim}]{first_line or 'ready'}[/]\n")
+
+    sock_path = AGENTS_DIR / agent / "agent.sock"
+    if _socket_alive(sock_path):
+        asyncio.run(_run_ipc_session(agent, sock_path))
+        return
+
+    console.print(
+        f"[{p.warn}]⚠[/] [{p.fg_dim}]Agent is not running as a service. "
+        f"Channels and crons inactive.[/]\n"
+        f"  [{p.fg_faint}]Run: [bold]alfard service install {agent}[/bold][/]\n"
+    )
 
     session_id = str(uuid.uuid4())
 
