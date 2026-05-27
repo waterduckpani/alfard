@@ -7,29 +7,33 @@ from pathlib import Path
 
 import click
 from alfard.cli.help_formatter import AlfardCommand
+from alfard.cli.theme import p, console
+from alfard.cli.components import dot, alfard_confirm
 
 
 @click.command(cls=AlfardCommand)
 def uninstall():
     """Fully remove alfard — binary, data, and credentials."""
-    click.echo(
-        "\nThis will remove all alfard data including agents, memory, skills,\n"
-        "and credentials. This cannot be undone. Type 'yes' to continue: ",
-        nl=False,
+    console.print(
+        f"\n{dot('warn')} [{p.warn}]uninstall alfard[/]\n"
+        f"[{p.fg_faint}]this will remove all data including agents, memory, skills, and credentials.[/]"
     )
-    answer = input()
-    if answer != "yes":
-        click.echo("Uninstall cancelled.")
-        raise SystemExit(0)
+    if not alfard_confirm("remove all alfard data and the binary?", default=False):
+        console.print(f"[{p.fg_dim}]cancelled.[/]")
+        return
 
     # a. pipx uninstall
     pipx = shutil.which("pipx")
     if pipx:
         result = subprocess.run([pipx, "uninstall", "alfard"], capture_output=True)
         if result.returncode != 0:
-            click.echo("pipx uninstall failed — you may need to run it manually.")
+            console.print(
+                f"{dot('warn')} [{p.warn}]pipx uninstall failed — you may need to run it manually.[/]"
+            )
     else:
-        click.echo("pipx uninstall failed — you may need to run it manually.")
+        console.print(
+            f"{dot('warn')} [{p.warn}]pipx uninstall failed — you may need to run it manually.[/]"
+        )
 
     # b. delete ~/.alfard/
     alfard_home = Path.home() / ".alfard"
@@ -41,17 +45,17 @@ def uninstall():
         Path.home() / ".local" / "bin" / "alfard",
         Path("/usr/local/bin/alfard"),
         *[
-            Path(p)
-            for p in glob.glob(
+            Path(path_str)
+            for path_str in glob.glob(
                 "/Library/Frameworks/Python.framework/Versions/*/bin/alfard"
             )
         ],
     ]
     for path in stale_paths:
         if path.exists():
-            click.echo(f"removing stale binary: {path}")
+            console.print(f"  [{p.fg_faint}]removing stale binary: {path}[/]")
             path.unlink()
 
     # d. done
-    click.echo("✓ alfard fully removed.")
-    click.echo("To reinstall: pipx install alfard")
+    console.print(f"\n{dot('ok')} [{p.fg_dim}]alfard fully removed.[/]")
+    console.print(f"[{p.fg_faint}]to reinstall: pipx install alfard[/]")

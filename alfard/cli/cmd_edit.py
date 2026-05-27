@@ -20,9 +20,9 @@ FILE_MAP = {
 @click.argument("agent", required=False)
 @click.argument("file", required=False, type=click.Choice(["soul", "brain", "memory", "web"]))
 def edit(agent: str | None, file: str | None):
-    """Edit an agent's soul, brain or memory files.
+    """Edit an agent's soul, brain, memory, or web config files.
 
-    AGENT is the agent name. FILE is one of: soul, brain, memory.
+    AGENT is the agent name. FILE is one of: soul, brain, memory, web.
 
     Example: alfard edit postman soul
     """

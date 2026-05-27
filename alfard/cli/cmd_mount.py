@@ -194,6 +194,10 @@ def add(agent: str | None, path: str | None, access: str):
         console.print(f"  [{p.warn}]already mounted: {path}[/]")
         raise SystemExit(1)
 
+    if not alfard_confirm("apply?", default=True):
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
+
     data.setdefault("mounts", []).append({
         "path": stored_path,
         "access": access,
@@ -206,6 +210,7 @@ def add(agent: str | None, path: str | None, access: str):
     console.print(f"  [{p.fg_faint}]{'path':<8}[/] [{p.fg_em}]{resolved}[/]")
     console.print(f"  [{p.fg_faint}]{'access':<8}[/] [{p.fg_dim}]{access_label}[/]")
     console.print(f"\n[{p.fg_faint}]the agent can now access files in this folder.[/]")
+    console.print(f"[{p.fg_faint}]restart the agent for changes to take effect.[/]")
 
 
 @mount.command(name="remove")
@@ -252,8 +257,13 @@ def remove(agent: str | None, path: str | None):
         console.print(f"  [{p.warn}]mount not found: {path}[/]")
         raise SystemExit(1)
 
+    if not alfard_confirm("apply?", default=False):
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
+
     _save_mounts(agent, data)
     console.print(f"{dot('ok')} [{p.fg_dim}]removed mount: {path}[/]")
+    console.print(f"[{p.fg_faint}]restart the agent for changes to take effect.[/]")
 
 
 @mount.command(name="access")
@@ -327,6 +337,7 @@ def change_access(agent: str | None, path: str | None, access: str | None):
     console.print(f"  [{p.fg_faint}]{'agent':<8}[/] [{p.fg_em}]{agent}[/]")
     console.print(f"  [{p.fg_faint}]{'path':<8}[/] [{p.fg_em}]{stored_path}[/]")
     console.print(f"  [{p.fg_faint}]{'access':<8}[/] [{p.fg_dim}]{access_label}[/]")
+    console.print(f"[{p.fg_faint}]restart the agent for changes to take effect.[/]")
 
 
 @mount.command(name="list")

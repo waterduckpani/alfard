@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 from alfard.agents.loader import AGENTS_DIR, list_agents
-from alfard.cli.components import alfard_select, alfard_table, alfard_input, error_block
+from alfard.cli.components import alfard_select, alfard_table, alfard_input, error_block, dot
 from alfard.cli.help_formatter import AlfardCommand, AlfardGroup
 from alfard.cli.theme import c, console, p
 
@@ -586,6 +586,8 @@ def remove(agent: str | None) -> None:
         _lctl("unload", str(plist))
         plist.unlink(missing_ok=True)
         console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{label}[/]\n")
+        console.print(f"{dot('ok')} [{p.fg_dim}]agent data is untouched — reinstall anytime with:[/]")
+        console.print(f"  [{p.fg_faint}]alfard service install {agent}[/]\n")
 
     elif sys.platform == "win32":
         task = _win_task_name(agent)
@@ -606,6 +608,8 @@ def remove(agent: str | None) -> None:
             ))
             raise SystemExit(1)
         console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{task}[/]\n")
+        console.print(f"{dot('ok')} [{p.fg_dim}]agent data is untouched — reinstall anytime with:[/]")
+        console.print(f"  [{p.fg_faint}]alfard service install {agent}[/]\n")
 
     else:  # linux
         unit = _unit_path(agent)
@@ -621,6 +625,8 @@ def remove(agent: str | None) -> None:
         unit.unlink(missing_ok=True)
         _ctl("daemon-reload")
         console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{svc}[/]\n")
+        console.print(f"{dot('ok')} [{p.fg_dim}]agent data is untouched — reinstall anytime with:[/]")
+        console.print(f"  [{p.fg_faint}]alfard service install {agent}[/]\n")
 
 
 # ---------------------------------------------------------------------------

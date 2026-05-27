@@ -123,8 +123,8 @@ def cli(ctx):
                 if agent_name and agent_name != "← back":
                     ctx.invoke(headless, agent=agent_name, no_mcp=False)
         elif selection == "create a new agent":
-            ctx.invoke(create)
-            alfard_input("press enter to continue", default="")
+            if ctx.invoke(create):
+                alfard_input("press enter to continue", default="")
         elif selection == "edit an agent":
             from alfard.agents.loader import list_agents as _list_agents2
             agents = _list_agents2()
@@ -201,8 +201,10 @@ def cli(ctx):
         elif selection == "manage services":
             from alfard.agents.loader import list_agents as _svc_list_agents
             while True:
+                console.clear()
+                console.print(f"\n[{p.fg_em}]manage services[/]\n")
                 svc_pick = alfard_select(
-                    "manage services",
+                    "what would you like to do?",
                     [
                         "list service status",
                         "install agent as service",
