@@ -583,7 +583,29 @@ def run_setup() -> None:
             "connected_integration": connected_integration,
         })
 
-    # ── 9. DONE ───────────────────────────────────────────────────────────────
+    # ── 9. SERVICE INSTALL (optional) ────────────────────────────────────────
+    if agent_name and sys.platform in ("linux", "darwin", "win32"):
+        console.print(f"\n[{p.fg_em}]run as a service[/] [{p.fg_faint}](optional)[/]")
+        console.print(f"[{p.fg_dim}]your agent can run 24/7 as a system service.[/]")
+        console.print(f"[{p.fg_dim}]it will start automatically on login, survive[/]")
+        console.print(f"[{p.fg_dim}]reboots, and keep your channels and cron jobs[/]")
+        console.print(f"[{p.fg_dim}]active without any manual steps.[/]")
+        console.print(f"[{p.fg_dim}]you can still chat anytime with alfard run.[/]\n")
+
+        if alfard_confirm(f"install {agent_name} as a service now?", default=True):
+            from alfard.cli.cmd_service import install as _service_install
+            try:
+                _service_install.callback(agent=agent_name)
+                console.print(f"\n{dot('ok')} [{p.fg_em}]{agent_name} is now running as a service.[/]")
+                console.print(f"  [{p.fg_faint}]chat with it anytime using alfard run[/]")
+            except SystemExit:
+                console.print(f"\n[{p.warn}]service install failed — try again later with:[/]")
+                console.print(f"  [{p.fg_faint}]alfard service install {agent_name}[/]")
+        else:
+            console.print(f"[{p.fg_faint}]you can set this up later from the menu or with:[/]")
+            console.print(f"  [{p.fg_faint}]alfard service install {agent_name}[/]")
+
+    # ── 10. DONE ──────────────────────────────────────────────────────────────
     CHECKPOINT_PATH.unlink(missing_ok=True)
     console.clear()
     console.print()
