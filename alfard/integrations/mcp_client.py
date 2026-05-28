@@ -110,7 +110,7 @@ class MCPClient:
         self._server_configs: list[dict] = []
 
         if _CONFIG_PATH.exists():
-            with open(_CONFIG_PATH) as f:
+            with open(_CONFIG_PATH, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             if data and "servers" in data:
                 self._server_configs = data["servers"]

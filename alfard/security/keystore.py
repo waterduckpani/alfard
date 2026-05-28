@@ -1,5 +1,6 @@
 """Fernet-encrypted credential store with OS keyring / key-file fallback."""
 
+import sys
 from pathlib import Path
 
 _SERVICE = "alfard"
@@ -61,9 +62,27 @@ def _file_read(path: Path) -> bytes | None:
         raise KeystoreError(f"Cannot read key file {path}: {exc}") from exc
 
 
+def _secure_file(path: Path) -> None:
+    """Restrict path to owner read/write only. Uses icacls on Windows, chmod elsewhere."""
+    if sys.platform == "win32":
+        import subprocess
+        import os
+        try:
+            user = os.getlogin()
+        except OSError:
+            user = os.environ.get("USERNAME", "")
+        subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:(R)"],
+            check=False,
+            capture_output=True,
+        )
+    else:
+        path.chmod(0o600)
+
+
 def _file_write(path: Path, key: bytes) -> None:
     path.write_bytes(key)
-    path.chmod(0o600)
+    _secure_file(path)
 
 
 def _secure_delete(path: Path) -> None:
@@ -136,7 +155,7 @@ def write_env_encrypted(alfard_home: Path, env_vars: dict[str, str], *, replace:
     ciphertext = Fernet(key).encrypt(_to_dotenv(env_vars).encode())
     enc_path = alfard_home / ".env.enc"
     enc_path.write_bytes(ciphertext)
-    enc_path.chmod(0o600)
+    _secure_file(enc_path)
 
 
 def decrypt_env(alfard_home: Path) -> dict[str, str]:

@@ -94,7 +94,7 @@ def doctor():
     config_path = ALFARD_HOME / "config" / "alfard.yaml"
     if config_path.exists():
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 yaml.safe_load(f)
             _ok("config valid")
         except yaml.YAMLError:
@@ -129,7 +129,7 @@ def doctor():
             issues += 1
         elif skills.exists():
             try:
-                with open(skills) as f:
+                with open(skills, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 if not data:
                     _warn(f"{agent} — skills empty — run: alfard setup")
@@ -194,19 +194,30 @@ def doctor():
                     issues += 1
 
     # 12. Stale binaries
-    pipx_binary = str(pipx_venv / "bin" / "alfard")
-    stale_paths: list[str] = []
+    if sys.platform == "win32":
+        import os as _os
+        win_locations = [
+            Path(_os.environ.get("LOCALAPPDATA", "")) / "Programs" / "alfard" / "alfard.exe",
+            Path(_os.environ.get("APPDATA", "")) / "Python" / "Scripts" / "alfard.exe",
+        ]
+        for _wp in win_locations:
+            if _wp.exists() and str(_wp) != (alfard_path or ""):
+                _warn(f"stale binary at {_wp} — run: alfard uninstall then reinstall with pipx")
+                issues += 1
+    else:
+        pipx_binary = str(pipx_venv / "bin" / "alfard")
+        stale_paths: list[str] = []
 
-    candidates = ["/usr/local/bin/alfard"] + glob.glob(
-        "/Library/Frameworks/Python.framework/Versions/*/bin/alfard"
-    )
-    for path in candidates:
-        if Path(path).exists() and path != pipx_binary:
-            stale_paths.append(path)
+        candidates = ["/usr/local/bin/alfard"] + glob.glob(
+            "/Library/Frameworks/Python.framework/Versions/*/bin/alfard"
+        )
+        for path in candidates:
+            if Path(path).exists() and path != pipx_binary:
+                stale_paths.append(path)
 
-    for path in stale_paths:
-        _warn(f"stale binary at {path} — run: alfard uninstall then reinstall with pipx")
-        issues += 1
+        for path in stale_paths:
+            _warn(f"stale binary at {path} — run: alfard uninstall then reinstall with pipx")
+            issues += 1
 
     # Summary
     console.print()

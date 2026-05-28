@@ -58,10 +58,10 @@ def _remove_from_integrations(entry_name: str) -> None:
     integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
     if not integrations_path.exists():
         return
-    with open(integrations_path) as f:
+    with open(integrations_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {"servers": []}
     data["servers"] = [s for s in data.get("servers", []) if s.get("name") != entry_name]
-    with open(integrations_path, "w") as f:
+    with open(integrations_path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
@@ -166,14 +166,14 @@ def _connect_slack() -> None:
     integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
     integrations_path.parent.mkdir(parents=True, exist_ok=True)
     if integrations_path.exists():
-        with open(integrations_path) as f:
+        with open(integrations_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"servers": []}
     else:
         data = {"servers": []}
     data.setdefault("servers", [])
     data["servers"] = [s for s in data["servers"] if s.get("name") != "slack-bot"]
     data["servers"].append({"name": "slack-bot", "transport": "none"})
-    with open(integrations_path, "w") as f:
+    with open(integrations_path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     console.print(f"\n{dot('ok')} [{p.fg_dim}]slack channel connected.[/]")
@@ -227,14 +227,14 @@ def _connect_telegram() -> None:
     integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
     integrations_path.parent.mkdir(parents=True, exist_ok=True)
     if integrations_path.exists():
-        with open(integrations_path) as f:
+        with open(integrations_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"servers": []}
     else:
         data = {"servers": []}
     data.setdefault("servers", [])
     data["servers"] = [s for s in data["servers"] if s.get("name") != "telegram-bot"]
     data["servers"].append({"name": "telegram-bot", "transport": "none"})
-    with open(integrations_path, "w") as f:
+    with open(integrations_path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     console.print(f"\n{dot('ok')} [{p.fg_dim}]telegram channel connected.[/]")
@@ -298,14 +298,14 @@ def _connect_discord() -> None:
     integrations_path = ALFARD_HOME / "config" / "integrations.yaml"
     integrations_path.parent.mkdir(parents=True, exist_ok=True)
     if integrations_path.exists():
-        with open(integrations_path) as f:
+        with open(integrations_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"servers": []}
     else:
         data = {"servers": []}
     data.setdefault("servers", [])
     data["servers"] = [s for s in data["servers"] if s.get("name") != "discord-bot"]
     data["servers"].append({"name": "discord-bot", "transport": "none"})
-    with open(integrations_path, "w") as f:
+    with open(integrations_path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     console.print(f"\n{dot('ok')} [{p.fg_dim}]discord channel connected.[/]")

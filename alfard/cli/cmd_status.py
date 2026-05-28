@@ -22,7 +22,7 @@ _INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 def _connected_set() -> set[str]:
     connected: set[str] = set()
     if _INTEGRATIONS_PATH.exists():
-        with open(_INTEGRATIONS_PATH) as f:
+        with open(_INTEGRATIONS_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         for s in data.get("servers", []):
             name = s.get("name", "")
@@ -46,7 +46,7 @@ def status():
 
     # ── Provider ──────────────────────────────────────────────────────────────
     if _CONFIG_PATH.exists():
-        with open(_CONFIG_PATH) as f:
+        with open(_CONFIG_PATH, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         prov = cfg.get("provider", {})
         name = prov.get("name", "—")

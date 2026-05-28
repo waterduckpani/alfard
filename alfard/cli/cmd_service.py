@@ -30,7 +30,8 @@ def _assert_supported() -> None:
     elif sys.platform == "win32":
         if not shutil.which("schtasks"):
             console.print(
-                f"\n[{p.err}]schtasks not found — Task Scheduler requires Windows.[/]\n"
+                f"\n[{p.err}]schtasks.exe not found — ensure Task Scheduler is enabled "
+                f"in Windows Features (search 'Turn Windows features on or off').[/]\n"
             )
             raise SystemExit(1)
     else:

@@ -50,7 +50,7 @@ def _load_agent_crons(agent_name: str) -> list[dict]:
     path = AGENTS_DIR / agent_name / "crons.yaml"
     if not path.exists():
         return []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return [j for j in data.get("jobs", []) if j.get("enabled", True)]
 
@@ -252,12 +252,22 @@ async def _run_daemon(
     # Channels — same as headless: all run in daemon threads
     channel_manager.start_all(main_channel="__daemon__")
 
-    # SIGTERM → set shutdown event
-    def _on_sigterm() -> None:
-        _log.info("SIGTERM received — shutting down")
-        shutdown_event.set()
-
-    loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
+    # Signal handling — platform-aware
+    if sys.platform == "win32":
+        import signal as _signal
+        def _win_shutdown(*_) -> None:
+            shutdown_event.set()
+        _signal.signal(_signal.SIGINT, _win_shutdown)
+        try:
+            _signal.signal(_signal.SIGBREAK, _win_shutdown)
+        except AttributeError:
+            pass
+    else:
+        def _on_sigterm() -> None:
+            _log.info("SIGTERM received — shutting down")
+            shutdown_event.set()
+        loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
+        loop.add_signal_handler(signal.SIGINT, shutdown_event.set)
 
     # Idle watchdog
     async def _watchdog() -> None:
@@ -280,7 +290,9 @@ async def _run_daemon(
         await shutdown_event.wait()
     finally:
         watchdog_task.cancel()
-        loop.remove_signal_handler(signal.SIGTERM)
+        if sys.platform != "win32":
+            loop.remove_signal_handler(signal.SIGTERM)
+            loop.remove_signal_handler(signal.SIGINT)
 
         if scheduler is not None:
             try:

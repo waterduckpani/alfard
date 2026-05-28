@@ -32,7 +32,7 @@ class MountManager:
         if not mounts_path.exists():
             return
 
-        with open(mounts_path) as f:
+        with open(mounts_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
         for entry in data.get("mounts", []):

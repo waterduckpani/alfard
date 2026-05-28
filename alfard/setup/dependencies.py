@@ -93,8 +93,9 @@ def install_node() -> bool:
 def install_gogcli() -> bool:
     """Install gogcli via npm. Returns True if successful."""
     console.print("[dim]Installing gogcli (Google Workspace CLI)...[/dim]")
+    npm = "npm.cmd" if sys.platform == "win32" else "npm"
     result = subprocess.run(
-        ["npm", "install", "-g", "gogcli"],
+        [npm, "install", "-g", "gogcli"],
         check=False
     )
     return result.returncode == 0

@@ -41,16 +41,24 @@ def uninstall():
         shutil.rmtree(alfard_home)
 
     # c. stale binaries
-    stale_paths = [
-        Path.home() / ".local" / "bin" / "alfard",
-        Path("/usr/local/bin/alfard"),
-        *[
-            Path(path_str)
-            for path_str in glob.glob(
-                "/Library/Frameworks/Python.framework/Versions/*/bin/alfard"
-            )
-        ],
-    ]
+    import sys as _sys
+    if _sys.platform == "win32":
+        import os as _os
+        stale_paths = [
+            Path(_os.environ.get("LOCALAPPDATA", "")) / "Programs" / "alfard" / "alfard.exe",
+            Path(_os.environ.get("APPDATA", "")) / "Python" / "Scripts" / "alfard.exe",
+        ]
+    else:
+        stale_paths = [
+            Path.home() / ".local" / "bin" / "alfard",
+            Path("/usr/local/bin/alfard"),
+            *[
+                Path(path_str)
+                for path_str in glob.glob(
+                    "/Library/Frameworks/Python.framework/Versions/*/bin/alfard"
+                )
+            ],
+        ]
     for path in stale_paths:
         if path.exists():
             console.print(f"  [{p.fg_faint}]removing stale binary: {path}[/]")

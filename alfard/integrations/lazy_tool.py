@@ -109,7 +109,8 @@ def _install_lazy_tool() -> bool:
         f"https://github.com/mcp-shark/lazy-tool/releases/download/"
         f"v{version}/{filename}"
     )
-    tmp = Path(f"/tmp/lazy-tool_{version}.tar.gz")
+    import tempfile as _tempfile
+    tmp = Path(_tempfile.gettempdir()) / f"lazy-tool_{version}.tar.gz"
 
     print(f"  downloading lazy-tool v{version}...")
     try:
@@ -149,7 +150,7 @@ def _install_lazy_tool() -> bool:
         tmp.unlink(missing_ok=True)
         return False
 
-    os.environ["PATH"] = f"{_INSTALL_DIR}:{os.environ.get('PATH', '')}"
+    os.environ["PATH"] = os.pathsep.join([str(_INSTALL_DIR), os.environ.get("PATH", "")])
     print(f"  lazy-tool installed to {dest}")
     if system == "linux":
         print(
@@ -207,7 +208,7 @@ def write_lazy_tool_config(mcp_servers: dict) -> None:
             "fallback": "passthrough",
         })
 
-    LAZY_TOOL_CONFIG.write_text(yaml.dump(config, default_flow_style=False))
+    LAZY_TOOL_CONFIG.write_text(yaml.dump(config, default_flow_style=False), encoding="utf-8")
 
 
 def build_mcp_servers_from_integrations() -> dict:
@@ -224,7 +225,7 @@ def build_mcp_servers_from_integrations() -> dict:
 
     load_env()
 
-    with open(integrations_path) as f:
+    with open(integrations_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
     result: dict = {}

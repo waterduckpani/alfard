@@ -19,7 +19,7 @@ _INTEGRATIONS_PATH = ALFARD_HOME / "config" / "integrations.yaml"
 def _connected_integrations() -> list[str]:
     connected = []
     if _INTEGRATIONS_PATH.exists():
-        with open(_INTEGRATIONS_PATH) as f:
+        with open(_INTEGRATIONS_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         connected.extend(s.get("name", "") for s in data.get("servers", []) if s.get("name"))
     gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
@@ -118,7 +118,7 @@ def disconnect(integration: str | None):
 
     # 1. Remove from integrations.yaml
     if _INTEGRATIONS_PATH.exists():
-        with open(_INTEGRATIONS_PATH) as f:
+        with open(_INTEGRATIONS_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"servers": []}
         original_count = len(data.get("servers", []))
         data["servers"] = [
@@ -126,7 +126,7 @@ def disconnect(integration: str | None):
             if s.get("name") != integration
         ]
         if len(data["servers"]) < original_count:
-            with open(_INTEGRATIONS_PATH, "w") as f:
+            with open(_INTEGRATIONS_PATH, "w", encoding="utf-8") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
             console.print(f"  {dot('ok')} [{p.fg_dim}]removed from integrations.yaml[/]")
             removed_anything = True

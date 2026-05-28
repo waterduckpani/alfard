@@ -18,7 +18,7 @@ class LLMClient:
         load_env()
 
         try:
-            with open(_CONFIG_PATH) as f:
+            with open(_CONFIG_PATH, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
         except FileNotFoundError:
             raise RuntimeError(

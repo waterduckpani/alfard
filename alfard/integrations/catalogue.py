@@ -1,8 +1,12 @@
 """Integration catalogue — defines every supported MCP integration,
 its auth method, credential instructions, and MCP server config."""
 
+import sys
+
 AUTH_APIKEY = "apikey"
 AUTH_OAUTH = "oauth"
+
+_NPX = "npx.cmd" if sys.platform == "win32" else "npx"
 
 CATALOGUE: dict[str, dict] = {
     "notion": {
@@ -18,7 +22,7 @@ CATALOGUE: dict[str, dict] = {
             "3. Copy the \"Internal Integration Token\" — it starts with ntn_"
         ),
         "mcp_transport": "stdio",
-        "mcp_command": "npx",
+        "mcp_command": _NPX,
         "mcp_args": ["-y", "@notionhq/notion-mcp-server"],
         "mcp_url": "",
         "reversible_tools": [
@@ -66,7 +70,7 @@ CATALOGUE: dict[str, dict] = {
             "5. Click 'Generate token' and copy it — starts with github_pat_"
         ),
         "mcp_transport": "stdio",
-        "mcp_command": "npx",
+        "mcp_command": _NPX,
         "mcp_args": ["-y", "@modelcontextprotocol/server-github"],
         "mcp_url": "",
         "reversible_tools": [
@@ -92,7 +96,7 @@ CATALOGUE: dict[str, dict] = {
             "3. Copy the key — it starts with lin_api_"
         ),
         "mcp_transport": "stdio",
-        "mcp_command": "npx",
+        "mcp_command": _NPX,
         "mcp_args": ["-y", "@linear/mcp-server"],
         "mcp_url": "",
         "reversible_tools": [
@@ -117,7 +121,7 @@ CATALOGUE: dict[str, dict] = {
             "4. Copy the Bot Token (xoxb-) from OAuth & Permissions"
         ),
         "mcp_transport": "stdio",
-        "mcp_command": "npx",
+        "mcp_command": _NPX,
         "mcp_args": ["-y", "@modelcontextprotocol/server-slack"],
         "mcp_url": "",
         "reversible_tools": [

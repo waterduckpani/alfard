@@ -163,7 +163,7 @@ def detect_theme() -> str:
         from alfard.paths import ALFARD_HOME
         _cfg_path = ALFARD_HOME / "config" / "alfard.yaml"
         if _cfg_path.exists():
-            with open(_cfg_path) as _f:
+            with open(_cfg_path, encoding="utf-8") as _f:
                 _cfg = yaml.safe_load(_f) or {}
             _saved = str(_cfg.get("ui", {}).get("theme", "")).lower()
             if _saved in ("light", "dark"):

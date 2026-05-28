@@ -24,14 +24,14 @@ def _load_crons(agent: str) -> list[dict]:
     path = AGENTS_DIR / agent / CRONS_FILE
     if not path.exists():
         return []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return data.get("jobs", [])
 
 
 def _save_crons(agent: str, jobs: list[dict]) -> None:
     path = AGENTS_DIR / agent / CRONS_FILE
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         yaml.dump({"jobs": jobs}, f, default_flow_style=False, allow_unicode=True)
 
 

@@ -170,7 +170,13 @@ def headless(agent: str | None, no_mcp: bool) -> None:
             channel_manager.stop_all()
             stop_event.set()
 
-        signal.signal(signal.SIGTERM, _sigterm_handler)
+        if sys.platform != "win32":
+            signal.signal(signal.SIGTERM, _sigterm_handler)
+        if sys.platform == "win32":
+            try:
+                signal.signal(signal.SIGBREAK, _sigterm_handler)
+            except AttributeError:
+                pass
 
         # All channels run as daemon threads; main thread just waits.
         channel_manager.start_all(main_channel="__headless__")

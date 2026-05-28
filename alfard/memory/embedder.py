@@ -27,7 +27,7 @@ _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 
 def _load_config() -> dict:
     try:
-        with open(_CONFIG_PATH) as f:
+        with open(_CONFIG_PATH, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except FileNotFoundError:
         return {}

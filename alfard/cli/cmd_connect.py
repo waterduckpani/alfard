@@ -31,7 +31,7 @@ def _refresh_lazy_tool_catalog() -> None:
 def _update_env(key: str, value: str) -> None:
     lines: list[str] = []
     if _ENV_PATH.exists():
-        lines = _ENV_PATH.read_text().splitlines()
+        lines = _ENV_PATH.read_text(encoding="utf-8").splitlines()
 
     pattern = re.compile(rf"^{re.escape(key)}\s*=")
     updated = False
@@ -44,13 +44,13 @@ def _update_env(key: str, value: str) -> None:
     if not updated:
         lines.append(f"{key}={value}")
 
-    _ENV_PATH.write_text("\n".join(lines) + "\n")
+    _ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _load_integrations() -> dict:
     if not _INTEGRATIONS_PATH.exists():
         return {"servers": []}
-    raw = _INTEGRATIONS_PATH.read_text()
+    raw = _INTEGRATIONS_PATH.read_text(encoding="utf-8")
     data = yaml.safe_load(raw)
     if not data:
         return {"servers": []}
@@ -59,7 +59,7 @@ def _load_integrations() -> dict:
 
 def _save_integrations(data: dict) -> None:
     _INTEGRATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _INTEGRATIONS_PATH.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    _INTEGRATIONS_PATH.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 def _already_connected(name: str) -> bool:
@@ -87,6 +87,13 @@ def copy_to_clipboard(text: str) -> bool:
             subprocess.run(["xclip", "-selection", "clipboard"],
                            input=text.encode(), check=True)
             return True
+        elif sys.platform == "win32":
+            result = subprocess.run(
+                ["clip"],
+                input=text.encode("utf-8"),
+                capture_output=True,
+            )
+            return result.returncode == 0
     except Exception:
         return False
     return False
@@ -361,7 +368,8 @@ def _install_gogcli_linux() -> bool:
 
     console.print(f"[{p.fg_dim}]downloading gogcli v{version}...[/]")
     try:
-        tmp_tar = Path(f"/tmp/gogcli_{version}.tar.gz")
+        import tempfile as _tempfile
+        tmp_tar = Path(_tempfile.gettempdir()) / f"gogcli_{version}.tar.gz"
         urllib.request.urlretrieve(url, tmp_tar)
         with tarfile.open(tmp_tar) as tar:
             member = next(m for m in tar.getmembers() if m.name.endswith("gog"))

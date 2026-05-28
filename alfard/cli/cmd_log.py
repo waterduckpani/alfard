@@ -18,7 +18,7 @@ _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
 def _get_log_path() -> Path | None:
     if not _CONFIG_PATH.exists():
         return None
-    with open(_CONFIG_PATH) as f:
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     log_path_str = cfg.get("audit", {}).get("log_path", "logs/audit.jsonl")
     return ALFARD_HOME / log_path_str

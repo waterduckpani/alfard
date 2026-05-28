@@ -26,7 +26,7 @@ def load_agent_crons(scheduler, agent_name: str) -> int:
     path = AGENTS_DIR / agent_name / CRONS_FILE
     if not path.exists():
         return 0
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     count = 0
     for job in data.get("jobs", []):

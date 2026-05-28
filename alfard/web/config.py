@@ -20,18 +20,18 @@ class WebConfig:
     def _load(self) -> dict:
         if not self._path.exists():
             return dict(_DEFAULTS)
-        with open(self._path) as f:
+        with open(self._path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         return {**_DEFAULTS, **raw.get("web_access", {})}
 
     def save(self) -> None:
         if self._path.exists():
-            with open(self._path) as f:
+            with open(self._path, encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
         else:
             raw = {}
         raw["web_access"] = self._data
-        with open(self._path, "w") as f:
+        with open(self._path, "w", encoding="utf-8") as f:
             yaml.dump(raw, f, default_flow_style=False)
 
     @property
