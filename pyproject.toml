@@ -1,6 +1,6 @@
 [project]
 name = "alfard"
-version = "0.1.6"
+version = "0.1.7"
 description = "Local AI agent runtime — secure by default, private by design."
 license = {text = "MIT"}
 requires-python = ">=3.11"
