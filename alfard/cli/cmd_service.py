@@ -257,7 +257,7 @@ def _mac_status_markup(props: dict[str, str]) -> tuple[str, str | None, str | No
 # ---------------------------------------------------------------------------
 
 def _win_task_name(agent: str) -> str:
-    return f"Alfard\\{agent}"
+    return f"alfard-{agent}"
 
 
 def _schtasks(*args: str) -> tuple[int, str, str]:
@@ -333,7 +333,7 @@ def service(ctx: click.Context) -> None:
 
     Linux:   systemd user units in ~/.config/systemd/user/
     macOS:   launchd agents in ~/Library/LaunchAgents/
-    Windows: Task Scheduler tasks under Alfard\\<agent>
+    Windows: Task Scheduler tasks named alfard-<agent>
 
     \b
     Examples:
