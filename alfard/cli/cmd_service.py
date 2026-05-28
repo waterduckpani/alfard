@@ -253,7 +253,7 @@ def _mac_status_markup(props: dict[str, str]) -> tuple[str, str | None, str | No
 
 
 # ---------------------------------------------------------------------------
-# Windows (Task Scheduler) helpers
+# Windows (Task Scheduler + Registry fallback) helpers
 # ---------------------------------------------------------------------------
 
 def _win_task_name(agent: str) -> str:
@@ -269,38 +269,77 @@ def _schtasks(*args: str) -> tuple[int, str, str]:
     return r.returncode, r.stdout, r.stderr
 
 
+# Registry helpers — HKCU\...\Run entry, never needs elevation
+_WIN_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def _win_reg_is_installed(agent: str) -> bool:
+    import winreg
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_RUN_KEY, 0, winreg.KEY_READ)
+        winreg.QueryValueEx(key, f"alfard-{agent}")
+        winreg.CloseKey(key)
+        return True
+    except OSError:
+        return False
+
+
+def _win_reg_install(agent: str) -> None:
+    import winreg
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    winreg.SetValueEx(key, f"alfard-{agent}", 0, winreg.REG_SZ,
+                      f'"{_alfard_bin()}" daemon {agent}')
+    winreg.CloseKey(key)
+
+
+def _win_reg_remove(agent: str) -> None:
+    import winreg
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_RUN_KEY, 0, winreg.KEY_SET_VALUE)
+        winreg.DeleteValue(key, f"alfard-{agent}")
+        winreg.CloseKey(key)
+    except OSError:
+        pass
+
+
 def _win_is_installed(agent: str) -> bool:
     rc, _, _ = _schtasks("/query", "/tn", _win_task_name(agent))
-    return rc == 0
+    if rc == 0:
+        return True
+    return _win_reg_is_installed(agent)
 
 
 def _win_is_running(agent: str) -> bool:
     rc, out, _ = _schtasks("/query", "/tn", _win_task_name(agent), "/fo", "LIST")
-    if rc != 0:
-        return False
-    for line in out.splitlines():
-        if line.strip().startswith("Status:"):
-            return "Running" in line
-    return False
+    if rc == 0:
+        for line in out.splitlines():
+            if line.strip().startswith("Status:"):
+                return "Running" in line
+    # registry-only install: fall back to sock/port file
+    return _win_sock_alive(agent)
 
 
 def _win_status_props(agent: str) -> dict[str, str]:
-    """Parse schtasks /query /fo LIST output into a flat dict."""
+    """Parse schtasks /query /fo LIST output into a flat dict; fall back to registry."""
     rc, out, _ = _schtasks("/query", "/tn", _win_task_name(agent), "/fo", "LIST")
-    props: dict[str, str] = {"_found": "true" if rc == 0 else "false"}
-    if rc != 0:
+    if rc == 0:
+        props: dict[str, str] = {"_found": "true", "_backend": "schtasks"}
+        for line in out.splitlines():
+            if ":" in line:
+                k, _, v = line.partition(":")
+                props[k.strip()] = v.strip()
         return props
-    for line in out.splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            props[k.strip()] = v.strip()
-    return props
+    if _win_reg_is_installed(agent):
+        return {"_found": "true", "_backend": "registry"}
+    return {"_found": "false"}
 
 
 def _win_status_markup(props: dict[str, str]) -> tuple[str, str | None]:
     """Return (state_markup, last_run_or_None)."""
     if props.get("_found") != "true":
         return f"[{p.fg_faint}]not installed[/]", None
+    if props.get("_backend") == "registry":
+        return f"[{p.fg_faint}]autostart (registry)[/]", None
     raw_status = props.get("Status", "").lower()
     if "running" in raw_status:
         state = f"[{p.ok}]running[/]"
@@ -483,27 +522,29 @@ def install(agent: str | None) -> None:
 
     elif sys.platform == "win32":
         task = _win_task_name(agent)
-        try:
-            user = os.getlogin()
-        except OSError:
-            user = os.environ.get("USERNAME", "")
         rc, _, err = _schtasks(
             "/create",
             "/tn", task,
             "/tr", f"{_alfard_bin()} daemon {agent}",
             "/sc", "ONLOGON",
-            "/ru", user,
-            "/rl", "LIMITED",
             "/f",
         )
         if rc != 0:
-            console.print(error_block(
-                agent="alfard service install",
-                state="failed",
-                headline="schtasks /create failed.",
-                explanation=err.strip() or f"task: {task}",
-            ))
-            raise SystemExit(1)
+            # Task Scheduler failed — fall back to registry autostart (never needs elevation)
+            try:
+                _win_reg_install(agent)
+            except OSError as exc:
+                console.print(error_block(
+                    agent="alfard service install",
+                    state="failed",
+                    headline="both schtasks and registry install failed.",
+                    explanation=str(exc),
+                ))
+                raise SystemExit(1)
+            console.print(f"\n[{p.ok}]installed (registry autostart).[/]  [{p.fg_em}]alfard-{agent}[/]")
+            console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]")
+            console.print(f"\n[{p.ok}]✓ Agent will start automatically on next login[/]\n")
+            return
         _schtasks("/run", "/tn", task)
         console.print(f"\n[{p.ok}]installed and started.[/]  [{p.fg_em}]{task}[/]")
         console.print(f"[{p.fg_faint}]logs   → alfard service logs {agent}[/]")
@@ -594,20 +635,15 @@ def remove(agent: str | None) -> None:
         task = _win_task_name(agent)
         if not _win_is_installed(agent):
             console.print(
-                f"\n[{p.warn}]no task found for '{agent}'.[/]\n"
+                f"\n[{p.warn}]no service found for '{agent}'.[/]\n"
                 f"[{p.fg_faint}]task: {task}[/]\n"
             )
             raise SystemExit(1)
+        # stop and delete schtasks entry if present
         _schtasks("/end", "/tn", task)
-        rc, _, err = _schtasks("/delete", "/tn", task, "/f")
-        if rc != 0:
-            console.print(error_block(
-                agent="alfard service remove",
-                state="failed",
-                headline="schtasks /delete failed.",
-                explanation=err.strip() or f"task: {task}",
-            ))
-            raise SystemExit(1)
+        _schtasks("/delete", "/tn", task, "/f")
+        # always clean up registry entry too (no-op if absent)
+        _win_reg_remove(agent)
         console.print(f"\n[{p.ok}]removed.[/]  [{p.fg_em}]{task}[/]\n")
         console.print(f"{dot('ok')} [{p.fg_dim}]agent data is untouched — reinstall anytime with:[/]")
         console.print(f"  [{p.fg_faint}]alfard service install {agent}[/]\n")
