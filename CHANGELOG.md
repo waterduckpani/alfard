@@ -5,6 +5,13 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.5] — 2026-05-28
+
+### Fixed
+- Banner file read now specifies `encoding="utf-8"` — prevents `UnicodeDecodeError` crash on startup on Windows systems where the default ANSI code page is not UTF-8
+
+---
+
 ## [0.1.4] — 2026-05-27
 
 ### Added

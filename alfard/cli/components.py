@@ -60,7 +60,7 @@ _BANNER_PATH = Path(__file__).parent.parent / "assets" / "banner.txt"
 def wordmark() -> str:
     """Return the ALFARD wordmark as a multi-line Rich markup string, read from assets/banner.txt."""
     from rich.markup import escape
-    art = _BANNER_PATH.read_text()
+    art = _BANNER_PATH.read_text(encoding="utf-8")
     return "\n".join(f"[{p.fg_em}]{escape(line)}[/]" for line in art.splitlines())
 
 
