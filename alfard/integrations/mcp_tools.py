@@ -303,6 +303,9 @@ def register_mcp_infra_tools(registry: "ToolRegistry") -> None:
         function=_make_list_sources(registry),
         reversible=True,
         parameters={"type": "object", "properties": {}},
+        # Closure captures the live registry instance whose state changes at runtime;
+        # cannot be pickled for the sandbox subprocess.
+        is_mcp=True,
     )
 
     registry.register(

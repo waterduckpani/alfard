@@ -5,6 +5,13 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.12] — 2026-05-29
+
+### Fixed
+- `mcp_list_sources` now runs in-process (`is_mcp=True`) — the closure captures the live `ToolRegistry` instance and could not be pickled by the sandbox's `ProcessPoolExecutor`, causing a `PicklingError` at runtime whenever the agent called this tool.
+
+---
+
 ## [0.1.11] — 2026-05-29
 
 ### Security
