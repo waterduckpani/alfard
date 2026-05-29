@@ -1,6 +1,7 @@
 """Orchestrator — runs the ReAct loop, wiring the LLM, tools, approval
 gate, sandbox, and audit logger into a single agent execution pipeline."""
 
+import traceback
 import threading
 
 from alfard.llm.client import LLMClient
@@ -227,10 +228,17 @@ class Orchestrator:
                         raw_result = tool["function"](**arguments)
                         result = {"success": True, "result": raw_result, "error": None}
                     except Exception as exc:
+                        tb = traceback.format_exc()
                         result = {"success": False, "result": None,
-                                  "error": f"Tool '{name}' raised {type(exc).__name__}: {exc}"}
+                                  "error": f"Tool '{name}' raised {type(exc).__name__}: {exc}\n{tb}"}
                 else:
                     result = self._sandbox.execute(tool, arguments)
+
+                self._audit.log_tool_result(
+                    name,
+                    result["success"],
+                    result.get("error"),
+                )
 
                 if name == "mcp_invoke":
                     self._untrusted_content_active = True

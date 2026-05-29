@@ -1,5 +1,6 @@
 """Web search and fetch tools — registered as native tools when an agent's web_access.enabled is true."""
 
+import json
 import urllib.error
 import urllib.parse
 import urllib.request

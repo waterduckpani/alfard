@@ -1,6 +1,7 @@
 """Sandbox executor — runs each tool call in an isolated OS process with a hard timeout."""
 
 import concurrent.futures
+import traceback
 
 DEFAULT_TIMEOUT = 30
 
@@ -35,8 +36,9 @@ class SandboxExecutor:
                     "error": f"Tool '{tool['name']}' timed out after {self.timeout}s",
                 }
             except Exception as exc:
+                tb = traceback.format_exc()
                 return {
                     "success": False,
                     "result": None,
-                    "error": f"Tool '{tool['name']}' raised {type(exc).__name__}: {exc}",
+                    "error": f"Tool '{tool['name']}' raised {type(exc).__name__}: {exc}\n{tb}",
                 }
