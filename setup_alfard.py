@@ -47,19 +47,19 @@ PROVIDER_API_KEY_ENV = {
 PROVIDER_MODELS = {
     "openrouter": [
         ("1", "openrouter/auto"),
-        ("2", "anthropic/claude-sonnet-4-5"),
-        ("3", "google/gemini-2.5-pro"),
+        ("2", "anthropic/claude-sonnet-4-6"),
+        ("3", "google/gemini-2-flash-preview"),
         ("4", "custom"),
     ],
     "openai": [
         ("1", "gpt-4o"),
         ("2", "gpt-4o-mini"),
-        ("3", "o3-mini"),
+        ("3", "o4-mini"),
         ("4", "custom"),
     ],
     "anthropic": [
-        ("1", "claude-sonnet-4-5"),
-        ("2", "claude-opus-4-5"),
+        ("1", "claude-sonnet-4-6"),
+        ("2", "claude-opus-4-7"),
         ("3", "claude-haiku-4-5-20251001"),
         ("4", "custom"),
     ],
