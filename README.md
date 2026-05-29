@@ -1,181 +1,318 @@
-<img width="1444" height="506" alt="image" src="https://github.com/user-attachments/assets/e5a59f97-2f96-48d6-84ef-4aff7a8c5cea" />
+<img width="1444" height="506" alt="Alfard banner" src="https://github.com/user-attachments/assets/e5a59f97-2f96-48d6-84ef-4aff7a8c5cea" />
 
+<div align="center">
+
+[![PyPI version](https://img.shields.io/pypi/v/alfard?color=black&label=alfard)](https://pypi.org/project/alfard/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-black)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-black)]()
+
+**A local AI agent runtime. You own it. You control it. It never acts without you.**
+
+[Quick Start](#quick-start) · [Features](#features) · [Examples](#what-can-you-build-with-it) · [Security](#security) · [Roadmap](#roadmap)
+
+</div>
+
+---
+
+> 📖 **Full documentation is coming soon.** For now, everything you need is in this README.
 
 ---
 
 ## What is Alfard?
 
-Alfard is an open-source local AI agent runtime built around one idea: you should always know what your agent is doing, and always be able to stop it.
-Every agent has a persistent typed memory that gets smarter the longer you use it — ten categories, scored by relevance and importance, with a reflection cycle that proposes improvements you review before they take effect. Your credentials are encrypted at rest in your OS keychain. Every tool call, gate decision, and session event is logged. Before anything irreversible happens, Alfard stops and asks. That confirmation is recorded. Nothing runs silently, nothing leaves your machine.
-Connect it to Gmail, Notion, GitHub, Linear, Telegram, Discord. Talk to it from your terminal or your phone. It's the same agent, same memory, same rules — everywhere.
+Alfard runs AI agents on your machine. Each agent has its own persistent memory, connected to your real tools — Gmail, Notion, GitHub, Slack, Linear — and talks to you from your terminal, Telegram, Discord, or Slack simultaneously.
+
+Before anything irreversible happens, it stops and asks you. That confirmation is logged. Nothing runs silently. Nothing leaves your machine.
 
 ---
 
-## What can you do with it?
+## What can you build with it?
 
-**PR review pipeline**
-Connect GitHub, Slack, and Notion. Set a cron job to run every hour. When a new pull request lands, your agent reads the diff, reviews the code, and posts a structured audit to your Slack — what changed, what looks risky, what questions it has. You reply with a single approval. The agent creates a tracked task in your Notion board so nothing falls through.
+<details>
+<summary><strong>🔍 PR review pipeline</strong></summary>
 
-**Client enquiry intake**
-Connect Gmail and Notion. When clients send unformatted requests, your agent reads the email, extracts key details, and formats them into a clean entry. Before touching anything, it sends you an approval request in Slack with exactly what it's about to log. One confirmation and it writes the record to your Notion database — client name, request type, priority, notes attached.
+Connect **GitHub + Slack + Notion**. Set a cron job every hour. When a new pull request lands, your agent reads the diff, reviews the code, and posts a structured audit to Slack — what changed, what looks risky, what questions it has. You reply once to approve. The agent creates a tracked task in Notion automatically.
 
-**Daily engineering standup brief**
-Connect GitHub, Linear, and Slack. Schedule your agent at 8am every weekday. It reads all PRs opened in the last 24 hours, checks which Linear tickets moved, and posts a concise brief to your team Slack channel. Your team starts the day with context instead of a catch-up call.
+</details>
 
-**Release notes from merged PRs**
-Connect GitHub and Notion. Tell your agent: *"summarise every PR merged to main since the last tag and draft release notes."* It reads the full diff history, groups changes by type — features, fixes, breaking changes — and drafts a structured Notion page. You review, edit freely, and publish when you're happy.
+<details>
+<summary><strong>📧 Client enquiry intake</strong></summary>
 
----
+Connect **Gmail + Notion**. When clients send unformatted requests, your agent reads the email, extracts key details, and formats them into a clean entry. Before touching anything, it sends you an approval request in Slack with exactly what it's about to log. One confirmation — it writes the record.
 
-## Why Alfard?
+</details>
 
-There are other agent frameworks.  Alfard is built differently — security and transparency are the architecture, not features bolted on after the fact.
+<details>
+<summary><strong>📋 Daily engineering standup brief</strong></summary>
 
-**You confirm every irreversible action.**
-The approval gate cannot be accidentally left off. When an agent wants to send an email, close a ticket, post a message, or write to a file, execution halts and you see the full details — tool name, arguments as formatted JSON, source. You type `y` or `n`. On Telegram it's an inline keyboard. On Discord it's a button embed. The decision is logged either way. The agent cannot proceed without you.
+Connect **GitHub + Linear + Slack**. Schedule at 8am every weekday. It reads all PRs opened in the last 24 hours, checks which Linear tickets moved, and posts a concise brief to your team channel. Your team starts the day with context instead of a catch-up call.
 
-**Your credentials are encrypted, not sitting in a text file.**
-API keys are stored at `~/.alfard/.env.enc`, encrypted with Fernet (AES-128-CBC + HMAC-SHA256). The encryption key lives in your OS keychain — macOS Keychain, Linux Secret Service, Windows Credential Manager. If you upgrade from a version that stored keys in plaintext, Alfard migrates and deletes the plaintext file automatically on first run. Adding a new key never overwrites an existing one.
+</details>
 
-**Everything is audited.**
-Every LLM call, tool execution, gate decision, and session event is written to `~/.alfard/logs/audit.jsonl` with a UTC timestamp and session ID. Every prompt injection warning is logged. Every memory proposal review is logged. Run `alfard log` to see your full history. There are no silent actions.
+<details>
+<summary><strong>📝 Release notes from merged PRs</strong></summary>
 
-**Web content cannot hijack your agent.**
-Three independent layers: an output sanitiser that strips injection phrases and system blocks from every tool result before it enters context; a behavioural gate that fires on any action taken after a web fetch, regardless of whether that action is reversible; and a strip safety net that catches faked Alfard UI elements injected by malicious pages before they print. All three run unconditionally.
+Connect **GitHub + Notion**. Tell your agent: *"summarise every PR merged to main since the last tag and draft release notes."* It reads the full diff history, groups changes by type — features, fixes, breaking — and drafts a structured Notion page. You review, edit, publish.
 
-**Agents remember — and you control what they learn.**
-The memory system has ten typed categories (facts, preferences, goals, project state, procedures, mistakes, tool patterns, decisions, people, constraints), each with confidence, importance, and valence. Every 20 messages, every 30 minutes idle, and every 10 sessions, Reflect analyses recent conversations and proposes memory improvements. Those proposals sit in a review queue. You approve or reject each one before it shapes how the agent behaves. Rejected proposals are permanently blocked from re-surfacing.
-
-**It works with any LLM, including local ones.**
-OpenRouter, OpenAI, Anthropic, Ollama, LM Studio — switch providers at any time. Your data never has to leave your machine even for inference.
-
----
-
-## Features
-
-- **Interactive menu** — run `alfard`, navigate everything with arrow keys. Agents, channels, integrations, skills, mounts, cron jobs, memory, settings.
-- **Multi-channel** — terminal, Telegram, Discord, and Slack run simultaneously from one command. Approval gate adapts per channel — inline keyboard on Telegram, button embed on Discord.
-- **Headless + service mode** — `alfard headless <agent>` for VPS and homelab. `alfard service install <agent>` for systemd boot-time start and crash recovery.
-- **Approval gate** — every irreversible action, every channel. Full arguments visible. Both outcomes logged.
-- **Encrypted credentials** — Fernet + OS keychain. Merge-safe writes. Automatic plaintext migration.
-- **Typed persistent memory** — 10 categories, valenced, scored. Reflect on three triggers. `recall_memory` tool for mid-conversation queries. Human-reviewed proposals.
-- **Memory notifications** — after every confirmed brain.db write, a notification appears in the channel showing exactly what was remembered and as what type.
-- **Default skills package** — every agent ships with 7 skills: `memory`, `tasks`, `projects`, `research`, `reasoning`, `communication`, `debugging`.
-- **Three-layer prompt injection protection** — output sanitiser, behavioural gate, notification strip safety net.
-- **Full audit trail** — every event, timestamped, queryable. `llm_call`, `tool_call`, `gate_decision`, `prompt_injection_warning`, `user_correction` and more.
-- **Real integrations** — Notion, GitHub, Linear, Slack via MCP. Gmail and Google Drive via OAuth. Web search via DuckDuckGo, Brave, or SearXNG.
-- **Skills system** — markdown-defined, per-agent, composable. Add your own in `~/.alfard/skills/`.
-- **Cron jobs** — schedule any agent task on a timer.
-- **Slash commands** — `/new`, `/remember`, `/status`, `/skills`, `/reset`, `/model`, `/help` in every channel.
-- **Soul wizard** — 5-section guided agent creation. Produces a structured `soul.md` on first run.
-- **Local web dashboard** *(v0.2)* — full local UI for agents, runs, approvals, memory, integrations, and settings.
+</details>
 
 ---
 
 ## Quick start
 
-### Requirements
+### Step 1 — Install Python 3.11+
 
-- Python 3.11+
-- Node.js — required for Notion, GitHub, and Linear (MCP over stdio)
-- `gws` CLI — required for Gmail and Google Drive ([SETUP COMING SOON]([https://docs.alfard.dev/integrations/gmail](https://github.com/waterduckpani/alfard/blob/master/README.md)))
+<details>
+<summary><strong>🍎 macOS</strong></summary>
 
-### Install
+The easiest way is [Homebrew](https://brew.sh). If you don't have it, paste this in your terminal first:
 
 ```bash
-# Recommended
-pipx install alfard
-
-# From source
-git clone https://github.com/waterduckpani/alfard.git
-cd alfard
-pip install -e .
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-### Setup
+Then install Python:
+
+```bash
+brew install python@3.11
+```
+
+Verify it worked:
+
+```bash
+python3 --version   # should say Python 3.11.x or higher
+```
+
+</details>
+
+<details>
+<summary><strong>🪟 Windows</strong></summary>
+
+1. Go to [python.org/downloads](https://www.python.org/downloads/) and download the latest Python 3.11+ installer
+2. Run it — **tick "Add Python to PATH"** before clicking Install
+3. Open a new Command Prompt and verify:
+
+```cmd
+python --version   # should say Python 3.11.x or higher
+```
+
+</details>
+
+<details>
+<summary><strong>🐧 Linux</strong></summary>
+
+```bash
+sudo apt update && sudo apt install python3.11 python3.11-venv python3-pip -y
+```
+
+For other distros, use your package manager (`dnf`, `pacman`, etc.) or [pyenv](https://github.com/pyenv/pyenv).
+
+Verify:
+
+```bash
+python3 --version   # should say Python 3.11.x or higher
+```
+
+</details>
+
+---
+
+### Step 2 — Install pipx
+
+`pipx` installs Python CLI tools in their own isolated environment. It's the cleanest way to install Alfard.
+
+<details>
+<summary><strong>🍎 macOS</strong></summary>
+
+```bash
+brew install pipx
+pipx ensurepath
+```
+
+Then **close and reopen your terminal** so the path update takes effect.
+
+</details>
+
+<details>
+<summary><strong>🪟 Windows</strong></summary>
+
+```cmd
+pip install pipx
+pipx ensurepath
+```
+
+Then **close and reopen your terminal**.
+
+</details>
+
+<details>
+<summary><strong>🐧 Linux</strong></summary>
+
+```bash
+pip install pipx
+pipx ensurepath
+```
+
+Then **close and reopen your terminal**, or run `source ~/.bashrc`.
+
+</details>
+
+---
+
+### Step 3 — Install Alfard
+
+```bash
+pipx install alfard
+```
+
+That's it. `alfard` is now a global command on your system.
+
+---
+
+### Step 4 — Run setup
 
 ```bash
 alfard setup
 ```
 
-6 steps: LLM provider and API key, integrations, your first agent, skills, cron jobs, final review. Everything written to `~/.alfard/` — nothing touches the repo.
+This walks you through 6 steps: choosing your LLM provider, adding your API key, connecting integrations, creating your first agent, adding skills, and reviewing everything. Takes about 3 minutes.
 
-### Launch
+> **No LLM API key?** Alfard works with [Ollama](https://ollama.com) — fully local, no account needed. Pick "Ollama" during setup.
+
+---
+
+### Step 5 — Open Alfard
 
 ```bash
 alfard
 ```
 
+That's it. Navigate everything with arrow keys — your agents, channels, integrations, skills, memory, cron jobs, and settings. No commands to memorise.
+
 <img src="assets/menu.png" alt="Alfard main menu" width="420" />
 
-### Run your agent
+Select your agent from **my agents**, choose **run**, and Alfard loads its memory, connects all configured channels, and starts listening. Talk to it in the terminal — or from Telegram, Discord, and Slack at the same time. Same agent, same memory, same rules everywhere.
+
+> **Want it running 24/7?** Go to **settings → service** in the menu and install your agent as a background service. It will start on boot, stay alive on all connected channels, and recover automatically if it crashes — no terminal needed, no elevation required.
+
+---
+
+### Power user commands
+
+If you prefer the terminal directly:
 
 ```bash
-alfard run <agent-name>
+alfard run <agent>                # run an agent
+alfard headless <agent>           # channels only — for VPS / homelab
+alfard service install <agent>    # auto-start on boot, crash recovery
+alfard connect <name>             # connect an integration
+alfard channel connect <name>     # connect a channel
+alfard log                        # full audit trail
+alfard cron                       # manage scheduled tasks
+alfard doctor                     # diagnose setup issues
 ```
 
-Alfard loads the agent's soul and memory, connects all configured channels and integrations, and starts listening. Talk to it in the terminal, or from Telegram, Discord, and Slack simultaneously.
+> Full CLI reference → **docs coming soon**
 
-### Other commands
+---
 
-```bash
-alfard headless <agent>           # channels only, no terminal — VPS / homelab
-alfard service install <agent>    # generate systemd unit file
-alfard channel connect <name>     # connect a channel (Telegram / Discord / Slack)
-alfard channel disconnect <name>
-alfard connect <name>             # connect an integration (Gmail / Notion / GitHub...)
-alfard disconnect <name>
-alfard log                        # view the full audit trail
-alfard cron                       # manage scheduled runs
-```
+## Features
 
-Full CLI reference → [COMING SOON]([https://docs.alfard.dev/cli](https://github.com/waterduckpani/alfard/blob/master/README.md))
+| | Feature | What it does |
+|---|---|---|
+| 🔒 | **Approval gate** | Halts before every irreversible action. You see full details — tool, arguments, source. Type `y` or `n`. Logged either way. Cannot be bypassed. |
+| 🔑 | **Encrypted credentials** | API keys stored as `~/.alfard/.env.enc` — Fernet-encrypted, key lives in your OS keychain. Never in plaintext. |
+| 🧠 | **Typed persistent memory** | 10 categories, valenced, scored by relevance and importance. Persists across every session. |
+| 🔄 | **Reflect cycle** | Every 20 messages, Alfard proposes memory improvements. You approve or reject each one before it takes effect. |
+| 🛡️ | **3-layer injection protection** | Output sanitiser + behavioural gate + strip safety net — web content cannot hijack your agent. |
+| 📋 | **Full audit trail** | Every LLM call, tool execution, gate decision, and session event logged to `audit.jsonl` with UTC timestamps. |
+| 📡 | **Multi-channel** | Terminal, Telegram, Discord, and Slack simultaneously. Approval gate adapts per channel — inline keyboard on Telegram, button embed on Discord. |
+| ⚙️ | **Service mode** | Install your agent as a background service — it runs 24/7 on all connected channels, even when you close your terminal. No elevation required on any platform. `alfard service install/start/stop/status/logs` |
+| ⏱️ | **Cron jobs** | Schedule any agent task on a timer. Full cron UI via `alfard cron`. |
+| 💬 | **Slash commands** | `/new` `/remember` `/status` `/skills` `/reset` `/model` `/help` — in every channel. |
+| 🧩 | **Skills system** | Markdown-defined, per-agent, composable. Comes with 7 built-in. Add your own in `~/.alfard/skills/`. |
+| 🌐 | **Any LLM** | OpenRouter, OpenAI, Anthropic, Ollama, LM Studio. Switch at any time. Your data never has to leave your machine. |
+| 🖥️ | **Interactive menu** | `alfard` opens a full arrow-key menu. Agents, channels, integrations, skills, memory, settings — everything in one place. |
 
 ---
 
 ## Channels
 
-| Channel | Status | Connect |
+| Channel | Status | How to connect |
 |---|---|---|
 | Terminal | ✅ Built-in | Always available |
 | Telegram | ✅ Stable | `alfard channel connect telegram` |
 | Discord | ✅ Stable | `alfard channel connect discord` |
 | Slack | ✅ Stable | `alfard channel connect slack` |
 
-All channels run simultaneously from a single `alfard run` command. The approval gate works natively in each — inline keyboard on Telegram, button embed on Discord, prompt in terminal.
-
 ---
 
 ## Integrations
 
-| Integration | Status | Connect |
+| Integration | Status | How to connect |
 |---|---|---|
 | Notion | ✅ Stable | `alfard connect notion` |
 | GitHub | ✅ Stable | `alfard connect github` |
 | Linear | ✅ Stable | `alfard connect linear` |
-| Web search (DDG / Brave / SearXNG) | ✅ Stable | Enabled in setup |
-| Gmail | ⚠️ Experimental | `alfard connect gmail` — requires `gws` |
-| Google Drive | ⚠️ Experimental | `alfard connect gdrive` — requires `gws` |
+| Web search (DDG / Brave / SearXNG) | ✅ Stable | Enabled during setup |
+| Gmail | ⚠️ Experimental | `alfard connect gmail` — OAuth via `gogcli`, auto-installed |
+| Google Drive | ⚠️ Experimental | `alfard connect gdrive` — OAuth via `gogcli`, auto-installed |
 
 ---
 
 ## Supported LLM providers
 
-| Provider | Local | Notes |
+| Provider | Runs locally | Models |
 |---|---|---|
-| OpenRouter | No | Any model on the platform, including Claude, Gemini, and open models |
-| OpenAI | No | `gpt-4o`, `gpt-4o-mini`, `o3-mini`, custom |
-| Anthropic | No | `claude-sonnet-4-5`, `claude-opus-4-5`, `claude-haiku-4-5`, custom |
-| Ollama | Yes | `llama3.2`, `mistral`, `qwen2.5-coder`, any local model |
-| LM Studio | Yes | Any model loaded in LM Studio |
+| OpenRouter | No | `openrouter/auto` (default) · `google/gemini-3-flash-preview` · `anthropic/claude-sonnet-4-6` · any model on the platform |
+| OpenAI | No | `gpt-4o` (default) · `gpt-4o-mini` · `o4-mini` · custom |
+| Anthropic | No | `claude-sonnet-4-6` (default) · `claude-opus-4-7` · `claude-haiku-4-5-20251001` · custom |
+| Ollama | ✅ Yes | `llama3.2` · `mistral` · `qwen2.5-coder` · any local model |
+| LM Studio | ✅ Yes | Any model loaded in LM Studio |
+
+---
+
+## Memory
+
+Every agent has a persistent `brain.db` that survives across sessions. Memory is typed into 10 categories:
+
+`fact` · `preference` · `goal` · `project_state` · `procedure` · `mistake` · `tool_pattern` · `decision` · `person` · `constraint`
+
+Each memory has a confidence score, importance weight, and valence. Retrieval blends relevance, recency, and importance — `project_state` always surfaces first.
+
+**Reflect** fires on three triggers — every 20 messages, every 30 minutes idle, every 10 sessions — and proposes improvements based on patterns it finds. You approve or reject each proposal before it writes. Rejected proposals never come back.
+
+After every confirmed write, a notification appears in the active channel showing exactly what was remembered and as what type.
+
+<img src="assets/memory-notification.png" alt="Memory notification showing a preference was saved" width="480" />
+
+---
+
+## Security
+
+Security is the architecture, not a feature layer. Full model in [SECURITY.md](SECURITY.md).
+
+- **Approval gate** — every irreversible action, every channel, cannot be bypassed
+- **Encrypted credentials** — Fernet + OS keychain, automatic plaintext migration on upgrade
+- **3-layer prompt injection protection** — sanitiser + behavioural gate + strip safety net. All sanitised content is source-attributed before it enters LLM context
+- **Sandbox executor** — every tool call runs in an isolated OS subprocess with a hard 30-second timeout. Tools cannot block the runtime
+- **Tool registry + classifier** — every tool is registered as reversible or irreversible at startup. Unregistered tool calls are structurally impossible, not just discouraged
+- **Worktree isolation** — all agent file operations are directed to a disposable git branch, keeping your working tree untouched
+- **Full audit trail** — every event logged, credentials never appear in arguments
+- **Memory secret blocking** — API keys, tokens, passwords blocked before any `brain.db` write
+- **Channel allowlists** — Telegram and Discord require explicit user/guild whitelists
+- **No telemetry** — nothing phones home, ever
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md#responsible-disclosure). Please do not open a public issue.
 
 ---
 
 ## Creating an agent
 
-Run `alfard` and choose `create a new agent`. The soul wizard walks through five sections — identity, expertise, communication style, uncertainty behaviour, and optional context about you. It writes a structured `soul.md` and adds the default skills package automatically.
+Run `alfard` → **create a new agent**. The soul wizard walks through 5 sections — identity, expertise, communication style, uncertainty behaviour, and optional context about you. Takes about 2 minutes.
 
-You can also write `soul.md` directly. It's plain markdown:
+Or write `soul.md` directly — it's plain markdown:
 
 ```markdown
 # postman
@@ -195,31 +332,9 @@ Efficient and direct. Summarise threads in bullet points.
 
 ---
 
-## Memory
-
-Alfard's memory system stores context that persists across every session — not just the last conversation.
-
-Ten typed categories: `fact` · `preference` · `goal` · `project_state` · `procedure` · `mistake` · `tool_pattern` · `decision` · `person` · `constraint`
-
-Each memory has a confidence score, importance weight, and valence. Retrieval blends relevance, recency, and importance. `project_state` always surfaces first. Agents can query memory mid-conversation using the `recall_memory` tool — not just at session start.
-
-Reflect fires on three triggers — every 20 messages, every 30 minutes idle, every 10 sessions — and proposes improvements based on patterns it finds. You review and approve each proposal before it writes to memory. Rejected proposals never come back.
-
-<img src="assets/memory-flow.png" alt="Alfard memory system flow" width="600" />
-
-### Memory notifications
-
-After every confirmed write to `brain.db`, a notification appears in the active channel showing exactly what was remembered and as what memory type.
-
-<img src="assets/memory-notification.png" alt="Alfard memory notification in Discord showing a preference was saved" width="480" />
-
-On Discord it's a small embed. On Telegram it's a separate message after the agent reply. On Slack it's a muted italic follow-up. In the terminal it's a `╭─ remembered ─╮` panel. Only fires for writes with a confirmed source — never for internal housekeeping.
-
----
-
 ## Architecture
 
-All user data lives in `~/.alfard/`:
+All user data lives in `~/.alfard/` — nothing is ever written to the Alfard repo or install directory.
 
 ```
 ~/.alfard/
@@ -239,24 +354,6 @@ All user data lives in `~/.alfard/`:
     ├── audit.jsonl        # full audit trail — append-only
     └── cron_jobs.sqlite
 ```
-
-Nothing is ever written to the Alfard repo directory.
-
----
-
-## Security
-
-Security is the architecture, not a feature layer. See [SECURITY.md](SECURITY.md) for the complete model.
-
-- **Approval gate** on every irreversible action, across every channel — cannot be bypassed
-- **Encrypted credentials** at rest — Fernet + OS keychain, automatic plaintext migration
-- **Three-layer prompt injection protection** — sanitiser, behavioural gate, strip safety net
-- **Full audit trail** — every event logged, credentials never in arguments
-- **Memory secret blocking** — API keys, tokens, and passwords blocked before any brain.db write
-- **Channel allowlists** — Telegram and Discord require explicit user/guild whitelists
-- **No telemetry** — nothing phones home
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md#responsible-disclosure). Please do not open a public issue.
 
 ---
 
