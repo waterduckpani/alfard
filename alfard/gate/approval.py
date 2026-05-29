@@ -95,12 +95,23 @@ class ApprovalGate:
         self._job_approved = False
         self._approved_server = None
 
+    def _integration_key(self, tool_name: str, arguments: dict) -> str:
+        """Derive the scoping key for per-session approval bypass.
+
+        Uses arguments["source"] for mcp_invoke calls so that approval is
+        scoped to the specific integration (gmail, notion, …) rather than
+        the generic protocol name "mcp".
+        """
+        if arguments.get("source"):
+            return str(arguments["source"])
+        return tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]
+
     def request(self, tool_name: str, arguments: dict, source: str) -> bool:
         if not self.enabled:
             return True
 
         if self._job_approved:
-            current_server = tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]
+            current_server = self._integration_key(tool_name, arguments)
             if current_server == self._approved_server:
                 return True
             self._job_approved = False
@@ -111,7 +122,7 @@ class ApprovalGate:
 
         if approved:
             self._job_approved = True
-            self._approved_server = tool_name.split(".")[0] if "." in tool_name else tool_name.split("_")[0]
+            self._approved_server = self._integration_key(tool_name, arguments)
 
         if self.audit_logger:
             self.audit_logger.log_tool_call(

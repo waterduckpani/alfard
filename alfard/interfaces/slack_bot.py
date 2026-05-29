@@ -100,6 +100,7 @@ class AlfardSlackBot:
         self._session_last_active: dict[str, float] = {}
         self._message_counts: dict[str, int] = {}
         self._pending_queues: dict[str, deque] = {}
+        self._session_user: dict[str, str] = {}  # channel → user_id who triggered the session
         self._stop_event = threading.Event()
 
         # Bot's own user ID (to ignore self-messages)
@@ -139,6 +140,7 @@ class AlfardSlackBot:
             self._session_last_active.pop(ch, None)
             self._message_counts.pop(ch, None)
             self._pending_queues.pop(ch, None)
+            self._session_user.pop(ch, None)
 
     def _handle_message(self, channel: str, text: str,
                         user: str) -> None:
@@ -193,6 +195,7 @@ class AlfardSlackBot:
 
         self._evict_stale_sessions()
         orchestrator, audit, notifier = self._get_session(channel)
+        self._session_user[channel] = user
         lock = self._locks[channel]
 
         with lock:  # one message at a time per channel
@@ -308,6 +311,7 @@ class AlfardSlackBot:
             actions = payload.get("actions", [])
             channel = payload.get("channel", {}).get("id")
             message_ts = payload.get("message", {}).get("ts")
+            pressing_user = payload.get("user", {}).get("id", "")
 
             for action in actions:
                 action_id = action.get("action_id", "")
@@ -315,6 +319,19 @@ class AlfardSlackBot:
 
                 # Find which session this belongs to
                 if channel in self._sessions:
+                    # Only the user who triggered the session may resolve gate requests.
+                    expected_user = self._session_user.get(channel, "")
+                    if expected_user and pressing_user != expected_user:
+                        try:
+                            self.web_client.chat_postEphemeral(
+                                channel=channel,
+                                user=pressing_user,
+                                text="You are not authorised to approve or reject this action.",
+                            )
+                        except Exception:
+                            pass
+                        continue
+
                     _, _, notifier = self._sessions[channel]
                     # action_id format: {uuid}_approve or {uuid}_reject
                     if "_approve" in action_id:

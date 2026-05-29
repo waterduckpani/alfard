@@ -45,6 +45,7 @@ def _update_env(key: str, value: str) -> None:
         lines.append(f"{key}={value}")
 
     _ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _ENV_PATH.chmod(0o600)
 
 
 def _load_integrations() -> dict:

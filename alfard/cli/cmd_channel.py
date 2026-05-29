@@ -51,6 +51,7 @@ def _remove_env_keys(keys: list[str]) -> None:
     for key in keys:
         content = re.sub(rf"^{re.escape(key)}=.*$\n?", "", content, flags=re.MULTILINE)
     _ENV_PATH.write_text(content, encoding="utf-8")
+    _ENV_PATH.chmod(0o600)
 
 
 def _remove_from_integrations(entry_name: str) -> None:

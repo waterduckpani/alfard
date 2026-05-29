@@ -1,5 +1,5 @@
 """Cron job runner — executes a scheduled agent task in an isolated
-session with no human present. Approval gate is disabled."""
+session with no human present."""
 
 import shutil
 import yaml
@@ -15,6 +15,38 @@ from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from alfard.integrations.mcp_client import MCPClient
 from alfard.orchestrator.orchestrator import Orchestrator
+
+_CONFIG_PATH = Path.home() / ".alfard" / "config" / "alfard.yaml"
+
+_CRON_BLOCK_MSG = (
+    "Action blocked: unattended irreversible actions are disabled. "
+    "Set cron_irreversible_policy: allow in alfard.yaml to enable."
+)
+
+
+class _CronDenyGate(ApprovalGate):
+    """Gate used in cron runs when cron_irreversible_policy is 'deny'.
+
+    Returns False immediately for every irreversible request and writes a
+    cron_gate_denied entry to the audit log.
+    """
+
+    def request(self, tool_name: str, arguments: dict, source: str) -> bool:
+        if self.audit_logger:
+            self.audit_logger.log_tool_call(
+                tool_name, arguments, f"cron_gate_denied — {_CRON_BLOCK_MSG}"
+            )
+        return False
+
+
+def _cron_irreversible_policy() -> str:
+    """Read cron_irreversible_policy from alfard.yaml; default is 'deny'."""
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        return str(cfg.get("cron_irreversible_policy", "deny")).lower()
+    except FileNotFoundError:
+        return "deny"
 
 
 def _inject_skills(agent_dir: Path, agent_name: str, job_name: str, task: str) -> str:
@@ -47,8 +79,12 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
         task = _inject_skills(loader.agent_dir, agent_name, job_name, task)
         registry = ToolRegistry()
 
-        gate = ApprovalGate(audit_logger=audit)
-        gate.enabled = False  # no human present in scheduled runs
+        policy = _cron_irreversible_policy()
+        if policy == "allow":
+            gate = ApprovalGate(audit_logger=audit)
+            gate.enabled = False
+        else:
+            gate = _CronDenyGate(audit_logger=audit)
 
         mcp = MCPClient(registry)
         mcp.connect_all()
