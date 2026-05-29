@@ -5,6 +5,53 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.10] — 2026-05-29
+
+### Fixed
+- Windows service install no longer requires elevation — `/ru` and `/rl` flags removed from `schtasks /create`
+- Added registry autostart fallback (`HKCU\...\Run`) when `schtasks` still fails; no admin rights needed
+- `_win_is_installed`, `_win_is_running`, and remove all check both Task Scheduler and registry backends
+
+---
+
+## [0.1.9] — 2026-05-29
+
+### Fixed
+- Windows Task Scheduler tasks registered as `alfard-<agent>` at the root instead of inside an `Alfard\` subfolder — avoids "Access is denied" error on Windows versions that require elevation to create subfolders
+
+---
+
+## [0.1.8] — 2026-05-29
+
+### Added
+- Service setup step added to the `alfard setup` wizard — users can opt in to run Alfard as a persistent background service during first-run setup
+
+---
+
+## [0.1.7] — 2026-05-29
+
+### Fixed
+- `gogcli` install logic moved from `cmd_connect` into `setup/dependencies.py` and made cross-platform — works on macOS, Linux, and Windows
+
+---
+
+## [0.1.6] — 2026-05-28
+
+### Fixed
+- Daemon signal handling: `loop.add/remove_signal_handler` (Unix-only) replaced with platform-aware setup; win32 uses `signal.SIGINT`/`SIGBREAK`
+- `npx`/`npm` commands in the integration catalogue use `npx.cmd`/`npm.cmd` on win32
+- `gogcli` install uses `npm.cmd` on win32
+- Keystore `chmod(0o600)` replaced with `_secure_file()` using `icacls` on win32
+- Headless SIGTERM guard for win32; SIGBREAK fallback added
+- Clipboard copy gains `clip.exe` branch for win32
+- `encoding="utf-8"` added to all `open()`/`read_text()`/`write_text()` calls across 13 modules
+- Temp paths normalised: `/tmp/` → `tempfile.gettempdir()` in `cmd_connect` and `lazy_tool`
+- Doctor and uninstall stale-binary checks wrapped in platform guard; win32 checks `LOCALAPPDATA`/`APPDATA`
+- PATH separator hardcoded `":"` replaced with `os.pathsep` in `lazy_tool`
+- `schtasks` error message corrected for win32 context in `cmd_service`
+
+---
+
 ## [0.1.5] — 2026-05-28
 
 ### Fixed
