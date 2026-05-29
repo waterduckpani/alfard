@@ -64,10 +64,14 @@ def _web_wizard(agent_dir: Path, agent_name: str | None = None) -> bool:
     cfg.update(
         enabled=True,
         search_provider=provider_key,
-        brave_api_key=brave_key,
         searxng_url=searxng_url,
     )
     cfg.save()
+
+    if provider_key == "brave" and brave_key:
+        from alfard.security.keystore import write_env_encrypted
+        from alfard.paths import ALFARD_HOME
+        write_env_encrypted(ALFARD_HOME, {"BRAVE_API_KEY": brave_key})
     if agent_name:
         add_skill(agent_name, "web_usage")
     return True

@@ -1,12 +1,12 @@
 """Web access configuration — reads and writes the web_access block in an agent's config.yaml."""
 
+import os
 import yaml
 from pathlib import Path
 
 _DEFAULTS: dict = {
     "enabled": False,
     "search_provider": "duckduckgo",
-    "brave_api_key": None,
     "searxng_url": None,
     "fetch_enabled": True,
 }
@@ -44,7 +44,7 @@ class WebConfig:
 
     @property
     def brave_api_key(self) -> str | None:
-        return self._data.get("brave_api_key")
+        return os.environ.get("BRAVE_API_KEY") or None
 
     @property
     def searxng_url(self) -> str | None:

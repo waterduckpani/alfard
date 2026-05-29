@@ -85,6 +85,14 @@ class AlfardDiscordBot(discord.Client):
         else:
             self._allowed_guilds = None
 
+        raw_dm = os.environ.get("DISCORD_ALLOWED_USERS", "").strip()
+        if raw_dm:
+            self._allowed_dm_users: set[int] | None = {
+                int(u) for u in raw_dm.split(",") if u.strip().isdigit()
+            }
+        else:
+            self._allowed_dm_users = None
+
         self._sessions: dict[SessionKey, tuple] = {}
         self._locks: dict[SessionKey, threading.Lock] = {}
         self._first_message: dict[SessionKey, bool] = {}
@@ -97,11 +105,15 @@ class AlfardDiscordBot(discord.Client):
 
     # ── access control ───────────────────────────────────────────────────────
 
-    def _is_guild_allowed(self, guild_id: Optional[int]) -> bool:
-        # DMs (guild_id is None) are always permitted
-        if self._allowed_guilds is None or guild_id is None:
-            return True
-        return guild_id in self._allowed_guilds
+    def _is_guild_allowed(self, guild_id: Optional[int], author_id: int) -> bool:
+        if self._allowed_guilds is None:
+            return True  # no guild restriction — all permitted
+        if guild_id is not None:
+            return guild_id in self._allowed_guilds
+        # DM: guild_id is None and DISCORD_ALLOWED_GUILDS is set
+        if self._allowed_dm_users is None:
+            return False  # guilds restricted but no DM allowlist — deny
+        return author_id in self._allowed_dm_users
 
     # ── session management ───────────────────────────────────────────────────
 
@@ -215,7 +227,7 @@ class AlfardDiscordBot(discord.Client):
             return
 
         guild_id = message.guild.id if message.guild else None
-        if not self._is_guild_allowed(guild_id):
+        if not self._is_guild_allowed(guild_id, message.author.id):
             return
 
         text = message.content.strip()

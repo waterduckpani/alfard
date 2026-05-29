@@ -21,7 +21,12 @@ def load_env() -> None:
             encrypt_env(ALFARD_HOME)
         except Exception:
             from rich.console import Console
-            Console().print("[yellow]⚠ Could not encrypt .env — continuing with plaintext.[/yellow]")
+            _c = Console()
+            _c.print("[yellow]⚠ Could not encrypt .env — continuing with plaintext.[/yellow]")
+            _c.print(
+                "[yellow]  Run 'pip install cryptography' to enable encryption. "
+                "Credentials are unprotected until then.[/yellow]"
+            )
             from dotenv import load_dotenv
             load_dotenv(plain_path)
             return

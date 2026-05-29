@@ -127,8 +127,10 @@ def _install_lazy_tool() -> bool:
     if expected:
         if not _verify_checksum(tmp, expected):
             tmp.unlink(missing_ok=True)
-            print("  checksum mismatch — aborting. file may be corrupt or tampered.")
-            return False
+            raise RuntimeError(
+                "Binary checksum mismatch for lazy-tool — download aborted. "
+                "Do not retry with verification disabled."
+            )
     else:
         print("  warning: could not verify checksum — proceeding.")
 

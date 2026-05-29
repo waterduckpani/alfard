@@ -107,6 +107,14 @@ class AlfardSlackBot:
         auth = self.web_client.auth_test()
         self.bot_user_id = auth["user_id"]
 
+        raw_allowed = os.environ.get("SLACK_ALLOWED_USERS", "").strip()
+        if raw_allowed:
+            self._allowed_users: set[str] | None = {
+                u.strip() for u in raw_allowed.split(",") if u.strip()
+            }
+        else:
+            self._allowed_users = None
+
         print(f"[slack] alfard bot ready — agent: {agent_name}")
         print(f"[slack] bot user id: {self.bot_user_id}")
 
@@ -283,6 +291,16 @@ class AlfardSlackBot:
                 channel = event["channel"]
                 text = event.get("text", "").strip()
                 user = event.get("user", "")
+                if self._allowed_users is not None and user not in self._allowed_users:
+                    try:
+                        self.web_client.chat_postEphemeral(
+                            channel=channel,
+                            user=user,
+                            text="You are not authorised to use this bot.",
+                        )
+                    except Exception:
+                        pass
+                    return
                 if text:
                     threading.Thread(
                         target=self._handle_message,
@@ -295,6 +313,16 @@ class AlfardSlackBot:
                 channel = event["channel"]
                 text = event.get("text", "")
                 user = event.get("user", "")
+                if self._allowed_users is not None and user not in self._allowed_users:
+                    try:
+                        self.web_client.chat_postEphemeral(
+                            channel=channel,
+                            user=user,
+                            text="You are not authorised to use this bot.",
+                        )
+                    except Exception:
+                        pass
+                    return
                 # Strip the @mention from the text
                 import re
                 text = re.sub(r"<@[A-Z0-9]+>\s*", "", text).strip()

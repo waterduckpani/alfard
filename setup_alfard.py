@@ -125,7 +125,10 @@ def _setup_connect_web_access(agent_name: str) -> None:
 
     if raw == "brave search":
         key = alfard_input("brave search api key", password=True).strip()
-        cfg.update(enabled=True, search_provider="brave", brave_api_key=key or None)
+        cfg.update(enabled=True, search_provider="brave")
+        if key:
+            from alfard.security.keystore import write_env_encrypted
+            write_env_encrypted(ALFARD_HOME, {"BRAVE_API_KEY": key})
     elif raw == "searxng":
         url = alfard_input("searxng base url", default="http://localhost:8080").strip()
         cfg.update(enabled=True, search_provider="searxng", searxng_url=url or None)

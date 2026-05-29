@@ -92,6 +92,21 @@ def _secure_delete(path: Path) -> None:
     path.unlink()
 
 
+def _warn_key_file_fallback(alfard_home: Path) -> None:
+    sentinel = alfard_home / ".keyring_warned"
+    if sentinel.exists():
+        return
+    try:
+        from rich.console import Console
+        Console().print(
+            "[yellow]⚠ OS keyring unavailable — encryption key stored in "
+            "~/.alfard/.key instead. Keep this file secure.[/yellow]"
+        )
+        sentinel.touch()
+    except Exception:
+        pass
+
+
 def get_or_create_key(alfard_home: Path) -> bytes:
     """Return the Fernet encryption key, generating and persisting one if absent."""
     Fernet, _ = _fernet()
@@ -113,12 +128,15 @@ def get_or_create_key(alfard_home: Path) -> bytes:
                 _secure_delete(key_file)
             except Exception:
                 pass
+        else:
+            _warn_key_file_fallback(alfard_home)
         return file_key
 
     new_key = Fernet.generate_key()
     if not _keyring_set(new_key):
         alfard_home.mkdir(parents=True, exist_ok=True)
         _file_write(key_file, new_key)
+        _warn_key_file_fallback(alfard_home)
     return new_key
 
 

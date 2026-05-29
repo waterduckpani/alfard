@@ -61,7 +61,8 @@ class Orchestrator:
         self._loader = None  # set externally after construction
         self._facts_learned = 0
         self._memory_manager = None  # set externally
-        self._web_context_active = False  # True after a web tool returns results
+        self._web_context_active = False      # True after a web tool returns results
+        self._untrusted_content_active = False  # True after any mcp_invoke returns results
         self._web_access_enabled = False  # set externally from web_config
         self._guide_event = threading.Event()
         self._guide_text: str = ""
@@ -125,6 +126,7 @@ class Orchestrator:
 
             if response["tool_calls"] is None:
                 self._web_context_active = False
+                self._untrusted_content_active = False
                 self._memory.add_assistant(response["content"] or "")
                 return response["content"] or ""
 
@@ -179,19 +181,30 @@ class Orchestrator:
                 self._audit.log_tool_call(name, arguments, source)
 
                 injection_intercepted = False
-                if (
+                _web_injection_risk = (
                     self._web_access_enabled
                     and self._web_context_active
                     and name not in _WEB_TOOLS
                     and name not in _INJECTION_EXEMPT
-                ):
+                )
+                _mcp_injection_risk = (
+                    self._untrusted_content_active
+                    and classification != REVERSIBLE
+                    and name not in _INJECTION_EXEMPT
+                )
+                if _web_injection_risk or _mcp_injection_risk:
                     injection_intercepted = True
-                    rprint(Panel(
-                        f"The agent read web content and is now calling: [bold]{name}[/bold]\n"
-                        "Web pages can contain hidden instructions that hijack agents.",
-                        title="⚠️  Possible prompt injection",
-                        border_style="yellow",
-                    ))
+                    if _web_injection_risk:
+                        detail = (
+                            f"The agent read web content and is now calling: [bold]{name}[/bold]\n"
+                            "Web pages can contain hidden instructions that hijack agents."
+                        )
+                    else:
+                        detail = (
+                            f"The agent received MCP tool content and is now calling: [bold]{name}[/bold]\n"
+                            "MCP results (emails, documents, etc.) can contain hidden instructions."
+                        )
+                    rprint(Panel(detail, title="⚠️  Possible prompt injection", border_style="yellow"))
                     approved = self._gate.request(name, arguments, source)
                     self._audit.log_prompt_injection_warning(name, approved)
                     if not approved:
@@ -219,19 +232,22 @@ class Orchestrator:
                 else:
                     result = self._sandbox.execute(tool, arguments)
 
+                if name == "mcp_invoke":
+                    self._untrusted_content_active = True
+
                 if result["success"]:
-                    raw = str(result["result"])
-                    # Always sanitize and wrap with source attribution.
-                    # is_suspicious() is an additional signal — flag it
-                    # but sanitize regardless.
-                    raw = sanitize(raw, source=name)
+                    raw, flagged = sanitize(str(result["result"]), source=name)
+                    if flagged:
+                        self._audit.log_prompt_injection_warning(name, approved=False)
                     self._memory.add_tool_result(tool_call_id, raw)
                     if name in _WEB_TOOLS:
                         self._web_context_active = True
                 else:
                     # Sanitize error strings too — they may contain
                     # content from malicious external sources.
-                    error = sanitize(str(result["error"]), source=f"{name}.error")
+                    error, flagged = sanitize(str(result["error"]), source=f"{name}.error")
+                    if flagged:
+                        self._audit.log_prompt_injection_warning(name, approved=False)
                     self._memory.add_tool_result(tool_call_id, error)
 
             # After processing all tool calls in this cycle,
@@ -318,3 +334,4 @@ class Orchestrator:
     def reset(self) -> None:
         self._memory.reset()
         self._web_context_active = False
+        self._untrusted_content_active = False

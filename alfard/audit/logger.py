@@ -20,6 +20,7 @@ def _get_log_path() -> Path:
 
 
 _CORRECTION_SIGNALS = {"no", "wrong", "actually", "don't", "dont"}
+_SENSITIVE_FIELDS = {"body", "content", "text", "message", "password", "token", "secret", "key"}
 
 
 class AuditLogger:
@@ -48,10 +49,14 @@ class AuditLogger:
         })
 
     def log_tool_call(self, tool_name: str, arguments: dict, source: str) -> None:
+        scrubbed = {
+            k: "<redacted>" if any(s in k.lower() for s in _SENSITIVE_FIELDS) else v
+            for k, v in arguments.items()
+        }
         self._write({
             "type": "tool_call",
             "tool_name": tool_name,
-            "arguments": arguments,
+            "arguments": scrubbed,
             "source": source,
         })
 

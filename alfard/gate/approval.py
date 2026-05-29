@@ -90,6 +90,13 @@ class ApprovalGate:
             self.enabled = cfg.get("approval_gate", {}).get("enabled", True)
         except FileNotFoundError:
             pass
+        if not self.enabled:
+            rprint(Panel(
+                "[bold]WARNING: Approval gate is disabled. All irreversible actions will execute "
+                "without confirmation. This is unsafe for production use.[/bold]",
+                border_style="red",
+                title="[red]Security Warning[/red]",
+            ))
 
     def reset_job(self) -> None:
         self._job_approved = False

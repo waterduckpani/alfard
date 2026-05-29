@@ -74,6 +74,17 @@ def _inject_skills(agent_dir: Path, agent_name: str, job_name: str, task: str) -
 
 def run_job(agent_name: str, task: str, job_name: str) -> str:
     audit = AuditLogger()
+    log_dir = AGENTS_DIR / agent_name / "cron_logs"
+    try:
+        Path(log_dir / job_name).resolve().relative_to(log_dir.resolve())
+    except (ValueError, OSError):
+        audit.log_tool_call(
+            "cron_save_log",
+            {"job_name": job_name},
+            "path_traversal_blocked",
+        )
+        audit.close()
+        return f"Cron job '{job_name}': invalid job_name — log not saved."
     try:
         loader = AgentLoader(agent_name)
         task = _inject_skills(loader.agent_dir, agent_name, job_name, task)

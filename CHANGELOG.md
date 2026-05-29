@@ -5,6 +5,27 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.11] — 2026-05-29
+
+### Security
+- Fixed approval gate cross-integration bypass — mcp_invoke approval is now scoped per integration (notion, github, gmail etc.) not per protocol
+- Fixed Slack approval gate — only the session owner can approve or reject irreversible actions; other workspace members are blocked with an ephemeral message
+- Fixed cron jobs running with no approval gate — added cron_irreversible_policy config (default: deny); irreversible actions in scheduled runs are blocked unless explicitly opted in
+- Added SLACK_ALLOWED_USERS env var — restricts which Slack users can talk to the agent, mirroring the existing Telegram allowlist
+- Fixed Discord DMs bypassing guild allowlist — DMs now require DISCORD_ALLOWED_USERS when DISCORD_ALLOWED_GUILDS is set; denied by default
+- Expanded prompt injection sanitizer from 4 to 19 patterns — covers format headers, role-hijacking phrases, LLM special tokens, and HTML comment injection
+- MCP content (email bodies, Notion pages, GitHub PR descriptions, Drive documents) now triggers the behavioural injection gate before subsequent irreversible actions
+- Fixed .env file world-readable between alfard connect and alfard run — chmod 600 now applied immediately on write
+- Brave API key moved from plaintext agent config to encrypted keystore
+- Audit log now redacts sensitive field values (body, content, message, token, key, secret, password) before writing to JSONL
+- Binary checksum verification in lazy_tool is now non-optional — mismatch raises a hard error and deletes the file
+- Disabled approval gate now emits a loud startup warning on every session instead of silently permitting all actions
+- Cron log filename validated against path traversal before write
+- Keystore file fallback now emits a one-time warning via sentinel file when OS keyring is unavailable
+- Encryption failure now explicitly advises pip install cryptography and warns credentials are unprotected
+
+---
+
 ## [0.1.10] — 2026-05-29
 
 ### Fixed
