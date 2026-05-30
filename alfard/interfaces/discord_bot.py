@@ -58,7 +58,7 @@ def _memory_embed(entry: dict) -> discord.Embed:
     content = entry.get("content", "")
     truncated = content[:80] + "…" if len(content) > 80 else content
     label = "⚠ mistake" if mem_type == "mistake" else mem_type
-    return discord.Embed(title=label, description=f'"{truncated}"', color=0x5865F2)
+    return discord.Embed(title=label, description=f'"{truncated}"', color=0x2ECC71)
 
 
 class AlfardDiscordBot(discord.Client):
@@ -167,6 +167,7 @@ class AlfardDiscordBot(discord.Client):
         loop: asyncio.AbstractEventLoop,
         reply_fn,
         reply_embed_fn,
+        author_id: int = 0,
     ) -> None:
         self._session_last_active[key] = time.time()
         self._evict_stale_sessions()
@@ -174,6 +175,7 @@ class AlfardDiscordBot(discord.Client):
         orchestrator, audit, notifier, loader, registry = self._get_session(
             key, channel, loop
         )
+        notifier.owner_id = author_id
         lock = self._locks[key]
 
         with lock:
@@ -263,6 +265,7 @@ class AlfardDiscordBot(discord.Client):
                 loop,
                 _reply,
                 _reply_embed,
+                message.author.id,
             )
 
     async def _handle_command(
@@ -318,7 +321,7 @@ class AlfardDiscordBot(discord.Client):
                     asyncio.run_coroutine_threadsafe(
                         message.channel.send(embed=_memory_embed(entry)),
                         loop,
-                    )
+                    ).result(timeout=30)
                 return result
 
             result = await loop.run_in_executor(None, _do_remember)

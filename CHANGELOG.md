@@ -5,6 +5,23 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.13] — 2026-05-29
+
+### Fixed
+- Approval gate no longer crashes with "EOF when reading a line" — CLINotifier.present() catches EOFError and returns "n" (deny)
+- Terminal approval gate now shows full tool arguments as a formatted JSON panel — users no longer approve blind
+- Discord approval gate — any channel member could approve/reject agent actions; now only the session owner can interact with the buttons
+- Discord approval gate — timed-out buttons now disable and show "⏱ Timed out — action rejected" instead of remaining visually active
+- Slack approval gate — session owner assignment was outside the per-channel lock; concurrent messages could mis-route gate authority
+- Slack approval gate — arguments exceeding 2900 chars now truncated with a notice before posting to avoid Slack API limit failures
+- Telegram approval gate — send failures were swallowed silently; gate now logs the failure, resolves to deny immediately, and attempts a fallback message
+- Slack sessions now trigger memory reflection (idle watcher, turn counter, session end) — was completely unwired
+- Slack "thinking..." stub message now deleted before the real response posts
+- Discord and Telegram /remember handler notifications now block until delivered instead of fire-and-forget
+- Discord memory notification embeds now use green (0x2ECC71) instead of blurple — clear visual distinction from approval gate requests
+
+---
+
 ## [0.1.12] — 2026-05-29
 
 ### Fixed

@@ -3,8 +3,11 @@ messages and blocks until the user taps Approve or Reject."""
 
 import asyncio
 import json
+import logging
 import threading
 import uuid
+
+_log = logging.getLogger("alfard.telegram")
 
 
 class TelegramNotifier:
@@ -50,8 +53,24 @@ class TelegramNotifier:
         )
         try:
             future.result(timeout=10)
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.error(
+                "gate_send_failure: could not send approval request for action=%s tool=%s: %s",
+                action_id, tool_name, exc,
+            )
+            with self._lock:
+                self._pending.pop(action_id, None)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._bot.send_message(
+                        chat_id=self._chat_id,
+                        text=f"⚠️ Could not deliver approval request for `{tool_name}` — action auto-rejected.",
+                    ),
+                    self._loop,
+                )
+            except Exception:
+                pass
+            return "n"
 
         event.wait(timeout=300)
 

@@ -6,12 +6,28 @@ import os
 import time
 import threading
 from collections import deque
+
+import yaml
+
 from alfard.memory.notifications import drain as _drain_notifications
-from alfard.paths import load_env
+from alfard.memory import reflect_triggers
+from alfard.paths import load_env, ALFARD_HOME
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.socket_mode.request import SocketModeRequest
+
+_CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
+
+
+def _read_msg_interval() -> int:
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        raw = cfg.get("memory", {}).get("reflect_message_interval", 20)
+        return max(5, min(100, int(raw)))
+    except Exception:
+        return 20
 
 SESSION_TIMEOUT_HOURS = 4
 
@@ -21,7 +37,7 @@ def _build_orchestrator(agent_name: str,
                         channel: str) -> tuple:
     """
     Build a full orchestrator wired to a SlackNotifier approval gate.
-    Returns (orchestrator, audit, notifier).
+    Returns (orchestrator, audit, notifier, loader).
     """
     from alfard.orchestrator.builder import build_orchestrator
     from alfard.interfaces.slack_notifier import SlackNotifier
@@ -33,7 +49,7 @@ def _build_orchestrator(agent_name: str,
         connect_mcp=True,
         gate_enabled=True,
     )
-    return orchestrator, audit, notifier
+    return orchestrator, audit, notifier, loader
 
 
 def _format_memory_notification(entry: dict) -> str:
@@ -102,6 +118,7 @@ class AlfardSlackBot:
         self._pending_queues: dict[str, deque] = {}
         self._session_user: dict[str, str] = {}  # channel → user_id who triggered the session
         self._stop_event = threading.Event()
+        self._msg_interval = _read_msg_interval()
 
         # Bot's own user ID (to ignore self-messages)
         auth = self.web_client.auth_test()
@@ -128,6 +145,13 @@ class AlfardSlackBot:
             self._first_message[channel] = True
             self._session_last_active[channel] = time.time()
             self._message_counts[channel] = 0
+            orchestrator, audit, notifier, loader = self._sessions[channel]
+            reflect_triggers.start_idle_watcher(
+                self.agent_name,
+                loader.memory_manager,
+                orchestrator._llm,
+                audit.log_path,
+            )
         return self._sessions[channel]
 
     def _evict_stale_sessions(self) -> None:
@@ -139,7 +163,8 @@ class AlfardSlackBot:
         ]
         for ch in stale:
             try:
-                _, audit, _ = self._sessions.pop(ch)
+                _, audit, _, loader = self._sessions.pop(ch)
+                reflect_triggers.stop_idle_watcher(self.agent_name)
                 audit.close()
             except Exception:
                 pass
@@ -202,22 +227,25 @@ class AlfardSlackBot:
             return
 
         self._evict_stale_sessions()
-        orchestrator, audit, notifier = self._get_session(channel)
-        self._session_user[channel] = user
+        orchestrator, audit, notifier, loader = self._get_session(channel)
         lock = self._locks[channel]
 
         with lock:  # one message at a time per channel
+            self._session_user[channel] = user
+
             if self._first_message.get(channel):
-                system_prompt = orchestrator._loader.build_system_prompt(query=text)
+                system_prompt = loader.build_system_prompt(query=text)
                 orchestrator._memory._system_prompt = system_prompt
                 self._first_message[channel] = False
 
-            # Show typing indicator
+            # Show typing indicator and capture its ts for later deletion
+            thinking_ts = None
             try:
-                self.web_client.chat_postMessage(
+                thinking_resp = self.web_client.chat_postMessage(
                     channel=channel,
                     text="_thinking..._"
                 )
+                thinking_ts = thinking_resp.get("ts")
             except Exception:
                 pass
 
@@ -235,6 +263,13 @@ class AlfardSlackBot:
                 self._message_counts[channel] = 0
                 try:
                     orchestrator.checkpoint_session()
+                except Exception:
+                    pass
+
+            # Delete the thinking stub before posting the real response
+            if thinking_ts:
+                try:
+                    self.web_client.chat_delete(channel=channel, ts=thinking_ts)
                 except Exception:
                     pass
 
@@ -267,6 +302,14 @@ class AlfardSlackBot:
                     )
                 except Exception:
                     pass
+
+        reflect_triggers.on_user_message(
+            self.agent_name,
+            loader.memory_manager,
+            orchestrator._llm,
+            audit.log_path,
+            self._msg_interval,
+        )
 
     def _process_request(self, client: SocketModeClient,
                          req: SocketModeRequest) -> None:
@@ -360,7 +403,7 @@ class AlfardSlackBot:
                             pass
                         continue
 
-                    _, _, notifier = self._sessions[channel]
+                    _, _, notifier, _ = self._sessions[channel]
                     # action_id format: {uuid}_approve or {uuid}_reject
                     if "_approve" in action_id:
                         gate_id = action_id.replace("_approve", "")
@@ -401,7 +444,7 @@ class AlfardSlackBot:
                         if self._message_counts.get(channel, 0) >= 3:
                             self._message_counts[channel] = 0
                             try:
-                                orchestrator, _, _ = self._sessions[channel]
+                                orchestrator, _, _, _ = self._sessions[channel]
                                 orchestrator.checkpoint_session()
                             except Exception:
                                 pass

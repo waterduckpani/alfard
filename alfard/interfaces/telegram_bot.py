@@ -282,7 +282,7 @@ class AlfardTelegramBot:
                         text=_format_memory_notification(entry),
                     ),
                     loop,
-                )
+                ).result(timeout=30)
             return result
 
         result = await loop.run_in_executor(None, _do_remember)

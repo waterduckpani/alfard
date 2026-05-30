@@ -27,7 +27,11 @@ class CLINotifier:
         rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
         with _STDIN_LOCK:
             while True:
-                choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
+                try:
+                    choice = Prompt.ask(f"Approve? [{theme.DIM}]\\[y/n][/{theme.DIM}]").strip().lower()
+                except EOFError:
+                    # stdin unavailable (e.g. TUI holds it, headless pipe closed) — deny safely
+                    return "n"
                 if choice in ("y", "n"):
                     return choice
 

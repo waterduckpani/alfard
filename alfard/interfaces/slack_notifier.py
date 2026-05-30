@@ -1,10 +1,13 @@
 """Slack approval gate notifier — sends approval requests as
 interactive Slack messages with Approve/Reject buttons."""
 
+import logging
 import os
 import threading
 from slack_sdk import WebClient
 from alfard.cli import theme
+
+_log = logging.getLogger("alfard.slack")
 
 class SlackNotifier:
     """
@@ -37,6 +40,12 @@ class SlackNotifier:
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
         args_text = json.dumps(arguments, indent=2)
+        if len(args_text) > 2900:
+            _log.warning(
+                "gate args truncated for tool=%s action=%s original_len=%d",
+                tool_name, action_id, len(args_text),
+            )
+            args_text = args_text[:2900] + "\n... (truncated)"
 
         blocks = [
             {
