@@ -5,6 +5,16 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.14] — 2026-05-29
+
+### Fixed
+- Cron jobs now use the same build_orchestrator() factory as alfard run — fixes Gmail, Notion, GitHub and all other integrations silently missing in scheduled runs
+- Cron runner was checking for gws (removed predecessor) instead of gog for Gmail credential detection — Gmail tools were never registered in any cron session
+- Cron runner was calling MCPClient.connect_all() directly, bypassing the lazy-tool proxy — caused [mcp] connected to 0/0 servers on all MCP-backed integrations
+- Cron runner was not registering folder mounts, web tools, or memory tools — all three now included via build_orchestrator()
+
+---
+
 ## [0.1.13] — 2026-05-29
 
 ### Fixed

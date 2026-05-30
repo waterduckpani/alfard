@@ -1,20 +1,14 @@
 """Cron job runner — executes a scheduled agent task in an isolated
 session with no human present."""
 
-import shutil
 import yaml
 from pathlib import Path
 from datetime import datetime
 
 from alfard.agents.loader import AgentLoader, AGENTS_DIR
-from alfard.llm.client import LLMClient
-from alfard.tools.registry import ToolRegistry
 from alfard.audit.logger import AuditLogger
 from alfard.gate.approval import ApprovalGate
-from alfard.sandbox.executor import SandboxExecutor
-from alfard.integrations.credentials import CredentialsManager
-from alfard.integrations.mcp_client import MCPClient
-from alfard.orchestrator.orchestrator import Orchestrator
+from alfard.orchestrator.builder import build_orchestrator
 
 _CONFIG_PATH = Path.home() / ".alfard" / "config" / "alfard.yaml"
 
@@ -88,7 +82,12 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
     try:
         loader = AgentLoader(agent_name)
         task = _inject_skills(loader.agent_dir, agent_name, job_name, task)
-        registry = ToolRegistry()
+
+        orchestrator, audit, loader, _registry = build_orchestrator(
+            agent_name=agent_name,
+            connect_mcp=True,
+            gate_enabled=False,
+        )
 
         policy = _cron_irreversible_policy()
         if policy == "allow":
@@ -96,24 +95,7 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
             gate.enabled = False
         else:
             gate = _CronDenyGate(audit_logger=audit)
-
-        mcp = MCPClient(registry)
-        mcp.connect_all()
-
-        gws_creds = Path.home() / ".config" / "gws" / "credentials.enc"
-        if shutil.which("gws") and gws_creds.exists():
-            from alfard.integrations.gws_tools import register_gmail_tools
-            register_gmail_tools(registry)
-
-        orchestrator = Orchestrator(
-            llm=LLMClient(),
-            registry=registry,
-            audit=audit,
-            gate=gate,
-            sandbox=SandboxExecutor(),
-            credentials=CredentialsManager(),
-            system_prompt=loader.build_system_prompt(),
-        )
+        orchestrator._gate = gate
 
         response = orchestrator.run(task)
         _save_log(loader.agent_dir, job_name, task, response, error=False)
