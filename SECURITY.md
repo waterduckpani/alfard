@@ -168,7 +168,25 @@ Memory database files (`brain.db`, `sessions.db`) are created with `os.chmod(pat
 
 ---
 
-### 10. No telemetry
+### 10. Cron job security model
+
+**Files:** `alfard/gate/cron_gate.py`, `alfard/cron/runner.py`
+
+Scheduled jobs run unattended — there is no human at the terminal to approve actions when a cron trigger fires. This creates a different threat surface than interactive sessions: a single misconfigured job or a prompt injection in a scheduled data source can perform irreversible actions indefinitely without detection.
+
+**Deny by default.** When no approval channel is configured (`approval_channel: none`), `_CronDenyGate` blocks every irreversible action and writes a `cron_gate_denied` entry to the audit log. This is the default. A cron job that cannot perform irreversible actions is a safe cron job.
+
+**Channel gate (`CronChannelGate`).** When `approval_channel: telegram` or `approval_channel: slack` is set — globally in `config/alfard.yaml` under `cron:` or per-job in `crons.yaml` — irreversible tool calls are held and a notification is dispatched to the configured channel. The message includes the job name, agent name, tool name, full arguments, and scheduled time. The gate blocks for up to 1800 seconds (30 minutes) awaiting a human response. On timeout the action is auto-denied and `gate_timeout` is written to the audit log.
+
+**`CRON_ALWAYS_GATE`.** A fixed set of high-risk tools — `send_email`, `delete_file`, `push_code`, `create_pull_request`, `execute_code`, and others — that must be gated in every cron run regardless of any other setting. When a channel is configured they route to it. When no channel is configured they are denied. They cannot be bypassed by `approval_gate: disabled`.
+
+**Disabled gate (`approval_gate: disabled`).** Operators can disable the cron approval gate globally in `alfard.yaml` or per-job in `crons.yaml`. When disabled, a `gate_disabled_warning` event is written to the audit log before the job runs and a warning is emitted to the log. All regular irreversible tools execute without approval. `CRON_ALWAYS_GATE` tools are still denied unconditionally — this set is not configurable. The CLI wizard (`alfard cron add`) requires the operator to type `I understand` to confirm this choice at job-creation time.
+
+**Per-job override.** Each job in `crons.yaml` can set `approval_channel` to override the global channel and `approval_gate: disabled` to disable the gate for that job only. Per-job settings take precedence over the global `cron:` block.
+
+---
+
+### 11. No telemetry
 
 Alfard collects no usage data, sends no analytics, and makes no outbound connections except those the agent is explicitly instructed to make. The only network calls are to the LLM provider configured by the operator, MCP servers the operator connects, and tools (web search, integrations) the operator enables.
 

@@ -295,18 +295,53 @@ def add(agent: str | None):
             available_skills,
         )
 
-    # Step 5: Schedule
+    # Step 5: Approval
+    channel_choice = alfard_select(
+        "where should approval requests be sent?",
+        ["telegram", "slack", "none", "disable gate"],
+    )
+    if channel_choice is None:
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
+
+    gate_disabled = False
+    approval_channel = channel_choice if channel_choice != "disable gate" else "none"
+
+    if channel_choice == "disable gate":
+        console.print()
+        console.print(f"  [{p.warn}]WARNING: with the gate disabled this job will execute[/]")
+        console.print(f"  [{p.warn}]irreversible actions without any confirmation.[/]")
+        console.print(f"  [{p.fg_faint}]CRON_ALWAYS_GATE tools (send_email, delete_file, push_code,[/]")
+        console.print(f"  [{p.fg_faint}]etc.) are still denied unconditionally.[/]\n")
+        confirm_text = alfard_input(
+            "type 'I understand' to disable the gate",
+            hint="or press enter to keep it enabled",
+        ).strip()
+        if confirm_text == "I understand":
+            gate_disabled = True
+        else:
+            console.print(f"  [{p.fg_faint}]gate kept enabled — using 'none' (deny all irreversible).[/]")
+            approval_channel = "none"
+
+    # Step 6: Schedule
     cron_expr = _collect_schedule()
     if not cron_expr:
         console.print(f"[{p.fg_faint}]cancelled.[/]")
         return
 
-    # Step 6: Confirm
+    # Step 7: Confirm
     console.print()
     console.print(f"  [{p.fg_faint}]{'name':<12}[/] [{p.fg_em}]{name}[/]")
     console.print(f"  [{p.fg_faint}]{'task':<12}[/] [{p.fg_em}]{task}[/]")
     if linked_skills:
         console.print(f"  [{p.fg_faint}]{'skills':<12}[/] [{p.fg_em}]{', '.join(linked_skills)}[/]")
+    if gate_disabled:
+        console.print(
+            f"  [{p.fg_faint}]{'approval':<12}[/] [{p.warn}]gate disabled[/]"
+            f" [{p.fg_faint}](CRON_ALWAYS_GATE still enforced)[/]"
+        )
+    else:
+        console.print(f"  [{p.fg_faint}]{'approval':<12}[/] [{p.fg_em}]{approval_channel}[/]")
     console.print(f"  [{p.fg_faint}]{'schedule':<12}[/] [{p.fg_em}]{cron_expr}[/]")
     console.print()
 
@@ -314,13 +349,17 @@ def add(agent: str | None):
         console.print(f"[{p.fg_faint}]cancelled.[/]")
         return
 
-    jobs.append({
+    job: dict = {
         "name": name,
         "task": task,
         "schedule": cron_expr,
         "linked_skills": linked_skills,
         "enabled": True,
-    })
+        "approval_channel": approval_channel,
+    }
+    if gate_disabled:
+        job["approval_gate"] = "disabled"
+    jobs.append(job)
     _save_crons(agent, jobs)
     console.print(f"\n{dot('ok')} [{p.fg_dim}]job added.[/]")
     from alfard.cli.cmd_service import _is_installed

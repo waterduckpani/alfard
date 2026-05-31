@@ -5,6 +5,28 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.15] — 2026-05-29
+
+### Added
+- Channel-routed approval gate for cron jobs — when a scheduled job hits an irreversible action, the approval request is sent to the configured channel (Telegram, Discord, or Slack) and the job waits up to 30 minutes for a response; auto-denies on timeout
+- Per-job and global approval_channel config in crons.yaml and alfard.yaml
+- Approval channel selection added to the cron creation wizard
+- approval_gate: disabled option for cron jobs — requires typing "I understand" in the wizard; emits audit warning on every run; CRON_ALWAYS_GATE tools (send, delete, external writes) remain gated regardless
+- CRON_ALWAYS_GATE — irreversible tools that cannot be bypassed even with approval gate disabled: all send tools, delete tools, external write tools, file_write, file_append
+
+### Fixed
+- Cron runner now uses build_orchestrator() factory — Gmail, Notion, GitHub and all other integrations were silently missing in all scheduled runs
+- Cron runner was checking for gws (removed predecessor) instead of gog for Gmail
+- Cron runner was calling MCPClient.connect_all() directly, bypassing lazy-tool proxy — caused [mcp] connected to 0/0 servers
+- Cron runner was not registering folder mounts, web tools, or memory tools
+
+### Security
+- CRON_ALWAYS_GATE enforced unconditionally — send/delete/external write tools require approval in cron regardless of approval_gate setting
+- Disabled approval gate logs audit warning on every job run
+- gate_timeout audit event logged when 30 minute window expires
+
+---
+
 ## [0.1.14] — 2026-05-29
 
 ### Fixed
