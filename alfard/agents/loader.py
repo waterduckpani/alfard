@@ -56,7 +56,7 @@ class AgentLoader:
             parts.append(skill_file.read_text(encoding="utf-8"))
         return "\n\n".join(parts)
 
-    def build_system_prompt(self, query: str = "") -> str:
+    def build_system_prompt(self, query: str = "", linked_skills: list[str] | None = None) -> str:
         """Build the full system prompt for this agent.
 
         Always injects: soul, project_state, last session.
@@ -124,11 +124,14 @@ class AgentLoader:
                 parts.append(f"# Memory skill\n{_memory.read_text(encoding='utf-8').strip()}")
 
         # Agent-specific skills (explicitly added via add_skill)
+        # linked_skills: if set, only load those named skills (cron filter); None = load all.
         skills_dir = self.agent_dir / "skills"
         if skills_dir.exists():
             for skill_file in sorted(skills_dir.glob("*.md")):
                 if skill_file.name == "memory.md":
                     continue  # already loaded above
+                if linked_skills is not None and skill_file.stem not in linked_skills:
+                    continue
                 skill_content = skill_file.read_text(encoding="utf-8").strip()
                 if skill_content:
                     parts.append(f"# {skill_file.stem.capitalize()} skill\n{skill_content}")

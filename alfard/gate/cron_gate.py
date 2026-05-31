@@ -177,6 +177,9 @@ class CronChannelGate:
             self.audit_logger.log_tool_call(tool_name, arguments, event_label)
         return approved
 
+    def reset_job(self) -> None:
+        pass
+
     def resolve(self, action_id: str, approved: bool) -> None:
         """Called by the channel bot handler when the user taps Approve or Reject."""
         with self._lock:
@@ -345,7 +348,7 @@ class CronChannelGate:
         try:
             self._notifier.client.chat_postMessage(
                 channel=self._notifier.channel,
-                text=f"Cron approval required: {tool_name} ({job_name})",
+                text=f"Cron approval required: {tool_name} ({self._job_name})",
                 blocks=blocks,
             )
             return True

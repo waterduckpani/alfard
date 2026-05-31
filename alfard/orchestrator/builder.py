@@ -83,6 +83,7 @@ def build_orchestrator(
     connect_mcp: bool = True,
     gate_enabled: bool = True,
     session_id: str | None = None,
+    linked_skills: list[str] | None = None,
 ) -> tuple:
     """
     Build a fully wired orchestrator for an agent.
@@ -90,11 +91,13 @@ def build_orchestrator(
     Returns (orchestrator, audit, loader, registry).
 
     Args:
-        agent_name:   Name of the agent to load.
-        notifier:     Optional approval gate notifier
-                      (defaults to CLINotifier).
-        connect_mcp:  Whether to connect MCP servers.
-        gate_enabled: Whether the approval gate is active.
+        agent_name:    Name of the agent to load.
+        notifier:      Optional approval gate notifier
+                       (defaults to CLINotifier).
+        connect_mcp:   Whether to connect MCP servers.
+        gate_enabled:  Whether the approval gate is active.
+        linked_skills: If set, only these skill names are injected into the
+                       system prompt (cron job filter). None loads all skills.
     """
     loader = AgentLoader(agent_name)
     registry = ToolRegistry()
@@ -142,7 +145,7 @@ def build_orchestrator(
         gate=gate,
         sandbox=SandboxExecutor(),
         credentials=CredentialsManager(),
-        system_prompt=loader.build_system_prompt(),
+        system_prompt=loader.build_system_prompt(linked_skills=linked_skills),
     )
 
     orchestrator._loader = loader

@@ -7,7 +7,7 @@ import yaml
 from pathlib import Path
 from datetime import datetime
 
-from alfard.agents.loader import AgentLoader, AGENTS_DIR
+from alfard.agents.loader import AGENTS_DIR
 from alfard.audit.logger import AuditLogger
 from alfard.gate.approval import ApprovalGate
 from alfard.gate.cron_gate import CronChannelGate, CRON_ALWAYS_GATE
@@ -117,7 +117,7 @@ def _make_slack_notifier(cfg: dict):
     sl = cfg.get("slack", {})
     token_env = sl.get("bot_token_env", "SLACK_BOT_TOKEN")
     token = os.environ.get(token_env)
-    channel = sl.get("channel")
+    channel = sl.get("channel") or os.environ.get("SLACK_APPROVAL_CHANNEL")
     if not token or not channel:
         _log.error(
             "slack notifier: missing %s env var or slack.channel in config",
@@ -197,27 +197,25 @@ def _make_cron_gate(job_name: str, agent_name: str, audit: AuditLogger) -> Appro
     )
 
 
-def _inject_skills(agent_dir: Path, agent_name: str, job_name: str, task: str) -> str:
-    """Prepend linked skill contents to the task prompt if any are configured."""
-    jobs_path = agent_dir.parent / agent_name / "crons.yaml"
-    if not jobs_path.exists():
-        return task
-    with open(jobs_path) as f:
-        data = yaml.safe_load(f) or {}
-    job = next((j for j in data.get("jobs", []) if j["name"] == job_name), None)
-    if not job:
-        return task
-    linked_skills = job.get("linked_skills") or []
-    if not linked_skills:
-        return task
-    parts = []
-    for skill_name in linked_skills:
-        skill_file = agent_dir / "skills" / f"{skill_name}.md"
-        if skill_file.exists():
-            parts.append(skill_file.read_text(encoding="utf-8").strip())
-    if not parts:
-        return task
-    return "\n\n".join(parts) + "\n\n---\n\n" + task
+def _build_cron_context(job_name: str, task: str) -> str:
+    """Return the cron context block appended to the system prompt for every scheduled run."""
+    return (
+        f"# Cron execution context\n\n"
+        f"You are running as a scheduled cron job, not an interactive session.\n\n"
+        f"**Job:** {job_name}\n"
+        f"**Task:** {task}\n\n"
+        f"Rules for this run:\n"
+        f"- No human is watching in real time. Complete the task fully and autonomously.\n"
+        f"- Do not ask clarifying questions or say \"would you like me to…\". "
+        f"Make reasonable decisions and proceed.\n"
+        f"- If you reach an irreversible action, the approval gate will pause execution "
+        f"and send a request to the configured channel. Do not ask the user — just reach "
+        f"the gate and let it handle approval. Continue with everything else in the meantime.\n"
+        f"- If a tool returns a 404 error, try an alternative call with the same ID "
+        f"(e.g. look up by thread ID instead of message ID) before reporting failure.\n"
+        f"- When finished, output a clean summary: what was completed, what was skipped, "
+        f"and why anything was skipped."
+    )
 
 
 def run_job(agent_name: str, task: str, job_name: str) -> str:
@@ -234,15 +232,17 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
         audit.close()
         return f"Cron job '{job_name}': invalid job_name — log not saved."
     try:
-        loader = AgentLoader(agent_name)
-        task = _inject_skills(loader.agent_dir, agent_name, job_name, task)
+        job_cfg = _load_job_cfg(agent_name, job_name)
+        linked_skills: list[str] | None = job_cfg.get("linked_skills") or None
 
         orchestrator, audit, loader, _registry = build_orchestrator(
             agent_name=agent_name,
             connect_mcp=True,
             gate_enabled=False,
+            linked_skills=linked_skills,
         )
 
+        orchestrator._system_prompt += "\n\n---\n\n" + _build_cron_context(job_name, task)
         orchestrator._gate = _make_cron_gate(job_name, agent_name, audit)
 
         response = orchestrator.run(task)

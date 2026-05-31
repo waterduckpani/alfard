@@ -227,6 +227,20 @@ def _ensure_slack_bot_token() -> str | None:
     return bot_token
 
 
+def _write_slack_cfg(channel: str) -> None:
+    config_path = ALFARD_HOME / "config" / "alfard.yaml"
+    if config_path.exists():
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    else:
+        config = {}
+    config.setdefault("slack", {})
+    config["slack"]["channel"] = channel
+    config["slack"]["bot_token_env"] = "SLACK_BOT_TOKEN"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
 def _connect_slack(name: str, integration: dict) -> bool:
     console.print(f"\n[{p.fg_em}]{integration['display_name']}[/]")
     console.print(f"[{p.fg_dim}]{integration['description']}[/]\n")
@@ -243,6 +257,14 @@ def _connect_slack(name: str, integration: dict) -> bool:
         return False
     _update_env("SLACK_TEAM_ID", team_id)
     console.print(f"{dot('ok')} [{p.fg_dim}]workspace verified.[/]")
+
+    channel_name = alfard_input(
+        "slack channel for cron approval notifications",
+        hint="channel where alfard will post approval requests (e.g. #approvals)",
+        default="#approvals",
+    ).strip() or "#approvals"
+    _write_slack_cfg(channel_name)
+    console.print(f"{dot('ok')} [{p.fg_dim}]approval channel saved.[/]")
 
     entry = {
         "name": name,
