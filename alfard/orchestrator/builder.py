@@ -50,7 +50,7 @@ def _connect_mcp_via_lazy_tool(mcp: MCPClient, registry) -> None:
     mcp._connect(lazy_cfg)
 
     for cfg in mcp._server_configs:
-        if cfg["name"] not in _LAZY_ROUTED:
+        if cfg["name"] not in _LAZY_ROUTED and cfg.get("transport") in mcp._MCP_TRANSPORTS:
             mcp._connect(cfg)
 
     # Mark each routed server that was actually in integrations.yaml as proxied

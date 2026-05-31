@@ -79,6 +79,66 @@ _DOW = {
 }
 
 
+def _collect_approval_channel() -> tuple[str, bool]:
+    """Prompt for approval channel. Returns (approval_channel, gate_disabled).
+
+    Only shows channels that are actually connected. If none are connected,
+    offers to connect one or skip. Always shows 'none' and 'disable gate'.
+    """
+    import questionary
+    import click
+    from alfard.cli.cmd_channel import connected_channels, connect as _channel_connect
+
+    while True:
+        channels = connected_channels()
+
+        if not channels:
+            console.print(
+                f"\n  [{p.warn}]⚠ No channels connected. "
+                f"Approval requests cannot be routed without a connected channel.[/]\n"
+            )
+            action = alfard_select(
+                "what would you like to do?",
+                [
+                    "connect a channel now",
+                    "skip (deny all irreversible actions)",
+                ],
+            )
+            if not action or action == "skip (deny all irreversible actions)":
+                return "none", False
+            click.get_current_context().invoke(_channel_connect)
+            continue
+
+        choices: list = channels + [
+            questionary.Choice(title="none  (deny all irreversible actions)", value="none"),
+            questionary.Choice(title="disable gate", value="disable gate"),
+        ]
+        channel_choice = alfard_select(
+            "where should approval requests be sent?",
+            choices,
+        )
+        if channel_choice is None:
+            return "none", False
+
+        if channel_choice != "disable gate":
+            return channel_choice, False
+
+        # disable gate warning + confirmation
+        console.print()
+        console.print(f"  [{p.warn}]WARNING: with the gate disabled this job will execute[/]")
+        console.print(f"  [{p.warn}]irreversible actions without any confirmation.[/]")
+        console.print(f"  [{p.fg_faint}]CRON_ALWAYS_GATE tools (send_email, delete_file, push_code,[/]")
+        console.print(f"  [{p.fg_faint}]etc.) are still denied unconditionally.[/]\n")
+        confirm_text = alfard_input(
+            "type 'I understand' to disable the gate",
+            hint="or press enter to keep it enabled",
+        ).strip()
+        if confirm_text == "I understand":
+            return "none", True
+        console.print(f"  [{p.fg_faint}]gate kept enabled — using 'none' (deny all irreversible).[/]")
+        return "none", False
+
+
 def _collect_schedule() -> str | None:
     """Interactive schedule picker. Returns a 5-field cron expression or None if cancelled."""
     schedule_type = alfard_select("when should this run?", [
@@ -296,32 +356,7 @@ def add(agent: str | None):
         )
 
     # Step 5: Approval
-    channel_choice = alfard_select(
-        "where should approval requests be sent?",
-        ["telegram", "slack", "none", "disable gate"],
-    )
-    if channel_choice is None:
-        console.print(f"[{p.fg_faint}]cancelled.[/]")
-        return
-
-    gate_disabled = False
-    approval_channel = channel_choice if channel_choice != "disable gate" else "none"
-
-    if channel_choice == "disable gate":
-        console.print()
-        console.print(f"  [{p.warn}]WARNING: with the gate disabled this job will execute[/]")
-        console.print(f"  [{p.warn}]irreversible actions without any confirmation.[/]")
-        console.print(f"  [{p.fg_faint}]CRON_ALWAYS_GATE tools (send_email, delete_file, push_code,[/]")
-        console.print(f"  [{p.fg_faint}]etc.) are still denied unconditionally.[/]\n")
-        confirm_text = alfard_input(
-            "type 'I understand' to disable the gate",
-            hint="or press enter to keep it enabled",
-        ).strip()
-        if confirm_text == "I understand":
-            gate_disabled = True
-        else:
-            console.print(f"  [{p.fg_faint}]gate kept enabled — using 'none' (deny all irreversible).[/]")
-            approval_channel = "none"
+    approval_channel, gate_disabled = _collect_approval_channel()
 
     # Step 6: Schedule
     cron_expr = _collect_schedule()

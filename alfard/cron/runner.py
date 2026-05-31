@@ -75,9 +75,11 @@ def _load_job_cfg(agent_name: str, job_name: str) -> dict:
 def _make_telegram_notifier(cfg: dict):
     from telegram import Bot
     from alfard.interfaces.telegram_notifier import TelegramNotifier
+    from alfard.paths import load_env
     import asyncio
     import threading
 
+    load_env()
     tg = cfg.get("telegram", {})
     token_env = tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN")
     token = os.environ.get(token_env)
@@ -109,7 +111,9 @@ def _make_telegram_notifier(cfg: dict):
 def _make_slack_notifier(cfg: dict):
     from slack_sdk import WebClient
     from alfard.interfaces.slack_notifier import SlackNotifier
+    from alfard.paths import load_env
 
+    load_env()
     sl = cfg.get("slack", {})
     token_env = sl.get("bot_token_env", "SLACK_BOT_TOKEN")
     token = os.environ.get(token_env)
