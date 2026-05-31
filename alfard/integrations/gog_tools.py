@@ -96,6 +96,23 @@ def gmail_thread_modify(thread_id: str, add_label: str = "", remove_label: str =
     return _run_gog(*args)
 
 
+def gmail_list_drafts(max_results: int = 20) -> str:
+    return _run_gog(
+        "gmail", "drafts", "list",
+        "--max", str(max_results),
+        "--json", "--no-input",
+    )
+
+
+def gmail_get_draft(draft_id: str) -> str:
+    # draft_id is the Gmail draft ID — distinct from the underlying message ID.
+    # Do NOT pass a draft ID to gmail_get_message; that endpoint takes a message ID.
+    return _run_gog(
+        "gmail", "drafts", "get", draft_id,
+        "--json", "--no-input", "--wrap-untrusted",
+    )
+
+
 def register_gmail_tools(registry: ToolRegistry) -> None:
     """Register Gmail tools using gogcli."""
     tools = [
@@ -145,6 +162,16 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
              "add_label": {"type": "string", "description": "Label to add"},
              "remove_label": {"type": "string", "description": "Label to remove"},
          }, "required": ["thread_id"]}),
+        ("gmail_list_drafts", "List email drafts",
+         gmail_list_drafts, True,
+         {"type": "object", "properties": {
+             "max_results": {"type": "integer", "description": "Max drafts to return"},
+         }}),
+        ("gmail_get_draft", "Get a draft's full content by draft ID",
+         gmail_get_draft, True,
+         {"type": "object", "properties": {
+             "draft_id": {"type": "string", "description": "Gmail draft ID (not message ID)"},
+         }, "required": ["draft_id"]}),
     ]
     for name, desc, fn, reversible, params in tools:
         try:

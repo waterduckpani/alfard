@@ -154,6 +154,8 @@ CATALOGUE: dict[str, dict] = {
             "gmail_search_messages",
             "gmail_list_labels",
             "gmail_get_thread",
+            "gmail_list_drafts",
+            "gmail_get_draft",
         ],
         "irreversible_tools": [
             "gmail_send_message",

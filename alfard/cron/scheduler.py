@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from tzlocal import get_localzone
 from alfard.agents.loader import AGENTS_DIR, list_agents
 from alfard.cron.parser import parse_schedule
 from alfard.cron.runner import run_job
@@ -20,7 +21,7 @@ def _make_scheduler(background=False):
     CRON_DB.parent.mkdir(parents=True, exist_ok=True)
     jobstores = {"default": SQLAlchemyJobStore(url=f"sqlite:///{CRON_DB}")}
     cls = BackgroundScheduler if background else BlockingScheduler
-    return cls(jobstores=jobstores)
+    return cls(jobstores=jobstores, timezone=get_localzone())
 
 def load_agent_crons(scheduler, agent_name: str) -> int:
     path = AGENTS_DIR / agent_name / CRONS_FILE
@@ -38,7 +39,7 @@ def load_agent_crons(scheduler, agent_name: str) -> int:
         except ValueError as e:
             print(f"[cron] skipping '{job_id}': {e}")
             continue
-        trigger = (CronTrigger(**parsed["kwargs"])
+        trigger = (CronTrigger(**parsed["kwargs"], timezone=get_localzone())
                    if parsed["trigger"] == "cron"
                    else IntervalTrigger(**parsed["kwargs"]))
         try:

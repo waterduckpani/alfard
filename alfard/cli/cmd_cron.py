@@ -79,64 +79,86 @@ _DOW = {
 }
 
 
-def _collect_approval_channel() -> tuple[str, bool]:
-    """Prompt for approval channel. Returns (approval_channel, gate_disabled).
+def _collect_slack_channel_id() -> str | None:
+    """Prompt for and validate a Slack channel ID. Returns None if cancelled."""
+    while True:
+        cid = alfard_input(
+            "Slack channel ID for cron output",
+            hint="e.g. C0123456789 — right-click channel → View channel details → Copy Channel ID",
+        ).strip()
+        if not cid:
+            return None
+        if cid.startswith("C") and len(cid) >= 9:
+            return cid
+        console.print(f"  [{p.warn}]⚠ That doesn't look like a valid Slack channel ID.[/]")
 
-    Only shows channels that are actually connected. If none are connected,
-    offers to connect one or skip. Always shows 'none' and 'disable gate'.
+
+def _collect_approval_channel() -> tuple[str | None, bool, str | None]:
+    """Prompt for approval channel. Returns (approval_channel, gate_disabled, slack_channel_id).
+
+    Channel is mandatory. If no channels are connected, prints a blocking error
+    and returns (None, False, None). The caller must treat None as cancellation.
+    'disable gate' still requires a channel — output is routed there even when
+    the gate is off.
     """
     import questionary
-    import click
-    from alfard.cli.cmd_channel import connected_channels, connect as _channel_connect
+    from alfard.cli.cmd_channel import connected_channels
 
-    while True:
-        channels = connected_channels()
+    channels = connected_channels()
 
-        if not channels:
-            console.print(
-                f"\n  [{p.warn}]⚠ No channels connected. "
-                f"Approval requests cannot be routed without a connected channel.[/]\n"
-            )
-            action = alfard_select(
-                "what would you like to do?",
-                [
-                    "connect a channel now",
-                    "skip (deny all irreversible actions)",
-                ],
-            )
-            if not action or action == "skip (deny all irreversible actions)":
-                return "none", False
-            click.get_current_context().invoke(_channel_connect)
-            continue
-
-        choices: list = channels + [
-            questionary.Choice(title="none  (deny all irreversible actions)", value="none"),
-            questionary.Choice(title="disable gate", value="disable gate"),
-        ]
-        channel_choice = alfard_select(
-            "where should approval requests be sent?",
-            choices,
-        )
-        if channel_choice is None:
-            return "none", False
-
-        if channel_choice != "disable gate":
-            return channel_choice, False
-
-        # disable gate warning + confirmation
+    if not channels:
         console.print()
-        console.print(f"  [{p.warn}]WARNING: with the gate disabled this job will execute[/]")
-        console.print(f"  [{p.warn}]irreversible actions without any confirmation.[/]")
-        console.print(f"  [{p.fg_faint}]CRON_ALWAYS_GATE tools (send_email, delete_file, push_code,[/]")
-        console.print(f"  [{p.fg_faint}]etc.) are still denied unconditionally.[/]\n")
-        confirm_text = alfard_input(
-            "type 'I understand' to disable the gate",
-            hint="or press enter to keep it enabled",
-        ).strip()
-        if confirm_text == "I understand":
-            return "none", True
-        console.print(f"  [{p.fg_faint}]gate kept enabled — using 'none' (deny all irreversible).[/]")
-        return "none", False
+        console.print(
+            f"  [{p.warn}]⚠ You need a connected channel to create a cron job. "
+            f"Cron jobs require a channel to send output and route approvals. "
+            f"Run [bold]alfard channel connect[/bold] first.[/]"
+        )
+        console.print()
+        return None, False, None
+
+    choices: list = channels + [
+        questionary.Choice(title="disable gate  (output still routed to channel)", value="disable gate"),
+    ]
+    channel_choice = alfard_select(
+        "where should approval requests be sent?",
+        choices,
+    )
+    if channel_choice is None:
+        return None, False, None
+
+    if channel_choice != "disable gate":
+        slack_channel_id: str | None = None
+        if channel_choice == "slack":
+            slack_channel_id = _collect_slack_channel_id()
+            if slack_channel_id is None:
+                return None, False, None
+        return channel_choice, False, slack_channel_id
+
+    # disable gate path — channel is still required for output routing
+    console.print()
+    console.print(f"  [{p.warn}]WARNING: with the gate disabled this job will execute[/]")
+    console.print(f"  [{p.warn}]irreversible actions without any confirmation.[/]")
+    console.print(f"  [{p.fg_faint}]CRON_ALWAYS_GATE tools (send_email, delete_file, push_code,[/]")
+    console.print(f"  [{p.fg_faint}]etc.) are still denied unconditionally.[/]\n")
+
+    channel = alfard_select("which channel should receive output?", channels)
+    if not channel:
+        return None, False, None
+
+    slack_channel_id = None
+    if channel == "slack":
+        slack_channel_id = _collect_slack_channel_id()
+        if slack_channel_id is None:
+            return None, False, None
+
+    confirm_text = alfard_input(
+        "type 'I understand' to disable the gate",
+        hint="or press enter to keep it enabled",
+    ).strip()
+    if confirm_text == "I understand":
+        return channel, True, slack_channel_id
+    console.print(f"  [{p.fg_faint}]gate kept enabled.[/]")
+    return channel, False, slack_channel_id
 
 
 def _collect_schedule() -> str | None:
@@ -356,7 +378,10 @@ def add(agent: str | None):
         )
 
     # Step 5: Approval
-    approval_channel, gate_disabled = _collect_approval_channel()
+    approval_channel, gate_disabled, slack_channel_id = _collect_approval_channel()
+    if not approval_channel:
+        console.print(f"[{p.fg_faint}]cancelled.[/]")
+        return
 
     # Step 6: Schedule
     cron_expr = _collect_schedule()
@@ -370,13 +395,19 @@ def add(agent: str | None):
     console.print(f"  [{p.fg_faint}]{'task':<12}[/] [{p.fg_em}]{task}[/]")
     if linked_skills:
         console.print(f"  [{p.fg_faint}]{'skills':<12}[/] [{p.fg_em}]{', '.join(linked_skills)}[/]")
+    approval_display = (
+        f"{approval_channel}  {slack_channel_id}"
+        if approval_channel == "slack" and slack_channel_id
+        else approval_channel
+    )
     if gate_disabled:
         console.print(
-            f"  [{p.fg_faint}]{'approval':<12}[/] [{p.warn}]gate disabled[/]"
+            f"  [{p.fg_faint}]{'approval':<12}[/] [{p.fg_em}]{approval_display}[/]"
+            f" [{p.warn}](gate disabled)[/]"
             f" [{p.fg_faint}](CRON_ALWAYS_GATE still enforced)[/]"
         )
     else:
-        console.print(f"  [{p.fg_faint}]{'approval':<12}[/] [{p.fg_em}]{approval_channel}[/]")
+        console.print(f"  [{p.fg_faint}]{'approval':<12}[/] [{p.fg_em}]{approval_display}[/]")
     console.print(f"  [{p.fg_faint}]{'schedule':<12}[/] [{p.fg_em}]{cron_expr}[/]")
     console.print()
 
@@ -392,6 +423,8 @@ def add(agent: str | None):
         "enabled": True,
         "approval_channel": approval_channel,
     }
+    if slack_channel_id:
+        job["slack_channel_id"] = slack_channel_id
     if gate_disabled:
         job["approval_gate"] = "disabled"
     jobs.append(job)

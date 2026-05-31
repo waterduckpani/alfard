@@ -142,3 +142,7 @@ class ApprovalGate:
             )
 
         return approved
+
+
+class ToolDeniedError(Exception):
+    """Raised by pre_tool_hook when a tool is blocked by the cron runner gate."""

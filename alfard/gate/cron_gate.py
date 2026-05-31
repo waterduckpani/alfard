@@ -7,8 +7,6 @@ import logging
 import threading
 import uuid
 
-import discord
-
 _log = logging.getLogger("alfard.cron_gate")
 
 _TIMEOUT = 1800  # 30 minutes
@@ -45,58 +43,6 @@ CRON_ALWAYS_GATE: set[str] = {
     "execute_code",
     "run_script",
 }
-
-
-# ---------------------------------------------------------------------------
-# Discord approval view
-# ---------------------------------------------------------------------------
-
-class _CronApprovalView(discord.ui.View):
-    """Discord Approve / Reject buttons for a single cron gate request."""
-
-    def __init__(self, gate: "CronChannelGate", action_id: str, owner_id: int) -> None:
-        super().__init__(timeout=_TIMEOUT)
-        self._gate = gate
-        self._action_id = action_id
-        self.owner_id = owner_id
-        self._message: discord.Message | None = None
-
-    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅")
-    async def approve(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not authorised.", ephemeral=True)
-            return
-        self._gate.resolve(self._action_id, True)
-        self.stop()
-        await interaction.response.edit_message(content="✅ Approved", embed=None, view=None)
-
-    @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, emoji="❌")
-    async def reject(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not authorised.", ephemeral=True)
-            return
-        self._gate.resolve(self._action_id, False)
-        self.stop()
-        await interaction.response.edit_message(content="❌ Rejected", embed=None, view=None)
-
-    async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True
-        if self._message is not None:
-            try:
-                embed = discord.Embed(
-                    title="Cron approval required",
-                    description="⏱ Timed out — action rejected",
-                    color=0x5865F2,
-                )
-                await self._message.edit(embed=embed, view=self)
-            except Exception:
-                pass
-        self._gate.resolve(self._action_id, False)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +126,9 @@ class CronChannelGate:
     def reset_job(self) -> None:
         pass
 
+    def is_always_gated(self, tool_name: str) -> bool:
+        return tool_name in CRON_ALWAYS_GATE
+
     def resolve(self, action_id: str, approved: bool) -> None:
         """Called by the channel bot handler when the user taps Approve or Reject."""
         with self._lock:
@@ -190,6 +139,59 @@ class CronChannelGate:
     # ------------------------------------------------------------------
     # Transport dispatch
     # ------------------------------------------------------------------
+
+    def send_message(self, text: str) -> bool:
+        """Send a plain text message to the configured channel (job summary)."""
+        from alfard.interfaces.telegram_notifier import TelegramNotifier
+        from alfard.interfaces.discord_notifier import DiscordNotifier
+        from alfard.interfaces.slack_notifier import SlackNotifier
+
+        if isinstance(self._notifier, TelegramNotifier):
+            return self._send_telegram_message(text)
+        if isinstance(self._notifier, DiscordNotifier):
+            return self._send_discord_message(text)
+        if isinstance(self._notifier, SlackNotifier):
+            return self._send_slack_message(text)
+        _log.error("send_message: unsupported notifier type %s", type(self._notifier).__name__)
+        return False
+
+    def _send_telegram_message(self, text: str) -> bool:
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._notifier._bot.send_message(
+                    chat_id=self._notifier._chat_id,
+                    text=text,
+                ),
+                self._notifier._loop,
+            )
+            future.result(timeout=10)
+            return True
+        except Exception as exc:
+            _log.error("send_message telegram: %s", exc)
+            return False
+
+    def _send_discord_message(self, text: str) -> bool:
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._notifier._channel.send(text),
+                self._notifier._loop,
+            )
+            future.result(timeout=10)
+            return True
+        except Exception as exc:
+            _log.error("send_message discord: %s", exc)
+            return False
+
+    def _send_slack_message(self, text: str) -> bool:
+        try:
+            self._notifier.client.chat_postMessage(
+                channel=self._notifier.channel,
+                text=text,
+            )
+            return True
+        except Exception as exc:
+            _log.error("send_message slack: %s", exc)
+            return False
 
     def _send(self, action_id: str, tool_name: str, arguments: dict, source: str) -> bool:
         from alfard.interfaces.telegram_notifier import TelegramNotifier
@@ -255,6 +257,57 @@ class CronChannelGate:
         arguments: dict,
         source: str,
     ) -> bool:
+        try:
+            import discord
+        except ImportError:
+            _log.warning("discord.py is not installed — Discord cron gate unavailable")
+            return False
+
+        class _CronApprovalView(discord.ui.View):
+            def __init__(self, gate, action_id: str, owner_id: int) -> None:
+                super().__init__(timeout=_TIMEOUT)
+                self._gate = gate
+                self._action_id = action_id
+                self.owner_id = owner_id
+                self._message = None
+
+            @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅")
+            async def approve(
+                self, interaction: discord.Interaction, button: discord.ui.Button
+            ) -> None:
+                if interaction.user.id != self.owner_id:
+                    await interaction.response.send_message("Not authorised.", ephemeral=True)
+                    return
+                self._gate.resolve(self._action_id, True)
+                self.stop()
+                await interaction.response.edit_message(content="✅ Approved", embed=None, view=None)
+
+            @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, emoji="❌")
+            async def reject(
+                self, interaction: discord.Interaction, button: discord.ui.Button
+            ) -> None:
+                if interaction.user.id != self.owner_id:
+                    await interaction.response.send_message("Not authorised.", ephemeral=True)
+                    return
+                self._gate.resolve(self._action_id, False)
+                self.stop()
+                await interaction.response.edit_message(content="❌ Rejected", embed=None, view=None)
+
+            async def on_timeout(self) -> None:
+                for item in self.children:
+                    item.disabled = True
+                if self._message is not None:
+                    try:
+                        embed = discord.Embed(
+                            title="Cron approval required",
+                            description="⏱ Timed out — action rejected",
+                            color=0x5865F2,
+                        )
+                        await self._message.edit(embed=embed, view=self)
+                    except Exception:
+                        pass
+                self._gate.resolve(self._action_id, False)
+
         args_text = json.dumps(arguments, indent=2)[:900]
         embed = discord.Embed(title="Cron approval required", color=0x5865F2)
         embed.add_field(name="Job",       value=f"`{self._job_name}`",       inline=True)

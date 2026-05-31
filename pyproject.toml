@@ -23,6 +23,7 @@ dependencies = [
     "questionary",
     "art",
     "ddgs",
+    "tzlocal>=4.0",
     "cryptography>=42.0.0",
     "keyring>=25.0.0",
     "python-telegram-bot>=20.0",

@@ -250,6 +250,31 @@ class TerminalChannel(BaseChannel):
     def stop(self) -> None:
         self._orchestrator.stop()
 
+    def post_cron_output(
+        self,
+        agent_name: str,
+        job_name: str,
+        run_ts: str,
+        task: str,
+        output: str,
+        status: str = "completed",
+    ) -> str | None:
+        from alfard.cron import run_registry
+        print(f"\n── cron: {job_name} ──\n{output}\n")
+        run_registry.register_run(
+            job_name=job_name,
+            agent_name=agent_name,
+            run_ts=run_ts,
+            channel="terminal",
+            message_id="terminal",
+            task=task,
+            status=status,
+        )
+        return "terminal"
+
+    def get_cron_run_from_event(self, event: dict) -> dict | None:
+        return None
+
     def notify_memory_write(self, entry: dict, ui: Optional[_ChatUI] = None) -> None:
         mem_type = entry.get("type", "fact")
         content = entry.get("content", "")

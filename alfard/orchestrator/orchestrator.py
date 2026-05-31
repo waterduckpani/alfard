@@ -9,7 +9,7 @@ from alfard.tools.registry import ToolRegistry
 from alfard.tools.classifier import classify, REVERSIBLE
 from alfard.tools.sanitizer import sanitize
 from alfard.audit.logger import AuditLogger
-from alfard.gate.approval import ApprovalGate
+from alfard.gate.approval import ApprovalGate, ToolDeniedError
 from alfard.sandbox.executor import SandboxExecutor
 from alfard.integrations.credentials import CredentialsManager
 from rich import print as rprint
@@ -69,6 +69,7 @@ class Orchestrator:
         self._guide_text: str = ""
         self._stop_event = threading.Event()
         self._search_tool_calls: int = 0  # loop-protection counter
+        self.pre_tool_hook = None  # callable(tool_name, arguments) — set by runner for cron
 
     def signal_guide(self, text: str) -> None:
         """Thread-safe: inject user guidance at the next inter-step boundary."""
@@ -180,6 +181,13 @@ class Orchestrator:
                 source = "user_instruction" if self._user_triggered else "tool_result"
 
                 self._audit.log_tool_call(name, arguments, source)
+
+                if self.pre_tool_hook is not None:
+                    try:
+                        self.pre_tool_hook(name, arguments)
+                    except ToolDeniedError as exc:
+                        self._memory.add_tool_result(tool_call_id, f"Action denied: {exc}")
+                        continue
 
                 injection_intercepted = False
                 _web_injection_risk = (

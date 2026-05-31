@@ -2,7 +2,7 @@
 
 import json
 import yaml
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from alfard.paths import ALFARD_HOME
@@ -34,7 +34,7 @@ class AuditLogger:
         self._corrections_detected = 0
 
     def _write(self, event: dict) -> None:
-        event["timestamp"] = datetime.utcnow().isoformat() + "Z"
+        event["timestamp"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         if self.session_id:
             event["session_id"] = self.session_id
         self._fh.write(json.dumps(event) + "\n")
