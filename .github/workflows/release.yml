@@ -45,7 +45,7 @@ jobs:
         working-directory: npm
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          npm version $VERSION --no-git-tag-version --allow-same-version
+          npm pkg set version=$VERSION
 
       - name: Publish npm shim
         working-directory: npm
