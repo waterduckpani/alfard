@@ -5,6 +5,14 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.18] — 2026-06-01
+
+### Added
+- npx install shim — users can now install and launch Alfard with a single command: npx alfard-cli
+- Automated release workflow — pushing a version tag now automatically publishes to PyPI, npm, and creates a GitHub Release with changelog notes
+
+---
+
 ## [0.1.17] — 2026-06-01
 
 ### Added
