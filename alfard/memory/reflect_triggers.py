@@ -4,6 +4,7 @@ Two triggers, both per-agent, both in-memory only (not persisted to brain.db).
 """
 
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,7 @@ def start_idle_watcher(
     memory_manager: "MemoryManager",
     llm_client: "LLMClient",
     audit_log_path: Path,
+    notify_callback: Callable[[int], None] | None = None,
 ) -> None:
     """Start a background thread that fires reflect after IDLE_MINUTES of silence."""
     stop_event = threading.Event()
@@ -82,7 +84,9 @@ def start_idle_watcher(
                         _msg_counters[agent_name] = 0
                         _last_msg_times[agent_name] = datetime.utcnow()
                     try:
-                        memory_manager.run_reflect(llm_client, audit_log_path, force=True)
+                        n = memory_manager.run_reflect(llm_client, audit_log_path, force=True)
+                        if n and notify_callback:
+                            notify_callback(n)
                     except Exception:
                         pass
 

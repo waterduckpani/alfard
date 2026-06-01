@@ -23,6 +23,7 @@ from telegram.ext import (
 from alfard.memory.notifications import drain as _drain_notifications
 from alfard.memory import reflect_triggers
 from alfard.paths import ALFARD_HOME, load_env
+from alfard.utils.md_convert import to_telegram_html
 
 SESSION_TIMEOUT_HOURS = 4
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
@@ -120,13 +121,28 @@ class AlfardTelegramBot:
             self._first_message[chat_id] = True
             self._session_last_active[chat_id] = time.time()
             self._message_counts[chat_id] = 0
-            _, audit, _, loader, _ = session
+            orchestrator, audit, _, loader, _ = session
+
+            def _notify_reflect(n: int, _cid: int = chat_id) -> None:
+                import asyncio
+                loop = self._loop
+                bot = self._app.bot if self._app else None
+                if bot is None or loop is None:
+                    return
+                text = f"_💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:_ `alfard memory review`"
+                asyncio.run_coroutine_threadsafe(
+                    bot.send_message(chat_id=_cid, text=text, parse_mode="Markdown"),
+                    loop,
+                )
+
             reflect_triggers.start_idle_watcher(
                 self.agent_name,
                 loader.memory_manager,
-                session[0]._llm,
+                orchestrator._llm,
                 audit.log_path,
+                notify_callback=_notify_reflect,
             )
+            orchestrator._on_reflect = _notify_reflect
         return self._sessions[chat_id]
 
     def _evict_stale_sessions(self) -> None:
@@ -214,11 +230,11 @@ class AlfardTelegramBot:
 
         lock = self._locks[chat_id]
 
-        def _reply(msg: str) -> None:
+        def _reply(msg: str, parse_mode: str | None = None) -> None:
             if self._loop is None or self._app is None:
                 return
             asyncio.run_coroutine_threadsafe(
-                self._app.bot.send_message(chat_id=chat_id, text=msg),
+                self._app.bot.send_message(chat_id=chat_id, text=msg, parse_mode=parse_mode),
                 self._loop,
             ).result(timeout=30)
 
@@ -264,7 +280,10 @@ class AlfardTelegramBot:
 
             agent_name = getattr(orchestrator, "_agent_name", self.agent_name)
             try:
-                _reply(f"🤖 {agent_name} · {job_name}\n\n{response}")
+                _reply(
+                    f"🤖 {agent_name} · {job_name}\n\n{to_telegram_html(response)}",
+                    parse_mode="HTML",
+                )
             except Exception as exc:
                 _log.error(
                     "failed to send cron output job=%s: %s", job_name, exc
@@ -296,6 +315,7 @@ class AlfardTelegramBot:
         chat_id: int,
         text: str,
         reply_fn,
+        reply_html_fn=None,
     ) -> None:
         self._session_last_active[chat_id] = time.time()
         self._evict_stale_sessions()
@@ -326,7 +346,8 @@ class AlfardTelegramBot:
                 except Exception:
                     pass
 
-            reply_fn(response)
+            _send_html = reply_html_fn or reply_fn
+            _send_html(to_telegram_html(response))
 
             for entry in _drain_notifications():
                 try:
@@ -364,9 +385,16 @@ class AlfardTelegramBot:
                 loop,
             ).result(timeout=30)
 
+        def _reply_html(msg: str) -> None:
+            asyncio.run_coroutine_threadsafe(
+                context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="HTML"),
+                loop,
+            ).result(timeout=30)
+
         threading.Thread(
             target=self._process_message,
             args=(chat_id, text, _reply),
+            kwargs={"reply_html_fn": _reply_html},
             daemon=True,
         ).start()
 

@@ -16,6 +16,7 @@ from alfard.memory.notifications import drain as _drain_notifications
 from alfard.memory import reflect_triggers
 from alfard.memory.tools import _propose_memory
 from alfard.paths import ALFARD_HOME, load_env
+from alfard.utils.md_convert import to_discord
 
 SESSION_TIMEOUT_HOURS = 4
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
@@ -131,13 +132,24 @@ class AlfardDiscordBot(discord.Client):
             self._first_message[key] = True
             self._session_last_active[key] = time.time()
             self._message_counts[key] = 0
-            _, audit, _, loader, _ = session
+            orchestrator, audit, _, loader, _ = session
+
+            def _notify_reflect(n: int, _ch=channel, _loop=loop) -> None:
+                import asyncio
+                text = f"💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with: `alfard memory review`"
+                try:
+                    asyncio.run_coroutine_threadsafe(_ch.send(text), _loop)
+                except Exception:
+                    pass
+
             reflect_triggers.start_idle_watcher(
                 self.agent_name,
                 loader.memory_manager,
-                session[0]._llm,
+                orchestrator._llm,
                 audit.log_path,
+                notify_callback=_notify_reflect,
             )
+            orchestrator._on_reflect = _notify_reflect
         return self._sessions[key]
 
     def _evict_stale_sessions(self) -> None:
@@ -290,9 +302,10 @@ class AlfardDiscordBot(discord.Client):
                     pass
 
             agent_name = getattr(orchestrator, "_agent_name", self.agent_name)
+            converted = to_discord(response)
             embed = discord.Embed(
                 title=f"🤖 {agent_name} · {job_name}",
-                description=(response[:3900] + "…") if len(response) > 3900 else response,
+                description=(converted[:3900] + "…") if len(converted) > 3900 else converted,
                 color=0x5865F2,
             )
             try:
@@ -366,7 +379,7 @@ class AlfardDiscordBot(discord.Client):
                 except Exception:
                     pass
 
-            reply_fn(response)
+            reply_fn(to_discord(response))
 
             for entry in _drain_notifications():
                 try:

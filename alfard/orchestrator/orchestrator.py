@@ -70,6 +70,7 @@ class Orchestrator:
         self._stop_event = threading.Event()
         self._search_tool_calls: int = 0  # loop-protection counter
         self.pre_tool_hook = None  # callable(tool_name, arguments) — set by runner for cron
+        self._on_reflect = None  # callable(n_proposals) — set by interfaces for reflect notifications
 
     def signal_guide(self, text: str) -> None:
         """Thread-safe: inject user guidance at the next inter-step boundary."""
@@ -332,7 +333,9 @@ class Orchestrator:
 
         if count > 0 and count % 10 == 0:
             try:
-                self._memory_manager.run_reflect(self._llm, self._audit.log_path)
+                n = self._memory_manager.run_reflect(self._llm, self._audit.log_path)
+                if n and self._on_reflect:
+                    self._on_reflect(n)
             except Exception:
                 pass
 

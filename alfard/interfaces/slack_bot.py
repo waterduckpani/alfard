@@ -20,6 +20,7 @@ import yaml
 from alfard.memory.notifications import drain as _drain_notifications
 from alfard.memory import reflect_triggers
 from alfard.paths import load_env, ALFARD_HOME
+from alfard.utils.md_convert import to_slack
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
@@ -78,21 +79,6 @@ def _format_memory_notification(entry: dict) -> str:
         label = mem_type
     return f'_{label} · "{truncated}"_'
 
-
-def _to_slack_mrkdwn(text: str) -> str:
-    """Convert Markdown to Slack mrkdwn format."""
-    import re
-    # **bold** → *bold*
-    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
-    # __bold__ → *bold*
-    text = re.sub(r'__(.+?)__', r'*\1*', text)
-    # *italic* or _italic_ → _italic_
-    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
-    # ### heading → *heading*
-    text = re.sub(r'^#{1,3}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
-    # - bullet → • bullet
-    text = re.sub(r'^- ', '• ', text, flags=re.MULTILINE)
-    return text
 
 
 class AlfardSlackBot:
@@ -165,12 +151,24 @@ class AlfardSlackBot:
             self._session_last_active[channel] = time.time()
             self._message_counts[channel] = 0
             orchestrator, audit, notifier, loader = self._sessions[channel]
+
+            def _notify_reflect(n: int, _ch: str = channel) -> None:
+                try:
+                    self.web_client.chat_postMessage(
+                        channel=_ch,
+                        text=f"_💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:_ `alfard memory review`",
+                    )
+                except Exception:
+                    pass
+
             reflect_triggers.start_idle_watcher(
                 self.agent_name,
                 loader.memory_manager,
                 orchestrator._llm,
                 audit.log_path,
+                notify_callback=_notify_reflect,
             )
+            orchestrator._on_reflect = _notify_reflect
         return self._sessions[channel]
 
     def _evict_stale_sessions(self) -> None:
@@ -290,7 +288,7 @@ class AlfardSlackBot:
             try:
                 self.web_client.chat_postMessage(
                     channel=channel,
-                    text=f"*{status_icon} {job_name}*\n{summary}",
+                    text=f"*{status_icon} {job_name}*\n{to_slack(summary)}",
                 )
             except Exception as exc:
                 _log.error(
@@ -412,7 +410,7 @@ class AlfardSlackBot:
             # Post response
             self.web_client.chat_postMessage(
                 channel=channel,
-                text=_to_slack_mrkdwn(response)
+                text=to_slack(response)
             )
 
             # Emit memory-write notifications buffered during this turn
@@ -434,7 +432,7 @@ class AlfardSlackBot:
                     self._message_counts[channel] = self._message_counts.get(channel, 0) + 1
                     self.web_client.chat_postMessage(
                         channel=channel,
-                        text=_to_slack_mrkdwn(queued_response)
+                        text=to_slack(queued_response)
                     )
                 except Exception:
                     pass

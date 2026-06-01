@@ -5,6 +5,21 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.17] — 2026-06-01
+
+### Added
+- md_convert.py — shared markdown converter module with to_slack(), to_telegram_html(), to_discord()
+- Slack responses now render bold, italic, bullets, headings, and links correctly using mrkdwn format
+- Telegram responses now render with parse_mode=HTML — bold, italic, code blocks, links all formatted
+- Discord responses sanitised — headings flattened to bold, everything else passes through native rendering
+- Reflect idle and session-count triggers now notify user in Slack, Telegram, and Discord when proposals are generated
+
+### Fixed
+- Raw markdown symbols (**bold**, ###, -bullets) no longer appear as literal text in Slack or Telegram
+- Telegram HTML special characters escaped correctly — bare & < > won't silently drop messages
+
+---
+
 ## [0.1.16] — 2026-06-01
 
 ### Added
