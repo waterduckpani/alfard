@@ -3,6 +3,7 @@
 <div align="center">
 
 [![PyPI version](https://img.shields.io/pypi/v/alfard?color=black&label=alfard)](https://pypi.org/project/alfard/)
+[![npm](https://img.shields.io/npm/v/alfard-cli?color=black&label=npm)](https://www.npmjs.com/package/alfard-cli)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-black)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-black)]()
@@ -61,7 +62,24 @@ Connect **GitHub + Notion**. Tell your agent: *"summarise every PR merged to mai
 
 ## Quick start
 
-### Step 1 — Install Python 3.11+
+### The fast way (recommended)
+
+If you have Node.js installed:
+
+```bash
+npx alfard-cli
+```
+
+That's it. Alfard installs itself and launches immediately. No Python setup, no pipx, nothing else.
+
+> Don't have Node.js? Download it from [nodejs.org](https://nodejs.org) — it takes 2 minutes. Or use the manual install below.
+
+---
+
+### Manual install
+
+<details>
+<summary>Step 1 — Install Python 3.11+</summary>
 
 <details>
 <summary><strong>🍎 macOS</strong></summary>
@@ -116,9 +134,10 @@ python3 --version   # should say Python 3.11.x or higher
 
 </details>
 
----
+</details>
 
-### Step 2 — Install pipx
+<details>
+<summary>Step 2 — Install pipx</summary>
 
 `pipx` installs Python CLI tools in their own isolated environment. It's the cleanest way to install Alfard.
 
@@ -158,15 +177,16 @@ Then **close and reopen your terminal**, or run `source ~/.bashrc`.
 
 </details>
 
----
+</details>
 
-### Step 3 — Install Alfard
+<details>
+<summary>Step 3 — Install Alfard</summary>
 
 ```bash
 pipx install alfard
 ```
 
-That's it. `alfard` is now a global command on your system.
+</details>
 
 ---
 
