@@ -5,6 +5,13 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.19] — 2026-06-01
+
+### Fixed
+- Version sync — PyPI and npm now both at 0.1.19
+
+---
+
 ## [0.1.18] — 2026-06-01
 
 ### Added
