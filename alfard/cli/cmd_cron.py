@@ -1,14 +1,19 @@
 """CLI commands for managing and running agent cron jobs."""
 
+import json
 import re
+import socket
+import sys
 import yaml
 import click
 from pathlib import Path
+from zoneinfo import available_timezones
 from rich import box
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from tzlocal import get_localzone
 from alfard.agents.loader import list_agents, AgentLoader, AGENTS_DIR
 from alfard.cron.parser import parse_schedule
 from alfard.cli.theme import p, c, console, capabilities
@@ -18,6 +23,47 @@ from alfard.cli.components import (
 )
 
 CRONS_FILE = "crons.yaml"
+
+
+def _send_cron_run_ipc(agent: str, name: str, task: str) -> dict | None:
+    """Send a cron_run command to the daemon socket. Returns the response dict or None.
+
+    Returns None when the daemon is not running (no socket) or the connection fails.
+    """
+    base = AGENTS_DIR / agent
+    if sys.platform == "win32":
+        port_file = base / "agent.port"
+        if not port_file.exists():
+            return None
+        try:
+            port = int(port_file.read_text().strip())
+        except (OSError, ValueError):
+            return None
+        addr_family = socket.AF_INET
+        address: tuple | str = ("127.0.0.1", port)
+    else:
+        sock_path = base / "agent.sock"
+        if not sock_path.exists():
+            return None
+        addr_family = socket.AF_UNIX
+        address = str(sock_path)
+
+    try:
+        with socket.socket(addr_family, socket.SOCK_STREAM) as s:
+            s.settimeout(300.0)
+            s.connect(address)
+            payload = json.dumps({"cmd": "cron_run", "name": name, "task": task}) + "\n"
+            s.sendall(payload.encode())
+            buf = b""
+            while b"\n" not in buf:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            line = buf.split(b"\n")[0]
+            return json.loads(line) if line else None
+    except Exception:
+        return None
 
 
 def _load_crons(agent: str) -> list[dict]:
@@ -33,6 +79,7 @@ def _save_crons(agent: str, jobs: list[dict]) -> None:
     path = AGENTS_DIR / agent / CRONS_FILE
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump({"jobs": jobs}, f, default_flow_style=False, allow_unicode=True)
+    path.touch()  # ensure mtime is updated so the scheduler watcher picks up the change
 
 
 def _slug(text: str, max_len: int = 48) -> str:
@@ -216,6 +263,26 @@ def _collect_schedule() -> str | None:
     return expr
 
 
+def _collect_timezone() -> str:
+    """Prompt for a schedule timezone. Detects local timezone as default.
+
+    Retries on invalid input. Always returns a valid IANA timezone name.
+    """
+    detected = str(get_localzone())
+    valid_tzs = available_timezones()
+    while True:
+        tz_input = alfard_input(
+            "schedule timezone",
+            hint=f"detected: {detected} — press enter to confirm",
+            default="",
+        ).strip()
+        if not tz_input:
+            return detected
+        if tz_input in valid_tzs:
+            return tz_input
+        console.print(f"  [{p.warn}]⚠ Unknown timezone '{tz_input}'. Try e.g. 'America/New_York'.[/]")
+
+
 def _set_enabled(agent: str, name: str, enabled: bool) -> None:
     if agent not in list_agents():
         console.print(error_block(
@@ -389,6 +456,9 @@ def add(agent: str | None):
         console.print(f"[{p.fg_faint}]cancelled.[/]")
         return
 
+    # Step 6.5: Timezone
+    timezone = _collect_timezone()
+
     # Step 7: Confirm
     console.print()
     console.print(f"  [{p.fg_faint}]{'name':<12}[/] [{p.fg_em}]{name}[/]")
@@ -409,6 +479,7 @@ def add(agent: str | None):
     else:
         console.print(f"  [{p.fg_faint}]{'approval':<12}[/] [{p.fg_em}]{approval_display}[/]")
     console.print(f"  [{p.fg_faint}]{'schedule':<12}[/] [{p.fg_em}]{cron_expr}[/]")
+    console.print(f"  [{p.fg_faint}]{'timezone':<12}[/] [{p.fg_em}]{timezone}[/]")
     console.print()
 
     if not alfard_confirm("add this job?"):
@@ -419,6 +490,7 @@ def add(agent: str | None):
         "name": name,
         "task": task,
         "schedule": cron_expr,
+        "timezone": timezone,
         "linked_skills": linked_skills,
         "enabled": True,
         "approval_channel": approval_channel,
@@ -560,15 +632,18 @@ def list_jobs(agent: str | None):
         tbl.add_column(no_wrap=True)
         tbl.add_column(no_wrap=True)
         tbl.add_column(no_wrap=True)
+        tbl.add_column(no_wrap=True)
 
         for j in jobs:
             enabled = j.get("enabled", True)
             status_dot = dot("ok") if enabled else dot("queued")
             name_markup = c("fg_em", j["name"]) if enabled else c("fg_faint", j["name"])
+            tz = j.get("timezone", "")
             tbl.add_row(
                 Text.from_markup(status_dot),
                 Text.from_markup(name_markup),
                 Text.from_markup(c("fg_dim", j.get("schedule", ""))),
+                Text.from_markup(c("fg_faint", tz)),
             )
 
         console.print(Panel(tbl, title=f"[{p.fg_dim}]{ag}[/]",
@@ -695,9 +770,24 @@ def now(agent: str | None, name: str | None):
         ))
         raise SystemExit(1)
     console.print(f"[{p.fg_dim}]running '{name}' for {agent}...[/]")
-    from alfard.cron.runner import run_job
-    response = run_job(agent, job["task"], name)
-    console.print(Markdown(response))
+
+    ipc_resp = _send_cron_run_ipc(agent, name, job["task"])
+    if ipc_resp is not None and "error" not in ipc_resp:
+        result = ipc_resp.get("result")
+        if result == "injected":
+            console.print(f"[{p.fg_dim}]job injected into channel via daemon.[/]")
+        elif result:
+            console.print(Markdown(result))
+        else:
+            console.print(f"[{p.fg_dim}]job completed via daemon.[/]")
+        return
+
+    from alfard.cron.scheduler import _fire_cron_job
+    response = _fire_cron_job(agent, name, job["task"])
+    if response is not None:
+        console.print(Markdown(response))
+    else:
+        console.print(f"[{p.fg_dim}]job injected into channel.[/]")
 
 
 @cron.command(name="run")

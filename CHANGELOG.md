@@ -5,6 +5,36 @@ Versioning: https://semver.org
 
 ---
 
+## [0.1.16] — 2026-06-01
+
+### Added
+- Cron is now a scheduled prompt — fires into a live channel session (Slack, Telegram, Discord) identical to a user typing the message. Sessions stay alive for follow-up replies.
+- IPC routing for "run job now" — CLI force-run goes through the daemon via Unix socket, routing through the live bot. Falls back to terminal if no daemon.
+- Per-job cron session isolation — each job gets its own clean session key (channel:cron:job_name), separate from the main chat session.
+- Approval gate works through live session — gmail_send_message and other irreversible tools trigger Slack/Telegram/Discord approval buttons natively via the session's ApprovalGate.
+- Scheduler hot-reload — jobs added or removed via CLI are picked up within 30 seconds, no restart needed.
+- Per-job timezone — stored at creation time, displayed in cron list, passed correctly to APScheduler.
+- bot_registry.py — process-level registry mapping (agent_name, channel) to live bot instance.
+- Concise cron output — job summaries truncated to 500 chars, no verbose reasoning dumps.
+- Telegram cron support — cron jobs route to Telegram sessions correctly.
+- Discord cron support — same pattern.
+
+### Fixed
+- Scheduler cleared and reloaded from crons.yaml on every startup — stale deleted jobs no longer persist.
+- CRON_ALWAYS_GATE tool name corrected to gmail_send_message (was send_email).
+- Approval button handler now resolves cron sessions (channel:cron:job_name keys) correctly.
+- channel_not_found error fixed — notifier always uses raw channel ID, not session key.
+- All 8 issues from the cron audit report fixed.
+
+### Security
+- Irreversible tool calls in cron sessions require explicit human approval via channel button — same gate as interactive sessions.
+- Cron sessions isolated from main chat history.
+
+### Architecture
+- Deleted: CronChannelGate, _CronDenyGate, _CronPermissiveGate, _make_cron_gate, _make_slack_notifier, _make_discord_notifier, _make_telegram_notifier, _send_job_summary, _post_via_channel, _handle_cron_thread_reply, _handle_cron_reply, _active_gate, set_active_gate, get_active_gate — all replaced by live session routing.
+
+---
+
 ## [0.1.15] — 2026-05-29
 
 ### Added

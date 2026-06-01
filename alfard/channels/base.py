@@ -20,13 +20,8 @@ class BaseChannel(ABC):
 
     @abstractmethod
     def notify_memory_write(self, entry: dict) -> None:
-        """Emit a notification after a successful brain.db write.
+        """Emit a notification after a successful brain.db write."""
 
-        Called after the full agent reply has been sent so as not to interrupt
-        streaming. entry keys: type, content, source, valence, status.
-        """
-
-    @abstractmethod
     def post_cron_output(
         self,
         agent_name: str,
@@ -36,21 +31,21 @@ class BaseChannel(ABC):
         output: str,
         status: str = "completed",
     ) -> str | None:
-        """Post cron job output to this channel.
+        """Post cron job output to this channel. No-op by default.
 
-        Returns a message_id string that can be used to identify thread replies
-        later, or None if posting failed. Channel implementations call
-        run_registry.register_run() after a successful post.
+        Cron output is now delivered through the channel's live session via
+        inject_cron_message on the bot. This method is kept for backward
+        compatibility with any code that still calls it.
         """
+        return None
 
-    @abstractmethod
     def get_cron_run_from_event(self, event: dict) -> dict | None:
-        """Given an incoming message event from this channel, return the cron
-        run record if this message is a reply to a known cron run output.
+        """Return the cron run record for a reply event, or None.
 
-        Returns None if the event is not a cron reply. Uses
-        run_registry.lookup_run() or lookup_run_by_thread().
+        No longer used for routing — cron follow-ups go through the live
+        session automatically.
         """
+        return None
 
     def is_cron_reply(self, event: dict) -> bool:
         return self.get_cron_run_from_event(event) is not None

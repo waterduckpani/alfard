@@ -90,8 +90,14 @@ async def _handle_ipc_client(
     writer: asyncio.StreamWriter,
     queue: asyncio.Queue,
     on_activity,
+    agent_name: str,
 ) -> None:
-    """Accept one JSON-line request, queue it, return the JSON-line response."""
+    """Accept one JSON-line request, queue it, return the JSON-line response.
+
+    Supported commands:
+      {"task": "<prompt>"}                              — run a task via the orchestrator lane
+      {"cmd": "cron_run", "name": "<job>", "task": "<prompt>"}  — fire a cron job in-process
+    """
     try:
         raw = await asyncio.wait_for(reader.readline(), timeout=10.0)
         if not raw:
@@ -100,6 +106,32 @@ async def _handle_ipc_client(
             req = json.loads(raw.decode())
         except json.JSONDecodeError:
             writer.write(b'{"error": "invalid json"}\n')
+            await writer.drain()
+            return
+
+        cmd = req.get("cmd")
+
+        if cmd == "cron_run":
+            name = req.get("name", "").strip()
+            task = req.get("task", "").strip()
+            if not name or not task:
+                writer.write(b'{"error": "missing name or task"}\n')
+                await writer.drain()
+                return
+            on_activity()
+            loop = asyncio.get_running_loop()
+            try:
+                from alfard.cron.scheduler import _fire_cron_job
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, _fire_cron_job, agent_name, name, task),
+                    timeout=300.0,
+                )
+                resp = json.dumps({"result": result if result is not None else "injected"}) + "\n"
+            except asyncio.TimeoutError:
+                resp = json.dumps({"error": "timeout"}) + "\n"
+            except Exception as exc:
+                resp = json.dumps({"error": str(exc)}) + "\n"
+            writer.write(resp.encode())
             await writer.drain()
             return
 
@@ -229,7 +261,7 @@ async def _run_daemon(
             _s.bind(("127.0.0.1", 0))
             _port = _s.getsockname()[1]
         ipc_server = await asyncio.start_server(
-            lambda r, w: _handle_ipc_client(r, w, queue, on_activity),
+            lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name),
             "127.0.0.1",
             _port,
         )
@@ -240,7 +272,7 @@ async def _run_daemon(
         if sock_path.exists():
             sock_path.unlink()
         ipc_server = await asyncio.start_unix_server(
-            lambda r, w: _handle_ipc_client(r, w, queue, on_activity),
+            lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name),
             path=str(sock_path),
         )
         os.chmod(sock_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600

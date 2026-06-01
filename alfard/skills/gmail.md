@@ -16,12 +16,12 @@ If `gmail_list_messages` is not in your toolset, Gmail is not connected on this 
 
 **gmail_create_draft** — create a draft email. Always do this first when the user wants to send something, so they can review before sending.
 
-**gmail_send_message** — send an email. In interactive sessions, confirm with the user before sending. In cron/automated sessions, the approval gate handles confirmation — proceed directly to sending.
+**gmail_send_message** — send an email. Always confirm with the user before sending.
 
 **gmail_thread_modify** — archive, label, or move a thread. Use to organise mail on the user's behalf after confirmation.
 
 ## Rules
 
-- In interactive sessions, create a draft first; only send after the user says "yes, send it" or equivalent. In cron/automated sessions, the approval gate handles confirmation — proceed directly to sending.
+- Always create a draft first; only send after the user says "yes, send it" or equivalent.
 - Always search or list before using any message or thread id — never reuse ids from earlier in the conversation.
 - If a tool returns an error, show the full error message and ask the user how to proceed.

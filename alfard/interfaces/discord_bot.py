@@ -101,18 +101,19 @@ class AlfardDiscordBot(discord.Client):
         self._msg_interval = _read_msg_interval()
         self._loop: asyncio.AbstractEventLoop | None = None
 
+        from alfard.cron import bot_registry
+        bot_registry.register(agent_name, "discord", self)
         print(f"[discord] alfard bot initialised — agent: {agent_name}")
 
     # ── access control ───────────────────────────────────────────────────────
 
     def _is_guild_allowed(self, guild_id: Optional[int], author_id: int) -> bool:
         if self._allowed_guilds is None:
-            return True  # no guild restriction — all permitted
+            return True
         if guild_id is not None:
             return guild_id in self._allowed_guilds
-        # DM: guild_id is None and DISCORD_ALLOWED_GUILDS is set
         if self._allowed_dm_users is None:
-            return False  # guilds restricted but no DM allowlist — deny
+            return False
         return author_id in self._allowed_dm_users
 
     # ── session management ───────────────────────────────────────────────────
@@ -156,6 +157,169 @@ class AlfardDiscordBot(discord.Client):
                 self._message_counts,
             ):
                 d.pop(k, None)
+
+    # ── cron injection ───────────────────────────────────────────────────────
+
+    def inject_cron_message(self, job_cfg: dict, job_name: str, task: str) -> None:
+        """Inject a scheduled cron task into the live session for the cron channel.
+
+        Resolves the target channel from DISCORD_CRON_CHANNEL_ID, looks up the
+        channel object (to determine guild and get a Messageable), then runs the
+        task through the normal session path in a background thread.
+        """
+        if self._loop is None:
+            _log.error(
+                "inject_cron_message: bot not ready yet (loop not set) "
+                "job=%s agent=%s", job_name, self.agent_name,
+            )
+            return
+
+        channel_id_str = os.environ.get("DISCORD_CRON_CHANNEL_ID")
+        if not channel_id_str:
+            _log.error(
+                "inject_cron_message: DISCORD_CRON_CHANNEL_ID not set "
+                "job=%s agent=%s", job_name, self.agent_name,
+            )
+            return
+
+        try:
+            channel_id = int(channel_id_str)
+        except ValueError:
+            _log.error(
+                "inject_cron_message: invalid DISCORD_CRON_CHANNEL_ID %r job=%s",
+                channel_id_str, job_name,
+            )
+            return
+
+        # Resolve the channel object in the event loop, then spawn the injection thread.
+        async def _resolve_and_inject() -> None:
+            try:
+                ch = self.get_channel(channel_id)
+                if ch is None:
+                    ch = await self.fetch_channel(channel_id)
+            except Exception as exc:
+                _log.error(
+                    "inject_cron_message: could not resolve channel %s job=%s: %s",
+                    channel_id, job_name, exc,
+                )
+                return
+            threading.Thread(
+                target=self._run_cron_injection,
+                args=(ch, job_name, task),
+                daemon=True,
+            ).start()
+
+        asyncio.run_coroutine_threadsafe(_resolve_and_inject(), self._loop)
+
+    def _run_cron_injection(
+        self,
+        channel: discord.abc.Messageable,
+        job_name: str,
+        task: str,
+    ) -> None:
+        """Execute the cron task in the live session, then post output to the channel."""
+        from alfard.cron.context import build_cron_context
+        from alfard.cron.runner import _save_log
+        from alfard.gate.cron_gate import CRON_ALWAYS_GATE
+        from alfard.gate.approval import ToolDeniedError
+        from alfard.agents.loader import AGENTS_DIR
+
+        loop = self._loop
+        if loop is None:
+            return
+
+        guild_id = channel.guild.id if hasattr(channel, "guild") and channel.guild else 0
+        channel_id = channel.id
+        key: SessionKey = (guild_id, channel_id)
+
+        self._session_last_active[key] = time.time()
+        self._evict_stale_sessions()
+        orchestrator, audit, notifier, loader, registry = self._get_session(
+            key, channel, loop
+        )
+        lock = self._locks[key]
+
+        def _reply(msg: str) -> None:
+            asyncio.run_coroutine_threadsafe(
+                channel.send(msg), loop
+            ).result(timeout=30)
+
+        def _reply_embed(embed: discord.Embed) -> None:
+            asyncio.run_coroutine_threadsafe(
+                channel.send(embed=embed), loop
+            ).result(timeout=30)
+
+        with lock:
+            if self._first_message.get(key):
+                system_prompt = loader.build_system_prompt(query=task)
+                orchestrator._memory._system_prompt = system_prompt
+                self._first_message[key] = False
+
+            cron_text = build_cron_context(job_name, task) + "\n\n" + task
+
+            def _cron_hook(tool_name: str, arguments: dict) -> None:
+                if tool_name in CRON_ALWAYS_GATE:
+                    raise ToolDeniedError(
+                        f"{tool_name} blocked by CRON_ALWAYS_GATE"
+                    )
+
+            orchestrator.pre_tool_hook = _cron_hook
+
+            try:
+                _reply(f"🤖 {job_name} running...")
+            except Exception:
+                pass
+
+            try:
+                response = orchestrator.run(cron_text)
+            except Exception as exc:
+                _log.error(
+                    "cron injection error job=%s agent=%s: %s",
+                    job_name, self.agent_name, exc, exc_info=True,
+                )
+                response = f"Cron job '{job_name}' encountered an error: {exc}"
+            finally:
+                orchestrator.pre_tool_hook = None
+
+            self._message_counts[key] = self._message_counts.get(key, 0) + 1
+            if self._message_counts[key] >= 15:
+                self._message_counts[key] = 0
+                try:
+                    orchestrator.checkpoint_session()
+                except Exception:
+                    pass
+
+            agent_name = getattr(orchestrator, "_agent_name", self.agent_name)
+            embed = discord.Embed(
+                title=f"🤖 {agent_name} · {job_name}",
+                description=(response[:3900] + "…") if len(response) > 3900 else response,
+                color=0x5865F2,
+            )
+            try:
+                _reply_embed(embed)
+            except Exception as exc:
+                _log.error(
+                    "failed to post cron output job=%s: %s", job_name, exc
+                )
+
+            for entry in _drain_notifications():
+                try:
+                    _reply_embed(_memory_embed(entry))
+                except Exception:
+                    pass
+
+        try:
+            _save_log(AGENTS_DIR / agent_name, job_name, task, response, error=False)
+        except Exception:
+            pass
+
+        reflect_triggers.on_user_message(
+            self.agent_name,
+            loader.memory_manager,
+            orchestrator._llm,
+            audit.log_path,
+            self._msg_interval,
+        )
 
     # ── message processing (sync, runs in thread pool) ───────────────────────
 
@@ -240,7 +404,6 @@ class AlfardDiscordBot(discord.Client):
             await self._handle_command(message, guild_id)
             return
 
-        key: SessionKey = (guild_id or 0, message.channel.id)
         loop = asyncio.get_running_loop()
 
         def _reply(msg: str) -> None:
@@ -254,6 +417,8 @@ class AlfardDiscordBot(discord.Client):
                 message.channel.send(embed=embed),
                 loop,
             ).result(timeout=30)
+
+        key: SessionKey = (guild_id or 0, message.channel.id)
 
         async with message.channel.typing():
             await loop.run_in_executor(
@@ -335,6 +500,8 @@ class AlfardDiscordBot(discord.Client):
 
     def stop(self) -> None:
         """Signal the bot to stop cleanly."""
+        from alfard.cron import bot_registry
+        bot_registry.deregister(self.agent_name, "discord")
         if self._loop and not self._loop.is_closed():
             asyncio.run_coroutine_threadsafe(self.close(), self._loop)
         for k in list(self._sessions):

@@ -2,6 +2,7 @@
 can route thread replies back to the correct job context."""
 
 import sqlite3
+from datetime import datetime, timezone
 from alfard.cron.scheduler import CRON_DB
 
 _conn: sqlite3.Connection | None = None
@@ -24,7 +25,7 @@ def _get_conn() -> sqlite3.Connection:
                 thread_id   TEXT,
                 task        TEXT NOT NULL,
                 status      TEXT NOT NULL DEFAULT 'completed',
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL
             )
         """)
         _conn.commit()
@@ -47,13 +48,14 @@ def register_run(
 ) -> int:
     """Insert a cron run row and return the new id."""
     conn = _get_conn()
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
         INSERT INTO cron_runs
-            (job_name, agent_name, run_ts, channel, message_id, thread_id, task, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (job_name, agent_name, run_ts, channel, message_id, thread_id, task, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (job_name, agent_name, run_ts, channel, message_id, thread_id, task, status),
+        (job_name, agent_name, run_ts, channel, message_id, thread_id, task, status, created_at),
     )
     conn.commit()
     return cur.lastrowid
