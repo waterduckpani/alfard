@@ -1,0 +1,26 @@
+{
+  "name": "alfard-cli",
+  "version": "0.1.17",
+  "description": "Local AI agents, done right.",
+  "bin": {
+    "alfard": "bin/alfard.js"
+  },
+  "scripts": {},
+  "keywords": [
+    "ai",
+    "agents",
+    "cli",
+    "llm",
+    "mcp"
+  ],
+  "author": "waterduckpani",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waterduckpani/alfard.git"
+  },
+  "homepage": "https://github.com/waterduckpani/alfard",
+  "engines": {
+    "node": ">=16"
+  }
+}
