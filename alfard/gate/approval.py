@@ -1,6 +1,5 @@
 """Approval gate — intercepts irreversible tool calls and waits for explicit human confirmation before allowing execution."""
 
-import json
 import threading
 from typing import Callable, Optional
 import yaml
@@ -8,6 +7,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich import print as rprint
 from alfard.cli import theme
+from alfard.gate.formatter import action_summary, human_label
 from alfard.paths import ALFARD_HOME
 
 _CONFIG_PATH = ALFARD_HOME / "config" / "alfard.yaml"
@@ -20,8 +20,8 @@ class CLINotifier:
 
     def present(self, tool_name: str, arguments: dict, source: str) -> str:
         content = (
-            f"[{theme.DIM}]Tool:       {tool_name}\n"
-            f"Arguments:  {json.dumps(arguments, indent=2)}\n"
+            f"[{theme.DIM}]Tool:       {human_label(tool_name, arguments)}\n"
+            f"Action:     {action_summary(tool_name, arguments)}\n"
             f"Source:     {source}[/{theme.DIM}]"
         )
         rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))
@@ -65,8 +65,8 @@ class QueueNotifier:
         else:
             # Fallback for non-Application contexts (e.g. headless).
             content = (
-                f"[{theme.DIM}]Tool:       {tool_name}\n"
-                f"Arguments:  {json.dumps(arguments, indent=2)}\n"
+                f"[{theme.DIM}]Tool:       {human_label(tool_name, arguments)}\n"
+                f"Action:     {action_summary(tool_name, arguments)}\n"
                 f"Source:     {source}[/{theme.DIM}]"
             )
             rprint(Panel(content, title="Review required", border_style=theme.PANEL_GATE))

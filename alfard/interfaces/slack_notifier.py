@@ -6,6 +6,7 @@ import os
 import threading
 from slack_sdk import WebClient
 from alfard.cli import theme
+from alfard.gate.formatter import action_summary, human_label
 
 _log = logging.getLogger("alfard.slack")
 
@@ -30,7 +31,6 @@ class SlackNotifier:
         until the user clicks Approve or Reject.
         Returns "y" or "n".
         """
-        import json
         import uuid
 
         action_id = str(uuid.uuid4())
@@ -39,13 +39,7 @@ class SlackNotifier:
             self._pending[action_id] = event
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
-        args_text = json.dumps(arguments, indent=2)
-        if len(args_text) > 2900:
-            _log.warning(
-                "gate args truncated for tool=%s action=%s original_len=%d",
-                tool_name, action_id, len(args_text),
-            )
-            args_text = args_text[:2900] + "\n... (truncated)"
+        summary = action_summary(tool_name, arguments)
 
         blocks = [
             {
@@ -53,7 +47,7 @@ class SlackNotifier:
                 "text": {
                     "type": "mrkdwn",
                     "text": f"*Review required*\n\n"
-                            f"*Tool:* `{tool_name}`\n"
+                            f"*Tool:* `{human_label(tool_name, arguments)}`\n"
                             f"*Source:* {source_emoji} `{source}`"
                 }
             },
@@ -61,7 +55,7 @@ class SlackNotifier:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Arguments:*\n```{args_text}```"
+                    "text": f"*Action:* {summary}"
                 }
             },
             {

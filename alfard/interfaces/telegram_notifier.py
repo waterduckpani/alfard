@@ -3,10 +3,11 @@ messages and blocks until the user taps Approve or Reject."""
 
 import asyncio
 import html
-import json
 import logging
 import threading
 import uuid
+
+from alfard.gate.formatter import action_summary, human_label
 
 _log = logging.getLogger("alfard.telegram")
 
@@ -31,12 +32,12 @@ class TelegramNotifier:
             self._pending[action_id] = event
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
-        args_text = html.escape(json.dumps(arguments, indent=2))
+        summary = html.escape(action_summary(tool_name, arguments))
         text = (
             f"<b>Review required</b>\n\n"
-            f"<b>Tool:</b> <code>{html.escape(tool_name)}</code>\n"
+            f"<b>Tool:</b> <code>{html.escape(human_label(tool_name, arguments))}</code>\n"
             f"<b>Source:</b> {source_emoji} <code>{html.escape(source)}</code>\n\n"
-            f"<b>Arguments:</b>\n<pre>{args_text}</pre>"
+            f"{summary}"
         )
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Approve", callback_data=f"gate:{action_id}:approve"),
@@ -58,6 +59,7 @@ class TelegramNotifier:
             _log.error(
                 "gate_send_failure: could not send approval request for action=%s tool=%s: %s",
                 action_id, tool_name, exc,
+                exc_info=True,
             )
             with self._lock:
                 self._pending.pop(action_id, None)

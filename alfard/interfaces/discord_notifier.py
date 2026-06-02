@@ -2,12 +2,13 @@
 blocks until the user clicks one."""
 
 import asyncio
-import json
 import threading
 import uuid
 from typing import Optional
 
 import discord
+
+from alfard.gate.formatter import action_summary, human_label
 
 
 class _ApprovalView(discord.ui.View):
@@ -80,14 +81,12 @@ class DiscordNotifier:
             self._pending[action_id] = event
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
-        args_text = json.dumps(arguments, indent=2)[:900]
+        summary = action_summary(tool_name, arguments)
 
         embed = discord.Embed(title="Review required", color=0x5865F2)
-        embed.add_field(name="Tool", value=f"`{tool_name}`", inline=True)
+        embed.add_field(name="Tool", value=f"`{human_label(tool_name, arguments)}`", inline=True)
         embed.add_field(name="Source", value=f"{source_emoji} `{source}`", inline=True)
-        embed.add_field(
-            name="Arguments", value=f"```json\n{args_text}\n```", inline=False
-        )
+        embed.add_field(name="Action", value=summary, inline=False)
 
         view = _ApprovalView(self, action_id, self.owner_id)
         future = asyncio.run_coroutine_threadsafe(

@@ -314,9 +314,10 @@ class TerminalChannel(BaseChannel):
 
         def _render_approval_panel(tool_name: str, arguments: dict, source: str) -> None:
             """Called from the executor thread; renders the compact gate panel into the transcript."""
-            import json as _json
+            from alfard.gate.formatter import action_summary, human_label
+            summary = action_summary(tool_name, arguments)
             panel = Panel(
-                f"[{p.fg_dim}]{tool_name}  ·  {source}[/]",
+                f"[{p.fg_dim}]{human_label(tool_name, arguments)}  ·  {source}[/]\n[{p.fg_faint}]{summary}[/]",
                 title="approve?",
                 title_align="left",
                 border_style=p.fg_faint,
@@ -324,14 +325,6 @@ class TerminalChannel(BaseChannel):
                 padding=(0, 1),
             )
             ui.append(_rich_to_ansi(panel))
-            if arguments:
-                args_panel = Panel(
-                    f"[dim]{_json.dumps(arguments, indent=2)}[/dim]",
-                    border_style="dim",
-                    expand=False,
-                    padding=(0, 1),
-                )
-                ui.append(_rich_to_ansi(args_panel))
 
         notifier.set_on_present(_render_approval_panel)
 

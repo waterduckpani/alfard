@@ -5,6 +5,15 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.22 — 2026-06-02
+
+### Fixed
+- Approval gate: replaced raw JSON argument dumps with clean human-readable summaries across all channels (Telegram, Slack, Discord, CLI, terminal). New formatter module (alfard/gate/formatter.py) with human_label() and action_summary() — no JSON ever shown to the user
+- Telegram approval gate: "Message is too long" error resolved — long email bodies no longer included in approval messages
+- Gmail tools: approval prompt now shows To, Subject, and body character count instead of full email content
+
+---
+
 ## v0.1.21 — 2026-06-02
 
 ### Fixed
