@@ -19,9 +19,18 @@ class SlackChannel(BaseChannel):
         return "slack"
 
     def start(self) -> None:
-        from alfard.interfaces.slack_bot import AlfardSlackBot
-        self._bot = AlfardSlackBot(agent_name=self._agent_name)
-        self._bot.start()
+        import logging
+        import traceback
+        _log = logging.getLogger("alfard.slack")
+        try:
+            from alfard.interfaces.slack_bot import AlfardSlackBot
+            self._bot = AlfardSlackBot(agent_name=self._agent_name)
+            self._bot.start()
+        except Exception as exc:
+            _log.error(
+                "slack channel fatal error: %s\n%s", exc, traceback.format_exc()
+            )
+            raise
 
     def stop(self) -> None:
         if self._bot is None:
@@ -36,6 +45,36 @@ class SlackChannel(BaseChannel):
         # Slack notifications are posted by AlfardSlackBot._handle_message()
         # after the response is sent, where the Slack channel ID is available.
         pass
+
+    def send_admin_message(self, text: str) -> bool:
+        load_env()
+        if self._bot is not None:
+            wc = self._bot.web_client
+        else:
+            from slack_sdk import WebClient
+            token = os.environ.get("SLACK_BOT_TOKEN")
+            if not token:
+                return False
+            wc = WebClient(token=token)
+
+        try:
+            with open(ALFARD_HOME / "config" / "alfard.yaml") as f:
+                cfg = yaml.safe_load(f) or {}
+            channel = (
+                cfg.get("cron", {}).get("slack_channel_id")
+                or cfg.get("slack", {}).get("channel")
+                or os.environ.get("SLACK_APPROVAL_CHANNEL")
+            )
+        except Exception:
+            channel = os.environ.get("SLACK_APPROVAL_CHANNEL")
+
+        if not channel:
+            return False
+        try:
+            wc.chat_postMessage(channel=channel, text=text)
+            return True
+        except Exception:
+            return False
 
     def post_cron_output(
         self,

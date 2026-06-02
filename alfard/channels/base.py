@@ -22,6 +22,10 @@ class BaseChannel(ABC):
     def notify_memory_write(self, entry: dict) -> None:
         """Emit a notification after a successful brain.db write."""
 
+    def send_admin_message(self, text: str) -> bool:
+        """Send an operator alert to this channel. Returns True on success."""
+        return False
+
     def post_cron_output(
         self,
         agent_name: str,

@@ -18,9 +18,18 @@ class DiscordChannel(BaseChannel):
         return "discord"
 
     def start(self) -> None:
-        from alfard.interfaces.discord_bot import AlfardDiscordBot
-        self._bot = AlfardDiscordBot(agent_name=self._agent_name)
-        self._bot.run_bot()
+        import logging
+        import traceback
+        _log = logging.getLogger("alfard.discord")
+        try:
+            from alfard.interfaces.discord_bot import AlfardDiscordBot
+            self._bot = AlfardDiscordBot(agent_name=self._agent_name)
+            self._bot.run_bot()
+        except Exception as exc:
+            _log.error(
+                "discord channel fatal error: %s\n%s", exc, traceback.format_exc()
+            )
+            raise
 
     def stop(self) -> None:
         if self._bot is not None:
@@ -30,6 +39,29 @@ class DiscordChannel(BaseChannel):
         # Discord notifications are sent by AlfardDiscordBot._process_message()
         # after the response is sent, where the channel object is available.
         pass
+
+    def send_admin_message(self, text: str) -> bool:
+        if self._bot is None or self._bot._loop is None:
+            return False
+        channel_id_str = os.environ.get("DISCORD_CRON_CHANNEL_ID")
+        if not channel_id_str:
+            return False
+        try:
+            channel_id = int(channel_id_str)
+        except ValueError:
+            return False
+
+        async def _send() -> None:
+            ch = self._bot.get_channel(channel_id)
+            if ch is None:
+                ch = await self._bot.fetch_channel(channel_id)
+            await ch.send(text)
+
+        try:
+            asyncio.run_coroutine_threadsafe(_send(), self._bot._loop).result(timeout=10)
+            return True
+        except Exception:
+            return False
 
     def post_cron_output(
         self,

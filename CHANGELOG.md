@@ -5,10 +5,20 @@ Versioning: https://semver.org
 
 ---
 
-## [0.1.19] — 2026-06-01
+## [0.1.20] — 2026-06-02
+
+### Added
+- Agent deletion — delete agent from my agents submenu or via alfard delete <agent>. Requires typing the agent name to confirm. Stops running daemon before deleting. Path traversal protected.
+- Model list updated — OpenRouter now shows gemini-3-flash-preview, claude-sonnet-4.6, deepseek/deepseek-v4-flash, minimax/minimax-m3. Anthropic and OpenAI updated to latest models. Ollama and LM Studio are custom-entry only.
 
 ### Fixed
-- Version sync — PyPI and npm now both at 0.1.19
+- Credentials hot-reload — connecting a new integration while daemon is running now takes effect immediately, no restart needed
+- Channel watchdog — detects dead Telegram/Slack/Discord threads, restarts automatically, alerts user after 3 consecutive failures
+- Stale binary detection — daemon notifies via connected channels when pipx upgrade has installed a newer version. alfard doctor checks this too.
+
+### Security
+- Agent deletion requires exact name confirmation — no accidental deletion possible
+- Deletion path validated strictly inside AGENTS_DIR before any file operation
 
 ---
 

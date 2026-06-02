@@ -111,6 +111,18 @@ async def _handle_ipc_client(
 
         cmd = req.get("cmd")
 
+        if cmd == "reload_env":
+            load_env()
+            writer.write(b'{"result": "reloaded"}\n')
+            await writer.drain()
+            return
+
+        if cmd == "get_version":
+            from alfard import __version__
+            writer.write((json.dumps({"version": __version__}) + "\n").encode())
+            await writer.drain()
+            return
+
         if cmd == "cron_run":
             name = req.get("name", "").strip()
             task = req.get("task", "").strip()
@@ -226,6 +238,44 @@ def _start_crons(
 
 
 # ---------------------------------------------------------------------------
+# Upgrade version check — runs once after channels start
+# ---------------------------------------------------------------------------
+
+def _do_version_check(agent_name: str, channel_manager: ChannelManager) -> None:
+    """Compare installed vs in-process version; warn via alive channel if they differ."""
+    try:
+        from importlib.metadata import version as _pkg_version, PackageNotFoundError
+        import alfard
+        try:
+            installed = _pkg_version("alfard")
+        except PackageNotFoundError:
+            return
+        running = getattr(alfard, "__version__", None)
+        if running is None or running == "unknown" or installed == running:
+            return
+        msg = (
+            f"⚠️ Alfard was upgraded to v{installed} while running v{running}. "
+            f"Restart to apply the update: alfard service restart {agent_name}"
+        )
+        _log.warning("version mismatch: running=%s installed=%s", running, installed)
+        channel_manager._send_to_alive_channel("__version_check__", msg)
+    except Exception:
+        pass
+
+
+async def _version_check_async(agent_name: str, channel_manager: ChannelManager) -> None:
+    """One-shot coroutine: detect post-upgrade version mismatch with a 5 s hard timeout."""
+    try:
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(None, _do_version_check, agent_name, channel_manager),
+            timeout=5.0,
+        )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Main async loop
 # ---------------------------------------------------------------------------
 
@@ -283,6 +333,9 @@ async def _run_daemon(
 
     # Channels — same as headless: all run in daemon threads
     channel_manager.start_all(main_channel="__daemon__")
+
+    # One-shot version check — detects post-upgrade stale daemon (runs once, ≤5 s)
+    asyncio.create_task(_version_check_async(agent_name, channel_manager))
 
     # Signal handling — platform-aware
     if sys.platform == "win32":

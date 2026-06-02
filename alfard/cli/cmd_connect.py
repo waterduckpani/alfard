@@ -2,6 +2,7 @@
 
 import re
 import os
+import socket
 import subprocess
 import sys
 import shutil
@@ -28,6 +29,53 @@ def _refresh_lazy_tool_catalog() -> None:
         console.print(f"{dot('ok')} [{p.fg_dim}]lazy-tool catalog updated — mcp schemas will load on demand.[/]")
 
 
+def _send_reload_env_ipc(agent: str) -> None:
+    """Send reload_env to one daemon socket. Silently no-ops if daemon is not running."""
+    from alfard.agents.loader import AGENTS_DIR
+    base = AGENTS_DIR / agent
+    if sys.platform == "win32":
+        port_file = base / "agent.port"
+        if not port_file.exists():
+            return
+        try:
+            port = int(port_file.read_text().strip())
+        except (OSError, ValueError):
+            return
+        addr_family = socket.AF_INET
+        address: tuple | str = ("127.0.0.1", port)
+    else:
+        sock_path = base / "agent.sock"
+        if not sock_path.exists():
+            return
+        addr_family = socket.AF_UNIX
+        address = str(sock_path)
+
+    try:
+        import json as _json
+        with socket.socket(addr_family, socket.SOCK_STREAM) as s:
+            s.settimeout(5.0)
+            s.connect(address)
+            s.sendall((_json.dumps({"cmd": "reload_env"}) + "\n").encode())
+            buf = b""
+            while b"\n" not in buf:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+    except Exception:
+        pass
+
+
+def _notify_running_daemons() -> None:
+    """Send reload_env to every agent daemon that is currently running."""
+    try:
+        from alfard.agents.loader import list_agents
+        for agent in list_agents():
+            _send_reload_env_ipc(agent)
+    except Exception:
+        pass
+
+
 def _update_env(key: str, value: str) -> None:
     lines: list[str] = []
     if _ENV_PATH.exists():
@@ -46,6 +94,7 @@ def _update_env(key: str, value: str) -> None:
 
     _ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     _ENV_PATH.chmod(0o600)
+    _notify_running_daemons()
 
 
 def _load_integrations() -> dict:

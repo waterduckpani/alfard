@@ -19,9 +19,18 @@ class TelegramChannel(BaseChannel):
         return "telegram"
 
     def start(self) -> None:
-        from alfard.interfaces.telegram_bot import AlfardTelegramBot
-        self._bot = AlfardTelegramBot(agent_name=self._agent_name)
-        self._bot.start()
+        import logging
+        import traceback
+        _log = logging.getLogger("alfard.telegram")
+        try:
+            from alfard.interfaces.telegram_bot import AlfardTelegramBot
+            self._bot = AlfardTelegramBot(agent_name=self._agent_name)
+            self._bot.start()
+        except Exception as exc:
+            _log.error(
+                "telegram channel fatal error: %s\n%s", exc, traceback.format_exc()
+            )
+            raise
 
     def stop(self) -> None:
         if self._bot is not None:
@@ -31,6 +40,20 @@ class TelegramChannel(BaseChannel):
         # Telegram notifications are posted by AlfardTelegramBot._process_message()
         # after the response is sent, where the chat_id is available.
         pass
+
+    def send_admin_message(self, text: str) -> bool:
+        load_env()
+        chat_id_str = os.environ.get("TELEGRAM_CRON_CHAT_ID")
+        if not chat_id_str:
+            raw = os.environ.get("TELEGRAM_ALLOWED_USERS", "").strip()
+            parts = [u for u in raw.split(",") if u.strip().lstrip("-").isdigit()]
+            chat_id_str = parts[0].strip() if parts else None
+        if not chat_id_str:
+            return False
+        try:
+            return self._send_telegram_message(int(chat_id_str), text) is not None
+        except Exception:
+            return False
 
     def post_cron_output(
         self,

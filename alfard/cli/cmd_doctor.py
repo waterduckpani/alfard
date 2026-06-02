@@ -1,6 +1,7 @@
 """alfard doctor — checks the local alfard installation and reports any issues."""
 
 import glob
+import json
 import shutil
 import sys
 import yaml
@@ -11,6 +12,50 @@ import click
 from alfard.cli.help_formatter import AlfardCommand
 from alfard.cli.theme import p, c, console
 from alfard.paths import ALFARD_HOME
+
+
+def _ipc_query(sock_path: Path, port_file: Path, cmd: dict) -> dict | None:
+    """Send one JSON command to a daemon IPC socket and return the parsed response."""
+    import socket as _socket
+
+    payload = (json.dumps(cmd) + "\n").encode()
+
+    if sock_path.exists() and sys.platform != "win32":
+        try:
+            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            s.connect(str(sock_path))
+            s.sendall(payload)
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            s.close()
+            return json.loads(buf.strip())
+        except Exception:
+            pass
+
+    if port_file.exists():
+        try:
+            port = int(port_file.read_text(encoding="utf-8").strip())
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            s.connect(("127.0.0.1", port))
+            s.sendall(payload)
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            s.close()
+            return json.loads(buf.strip())
+        except Exception:
+            pass
+
+    return None
 
 
 def _row(icon: str, role: str, msg: str) -> None:
@@ -193,7 +238,40 @@ def doctor():
                     )
                     issues += 1
 
-    # 12. Stale binaries
+    # 12. Daemon version — detect stale running daemon after pipx upgrade
+    if agents:
+        from importlib.metadata import version as _pkg_version, PackageNotFoundError
+        try:
+            installed_ver = _pkg_version("alfard")
+        except PackageNotFoundError:
+            installed_ver = None
+
+        if installed_ver is not None:
+            for agent in agents:
+                agent_dir = agents_dir / agent
+                sock_path = agent_dir / "agent.sock"
+                port_file = agent_dir / "agent.port"
+
+                # Skip if no socket — daemon not running for this agent
+                if not sock_path.exists() and not port_file.exists():
+                    continue
+
+                resp = _ipc_query(sock_path, port_file, {"cmd": "get_version"})
+                if resp is None:
+                    # Socket present but unresponsive — already flagged in check 11
+                    continue
+
+                running_ver = resp.get("version")
+                if running_ver and running_ver != installed_ver:
+                    _err(
+                        f"{agent} — daemon running v{running_ver}, v{installed_ver} installed · "
+                        f"fix: alfard service restart {agent}"
+                    )
+                    issues += 1
+                elif running_ver:
+                    _ok(f"{agent} — daemon version v{running_ver} matches installed")
+
+    # 13. Stale binaries
     if sys.platform == "win32":
         import os as _os
         win_locations = [

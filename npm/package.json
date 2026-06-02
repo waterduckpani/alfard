@@ -1,6 +1,6 @@
 {
   "name": "alfard-cli",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Local AI agents, done right.",
   "bin": {
     "alfard": "bin/alfard.js"

@@ -44,33 +44,33 @@ PROVIDER_API_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
 }
 
-PROVIDER_MODELS = {
+PROVIDER_MODELS: dict[str, list[str]] = {
     "openrouter": [
-        ("1", "openrouter/auto"),
-        ("2", "anthropic/claude-sonnet-4-6"),
-        ("3", "google/gemini-2-flash-preview"),
-        ("4", "custom"),
-    ],
-    "openai": [
-        ("1", "gpt-4o"),
-        ("2", "gpt-4o-mini"),
-        ("3", "o4-mini"),
-        ("4", "custom"),
+        "openrouter/auto",
+        "google/gemini-3-flash-preview",
+        "anthropic/claude-sonnet-4.6",
+        "anthropic/claude-haiku-4.5",
+        "deepseek/deepseek-v4-flash",
+        "minimax/minimax-m3",
+        "custom",
     ],
     "anthropic": [
-        ("1", "claude-sonnet-4-6"),
-        ("2", "claude-opus-4-7"),
-        ("3", "claude-haiku-4-5-20251001"),
-        ("4", "custom"),
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-haiku-4-5-20251001",
+        "custom",
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o4-mini",
+        "custom",
     ],
     "ollama": [
-        ("1", "llama3.2"),
-        ("2", "mistral"),
-        ("3", "qwen2.5-coder"),
-        ("4", "custom"),
+        "custom",
     ],
     "lmstudio": [
-        ("1", "custom"),
+        "custom",
     ],
 }
 
@@ -155,6 +155,17 @@ def _save_checkpoint(path: Path, data: dict) -> None:
     path.parent.mkdir(exist_ok=True)
     with path.open("w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+def _resolve_model(provider: str, raw_model: str, fallback: str) -> str:
+    """Resolve 'custom' to a user-entered model name; return raw_model otherwise."""
+    if raw_model != "custom":
+        return raw_model
+    if provider in LOCAL_PROVIDERS:
+        custom_input = alfard_input("model name", hint="e.g. llama3.2, mistral").strip()
+    else:
+        custom_input = alfard_input("custom model name").strip()
+    return custom_input if custom_input else fallback
 
 
 def run_setup() -> None:
@@ -247,18 +258,10 @@ def run_setup() -> None:
             console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
             base_url = alfard_input("base url", default=base_url).rstrip("/") or base_url
 
-        model_names = [name for _, name in PROVIDER_MODELS[provider]]
+        model_names = PROVIDER_MODELS[provider]
         console.print(f"\n[{p.fg_dim}]select a model:[/]")
         raw_model = alfard_select("model", model_names, default=model_names[0])
-        model = raw_model or model_names[0]
-
-        if model == "custom":
-            custom_input = alfard_input("custom model name")
-            if not custom_input.strip():
-                console.print(f"  [{p.fg_dim}]no input — defaulting to {model_names[0]}[/]")
-                model = model_names[0]
-            else:
-                model = custom_input
+        model = _resolve_model(provider, raw_model or model_names[0], model_names[0])
 
         config_dir = ALFARD_HOME / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -685,12 +688,9 @@ def run_provider_settings() -> None:
             console.print(f"\n[{p.fg_dim}]default url: {base_url}[/]")
             base_url = alfard_input("base url", default=base_url).rstrip("/") or base_url
 
-        model_names = [name for _, name in PROVIDER_MODELS[new_provider]]
+        model_names = PROVIDER_MODELS[new_provider]
         raw_model = alfard_select("model", model_names, default=model_names[0]) or model_names[0]
-        new_model = raw_model
-        if new_model == "custom":
-            custom_input = alfard_input("custom model name").strip()
-            new_model = custom_input if custom_input else model_names[0]
+        new_model = _resolve_model(new_provider, raw_model, model_names[0])
 
         cfg["provider"] = {
             "name": new_provider,
@@ -703,13 +703,10 @@ def run_provider_settings() -> None:
         console.print(f"\n{dot('ok')} [{p.fg_dim}]provider updated: {new_provider} / {new_model}[/]")
 
     elif action == "change model":
-        model_names = [name for _, name in PROVIDER_MODELS.get(current_provider, [("1", "custom")])]
+        model_names = PROVIDER_MODELS.get(current_provider, ["custom"])
         default_model = current_model if current_model in model_names else model_names[0]
         raw_model = alfard_select("model", model_names, default=default_model) or current_model
-        new_model = raw_model
-        if new_model == "custom":
-            custom_input = alfard_input("custom model name").strip()
-            new_model = custom_input if custom_input else current_model
+        new_model = _resolve_model(current_provider, raw_model, current_model)
         cfg["provider"]["model"] = new_model
         with config_path.open("w") as f:
             yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)

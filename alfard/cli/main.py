@@ -23,6 +23,7 @@ from alfard.cli.cmd_channel import channel, connected_channels
 from alfard.cli.cmd_uninstall import uninstall
 from alfard.cli.cmd_doctor import doctor
 from alfard.cli.cmd_daemon import daemon
+from alfard.cli.cmd_delete import delete
 
 
 @click.group(cls=AlfardGroup, invoke_without_command=True)
@@ -123,6 +124,8 @@ def cli(ctx):
                             "mounts",
                             "memory",
                             questionary.Separator(),
+                            "delete agent",
+                            questionary.Separator(),
                             "← back",
                         ],
                     )
@@ -145,6 +148,10 @@ def cli(ctx):
                     elif agent_action == "memory":
                         ctx.invoke(memory)
                         alfard_input("press enter to continue", default="")
+                    elif agent_action == "delete agent":
+                        ctx.invoke(delete, agent=selected_agent)
+                        alfard_input("press enter to continue", default="")
+                        break  # agent is gone — return to the agents list
 
         # ── channels ─────────────────────────────────────────────────────────
         elif selection == "channels":
@@ -482,6 +489,7 @@ cli.add_command(channel)
 cli.add_command(uninstall)
 cli.add_command(doctor)
 cli.add_command(daemon)
+cli.add_command(delete, name="delete")
 
 if __name__ == "__main__":
     cli()
