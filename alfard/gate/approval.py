@@ -32,8 +32,10 @@ class CLINotifier:
                 except EOFError:
                     # stdin unavailable (e.g. TUI holds it, headless pipe closed) — deny safely
                     return "n"
-                if choice in ("y", "n"):
-                    return choice
+                if choice in ("y", "yes"):
+                    return "y"
+                if choice in ("n", "no"):
+                    return "n"
 
 
 class QueueNotifier:

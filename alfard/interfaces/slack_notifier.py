@@ -88,11 +88,27 @@ class SlackNotifier:
             }
         ]
 
-        self.client.chat_postMessage(
-            channel=self.channel,
-            text=f"Review required: {tool_name}",
-            blocks=blocks
-        )
+        try:
+            self.client.chat_postMessage(
+                channel=self.channel,
+                text=f"Review required: {tool_name}",
+                blocks=blocks
+            )
+        except Exception as exc:
+            _log.error(
+                "gate_send_failure: could not send approval request for action=%s tool=%s: %s",
+                action_id, tool_name, exc,
+            )
+            with self._lock:
+                self._pending.pop(action_id, None)
+            try:
+                self.client.chat_postMessage(
+                    channel=self.channel,
+                    text=f"⚠️ Could not deliver approval request for `{tool_name}` — action auto-rejected.",
+                )
+            except Exception:
+                pass
+            return "n"
 
         # Block until button clicked (timeout 5 minutes)
         event.wait(timeout=300)

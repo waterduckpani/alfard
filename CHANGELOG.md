@@ -5,6 +5,16 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.21 — 2026-06-02
+
+### Fixed
+- Telegram approval gate: switched from Markdown to HTML parsing with html.escape() on all user-facing content — prevents email bodies with special characters from breaking message delivery and causing silent auto-reject
+- Slack approval gate: unhandled API exceptions now caught cleanly — failure sends user notification and returns "n" instead of crashing the gate
+- Discord approval gate: send failures no longer silently wait out the 300-second timeout — fails immediately with user notification
+- CLI input: "yes" and "no" now accepted at approval prompts in addition to "y" and "n"
+
+---
+
 ## [0.1.20] — 2026-06-02
 
 ### Added

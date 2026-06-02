@@ -2,6 +2,7 @@
 messages and blocks until the user taps Approve or Reject."""
 
 import asyncio
+import html
 import json
 import logging
 import threading
@@ -30,12 +31,12 @@ class TelegramNotifier:
             self._pending[action_id] = event
 
         source_emoji = "🟢" if source == "user_instruction" else "🔴"
-        args_text = json.dumps(arguments, indent=2)
+        args_text = html.escape(json.dumps(arguments, indent=2))
         text = (
-            f"*Review required*\n\n"
-            f"*Tool:* `{tool_name}`\n"
-            f"*Source:* {source_emoji} `{source}`\n\n"
-            f"*Arguments:*\n```\n{args_text}\n```"
+            f"<b>Review required</b>\n\n"
+            f"<b>Tool:</b> <code>{html.escape(tool_name)}</code>\n"
+            f"<b>Source:</b> {source_emoji} <code>{html.escape(source)}</code>\n\n"
+            f"<b>Arguments:</b>\n<pre>{args_text}</pre>"
         )
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Approve", callback_data=f"gate:{action_id}:approve"),
@@ -46,7 +47,7 @@ class TelegramNotifier:
             self._bot.send_message(
                 chat_id=self._chat_id,
                 text=text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=keyboard,
             ),
             self._loop,

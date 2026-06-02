@@ -97,8 +97,24 @@ class DiscordNotifier:
         try:
             msg = future.result(timeout=10)
             view._message = msg
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger("alfard.discord").error(
+                "gate_send_failure: could not send approval request for action=%s tool=%s: %s",
+                action_id, tool_name, exc,
+            )
+            with self._lock:
+                self._pending.pop(action_id, None)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._channel.send(
+                        f"⚠️ Could not deliver approval request for `{tool_name}` — action auto-rejected."
+                    ),
+                    self._loop,
+                ).result(timeout=10)
+            except Exception:
+                pass
+            return "n"
 
         event.wait(timeout=300)
 
