@@ -14,7 +14,7 @@
 
 <br>
 
-<img width="720" alt="Alfard demo" src="assets/gif1.gif" />
+<img width="480" alt="Alfard demo" src="assets/gif1.gif" />
 
 </div>
 
