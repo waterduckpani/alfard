@@ -5,6 +5,13 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.24 — 2026-06-02
+
+### Fixed
+- gmail_send_draft was added to gws_tools.py in v0.1.23 but was missing from gog_tools.py — the file actually used at runtime. Added gmail_send_draft registration to gog_tools.py marked as irreversible so the approval gate fires before sending.
+
+---
+
 ## v0.1.23 — 2026-06-02
 
 ### Added

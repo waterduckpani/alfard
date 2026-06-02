@@ -113,6 +113,13 @@ def gmail_get_draft(draft_id: str) -> str:
     )
 
 
+def gmail_send_draft(draft_id: str) -> str:
+    return _run_gog(
+        "gmail", "drafts", "send", draft_id,
+        "--no-input",
+    )
+
+
 def register_gmail_tools(registry: ToolRegistry) -> None:
     """Register Gmail tools using gogcli."""
     tools = [
@@ -171,6 +178,11 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
          gmail_get_draft, True,
          {"type": "object", "properties": {
              "draft_id": {"type": "string", "description": "Gmail draft ID (not message ID)"},
+         }, "required": ["draft_id"]}),
+        ("gmail_send_draft", "Send an existing draft by its draft ID",
+         gmail_send_draft, False,
+         {"type": "object", "properties": {
+             "draft_id": {"type": "string", "description": "Gmail draft ID to send"},
          }, "required": ["draft_id"]}),
     ]
     for name, desc, fn, reversible, params in tools:
