@@ -159,6 +159,7 @@ CATALOGUE: dict[str, dict] = {
         ],
         "irreversible_tools": [
             "gmail_send_message",
+            "gmail_send_draft",
             "gmail_create_draft",
             "gmail_delete_message",
             "gmail_modify_message",

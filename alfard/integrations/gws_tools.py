@@ -69,6 +69,18 @@ def gmail_send_message(to: str, subject: str, body: str) -> str:
                     "--body", body)
 
 
+def gmail_send_draft(draft_id: str) -> str:
+    raw = _run_gws("gmail", "users", "drafts", "send",
+                   "--params", json.dumps({"userId": "me"}),
+                   "--json", json.dumps({"id": draft_id}))
+    try:
+        result = json.loads(raw)
+        msg_id = result.get("id", "unknown")
+        return f"Draft sent successfully. Message ID: {msg_id}"
+    except json.JSONDecodeError:
+        return raw
+
+
 def register_gmail_tools(registry: ToolRegistry) -> None:
     """Register Gmail tools using gws CLI."""
 
@@ -117,6 +129,11 @@ def register_gmail_tools(registry: ToolRegistry) -> None:
              "subject": {"type": "string"},
              "body": {"type": "string"},
          }, "required": ["to", "subject", "body"]}),
+        ("gmail_send_draft", "Send an existing draft by its draft ID",
+         gmail_send_draft, False,
+         {"type": "object", "properties": {
+             "draft_id": {"type": "string", "description": "Gmail draft ID"},
+         }, "required": ["draft_id"]}),
     ]
 
     for name, desc, fn, reversible, params in tools:

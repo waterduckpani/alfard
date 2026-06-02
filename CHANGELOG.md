@@ -5,6 +5,16 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.23 — 2026-06-02
+
+### Added
+- gmail_send_draft tool — sends an existing draft exactly as-is via the Gmail API drafts.send endpoint, preserving all HTML formatting, attachments, and headers. Registered as irreversible so the approval gate always fires before sending.
+
+### Fixed
+- Agent no longer reconstructs draft content via gmail_get_draft + gmail_send_message when asked to send a draft. Gmail skill updated with explicit rule to always use gmail_send_draft with the draft ID.
+
+---
+
 ## v0.1.22 — 2026-06-02
 
 ### Fixed
