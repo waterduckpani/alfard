@@ -12,6 +12,10 @@
 
 [Quick Start](#quick-start) · [Features](#features) · [Examples](#what-can-you-build-with-it) · [Security](#security) · [Roadmap](#roadmap)
 
+<br>
+
+<img width="720" alt="Alfard demo" src="assets/gif1.gif" />
+
 </div>
 
 ---
