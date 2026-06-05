@@ -53,8 +53,9 @@ def _rank_notion_search(content: list, query: str) -> list:
             return "".join(b.get("plain_text", "") for b in r.get("title", []))
         if r.get("object") == "page":
             props = r.get("properties", {})
-            title_prop = props.get("title") or props.get("Name") or {}
-            return "".join(b.get("plain_text", "") for b in title_prop.get("title", []))
+            for prop in props.values():
+                if isinstance(prop, dict) and prop.get("type") == "title":
+                    return "".join(b.get("plain_text", "") for b in prop.get("title", []))
         return ""
 
     exact = [

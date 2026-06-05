@@ -192,13 +192,6 @@ def _make_invoke(registry: "ToolRegistry"):
                 "known_sources": sorted(CATALOGUE.keys()),
             })
 
-        all_tools = entry.get("reversible_tools", []) + entry.get("irreversible_tools", [])
-        if tool not in all_tools:
-            return json.dumps({
-                "error": f"Unknown tool '{tool}' for source '{source}'.",
-                "available_tools": all_tools,
-            })
-
         # Fast path: tool already registered in registry as "{source}.{tool}".
         registered_name = f"{source}.{tool}"
         if registry.is_registered(registered_name):

@@ -3,6 +3,7 @@ Each Telegram user ID gets isolated conversation history; brain.db and soul.md
 are shared across all channels."""
 
 import asyncio
+import html as _html
 import logging
 import os
 import threading
@@ -59,12 +60,15 @@ def _build_session(
     return orchestrator, audit, notifier, loader, registry
 
 
+_TG_MAX = 4096
+
+
 def _format_memory_notification(entry: dict) -> str:
     mem_type = entry.get("type", "fact")
     content = entry.get("content", "")
     truncated = content[:80] + "…" if len(content) > 80 else content
     label = "⚠ mistake" if mem_type == "mistake" else mem_type
-    return f'_{label} · "{truncated}"_'
+    return f'<i>{_html.escape(label)} · "{_html.escape(truncated)}"</i>'
 
 
 class AlfardTelegramBot:
@@ -229,6 +233,7 @@ class AlfardTelegramBot:
             )
             return
 
+        _old_gate = orchestrator._gate.enabled
         if gate_disabled:
             orchestrator._gate.enabled = False
         lock = self._locks[chat_id]
@@ -271,6 +276,7 @@ class AlfardTelegramBot:
                 )
                 response = f"Cron job '{job_name}' encountered an error: {exc}"
             finally:
+                orchestrator._gate.enabled = _old_gate
                 orchestrator.pre_tool_hook = None
 
             self._message_counts[chat_id] = self._message_counts.get(chat_id, 0) + 1
@@ -283,10 +289,12 @@ class AlfardTelegramBot:
 
             agent_name = getattr(orchestrator, "_agent_name", self.agent_name)
             try:
-                _reply(
-                    f"🤖 {agent_name} · {job_name}\n\n{to_telegram_html(response)}",
-                    parse_mode="HTML",
-                )
+                header = f"🤖 {agent_name} · {job_name}\n\n"
+                html_out = to_telegram_html(response)
+                available = _TG_MAX - len(header)
+                if len(html_out) > available:
+                    html_out = html_out[:available - 1] + "…"
+                _reply(header + html_out, parse_mode="HTML")
             except Exception as exc:
                 _log.error(
                     "failed to send cron output job=%s: %s", job_name, exc
@@ -294,7 +302,7 @@ class AlfardTelegramBot:
 
             for entry in _drain_notifications():
                 try:
-                    _reply(_format_memory_notification(entry))
+                    _reply(_format_memory_notification(entry), parse_mode="HTML")
                 except Exception:
                     pass
 
@@ -350,11 +358,14 @@ class AlfardTelegramBot:
                     pass
 
             _send_html = reply_html_fn or reply_fn
-            _send_html(to_telegram_html(response))
+            html_out = to_telegram_html(response)
+            if len(html_out) > _TG_MAX:
+                html_out = html_out[:_TG_MAX - 1] + "…"
+            _send_html(html_out)
 
             for entry in _drain_notifications():
                 try:
-                    reply_fn(_format_memory_notification(entry))
+                    _send_html(_format_memory_notification(entry))
                 except Exception:
                     pass
 
@@ -455,6 +466,7 @@ class AlfardTelegramBot:
                     context.bot.send_message(
                         chat_id=chat_id,
                         text=_format_memory_notification(entry),
+                        parse_mode="HTML",
                     ),
                     loop,
                 ).result(timeout=30)

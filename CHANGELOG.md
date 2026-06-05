@@ -5,6 +5,13 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.26 — 2026-06-05
+
+### Security
+- Fixed approval gate not being restored after cron job with gate disabled (telegram_bot.py) — after a cron run with approval_gate: disabled, all subsequent user messages in the same session were silently bypassing the approval gate. Gate state is now saved before the cron run and restored in a finally block regardless of outcome.
+
+---
+
 ## v0.1.25 — 2026-06-02
 
 ### Fixed
