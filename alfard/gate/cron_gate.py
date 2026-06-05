@@ -6,7 +6,6 @@ every cron run, regardless of the job's approval_gate setting.
 
 CRON_ALWAYS_GATE: set[str] = {
     # Gmail — mutations
-    "create_draft",
     "label_message",
     "label_thread",
     "unlabel_message",
@@ -18,7 +17,6 @@ CRON_ALWAYS_GATE: set[str] = {
     "create_file",
     "copy_file",
     # General destructive / side-effecting
-    "gmail_send_message",
     "send_message",
     "post_message",
     "delete_file",

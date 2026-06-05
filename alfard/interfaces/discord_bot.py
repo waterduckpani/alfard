@@ -215,9 +215,10 @@ class AlfardDiscordBot(discord.Client):
                     channel_id, job_name, exc,
                 )
                 return
+            gate_disabled = job_cfg.get("approval_gate") == "disabled"
             threading.Thread(
                 target=self._run_cron_injection,
-                args=(ch, job_name, task),
+                args=(ch, job_name, task, gate_disabled),
                 daemon=True,
             ).start()
 
@@ -228,6 +229,7 @@ class AlfardDiscordBot(discord.Client):
         channel: discord.abc.Messageable,
         job_name: str,
         task: str,
+        gate_disabled: bool = False,
     ) -> None:
         """Execute the cron task in the live session, then post output to the channel."""
         from alfard.cron.context import build_cron_context
@@ -249,6 +251,8 @@ class AlfardDiscordBot(discord.Client):
         orchestrator, audit, notifier, loader, registry = self._get_session(
             key, channel, loop
         )
+        if gate_disabled:
+            orchestrator._gate.enabled = False
         lock = self._locks[key]
 
         def _reply(msg: str) -> None:

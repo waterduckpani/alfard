@@ -219,13 +219,14 @@ class AlfardSlackBot:
             )
             return
 
+        gate_disabled = job_cfg.get("approval_gate") == "disabled"
         threading.Thread(
             target=self._run_cron_injection,
-            args=(channel, job_name, task),
+            args=(channel, job_name, task, gate_disabled),
             daemon=True,
         ).start()
 
-    def _run_cron_injection(self, channel: str, job_name: str, task: str) -> None:
+    def _run_cron_injection(self, channel: str, job_name: str, task: str, gate_disabled: bool = False) -> None:
         """Execute the cron task in the live session, then post output to the channel."""
         import logging
         from alfard.cron.context import build_cron_context
@@ -238,6 +239,8 @@ class AlfardSlackBot:
         self._session_last_active[cron_session_key] = time.time()
         self._evict_stale_sessions()
         orchestrator, audit, notifier, loader = self._get_session(cron_session_key, notify_channel=channel)
+        if gate_disabled:
+            orchestrator._gate.enabled = False
         lock = self._locks[cron_session_key]
 
         with lock:

@@ -202,13 +202,14 @@ class AlfardTelegramBot:
             )
             return
 
+        gate_disabled = job_cfg.get("approval_gate") == "disabled"
         threading.Thread(
             target=self._run_cron_injection,
-            args=(chat_id, job_name, task),
+            args=(chat_id, job_name, task, gate_disabled),
             daemon=True,
         ).start()
 
-    def _run_cron_injection(self, chat_id: int, job_name: str, task: str) -> None:
+    def _run_cron_injection(self, chat_id: int, job_name: str, task: str, gate_disabled: bool = False) -> None:
         """Execute the cron task in the live session, then send output to the chat."""
         from alfard.cron.context import build_cron_context
         from alfard.cron.runner import _save_log
@@ -228,6 +229,8 @@ class AlfardTelegramBot:
             )
             return
 
+        if gate_disabled:
+            orchestrator._gate.enabled = False
         lock = self._locks[chat_id]
 
         def _reply(msg: str, parse_mode: str | None = None) -> None:

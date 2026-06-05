@@ -5,6 +5,14 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.25 — 2026-06-02
+
+### Fixed
+- CRON_ALWAYS_GATE no longer blocks gmail_send_message when a cron job has gate disabled. Users who explicitly disable the gate with "I understand" confirmation can now run email-sending cron jobs without approval prompts. Truly destructive tools (delete_file, push_code, run_script, etc.) remain unconditionally gated.
+- Cron gate disable setting was being silently ignored — approval_gate: disabled was present in crons.yaml but inject_cron_message was discarding it and never passing it to the orchestrator session. Gate always started as enabled regardless of user configuration. Fixed across Slack, Telegram, and Discord channel bots — gate_disabled is now correctly extracted from job config and passed through to the orchestrator, which sets gate.enabled = False before execution.
+
+---
+
 ## v0.1.24 — 2026-06-02
 
 ### Fixed
