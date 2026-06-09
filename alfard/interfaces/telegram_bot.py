@@ -118,8 +118,9 @@ class AlfardTelegramBot:
     # ── session management ───────────────────────────────────────────────────
 
     def _get_session(self, chat_id: int) -> tuple:
-        """Get or create a session keyed by chat_id."""
+        """Get or create a session keyed by chat_id. Always refreshes the activity timestamp."""
         with self._sessions_lock:
+            self._session_last_active[chat_id] = time.time()
             if chat_id not in self._sessions:
                 if self._app is None or self._loop is None:
                     raise RuntimeError("Bot is not running — cannot create session")
@@ -137,9 +138,9 @@ class AlfardTelegramBot:
                     bot = self._app.bot if self._app else None
                     if bot is None or loop is None:
                         return
-                    text = f"_💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:_ `alfard memory review`"
+                    text = f"<i>💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:</i> <code>alfard memory review</code>"
                     asyncio.run_coroutine_threadsafe(
-                        bot.send_message(chat_id=_cid, text=text, parse_mode="Markdown"),
+                        bot.send_message(chat_id=_cid, text=text, parse_mode="HTML"),
                         loop,
                     )
 
@@ -222,8 +223,6 @@ class AlfardTelegramBot:
         from alfard.gate.approval import ToolDeniedError
         from alfard.agents.loader import AGENTS_DIR
 
-        with self._sessions_lock:
-            self._session_last_active[chat_id] = time.time()
         self._evict_stale_sessions()
 
         try:
@@ -331,8 +330,6 @@ class AlfardTelegramBot:
         reply_fn,
         reply_html_fn=None,
     ) -> None:
-        with self._sessions_lock:
-            self._session_last_active[chat_id] = time.time()
         self._evict_stale_sessions()
 
         orchestrator, audit, notifier, loader, registry = self._get_session(chat_id)
@@ -525,7 +522,6 @@ class AlfardTelegramBot:
         self._stop_flag = asyncio.Event()
 
         app = ApplicationBuilder().token(self._token).build()
-        self._app = app
 
         app.add_handler(CommandHandler("new", self._handle_new))
         app.add_handler(CommandHandler("remember", self._handle_remember))
@@ -537,6 +533,7 @@ class AlfardTelegramBot:
         async with app:
             await app.start()
             await app.updater.start_polling()
+            self._app = app  # set only after fully started; guards in inject_cron_message and _get_session are now reliable
             print("[telegram] connected. Send a message to start.")
             await self._stop_flag.wait()
             await app.updater.stop()
