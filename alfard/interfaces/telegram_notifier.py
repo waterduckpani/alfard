@@ -53,8 +53,10 @@ class TelegramNotifier:
             ),
             self._loop,
         )
+        gate_message_id = None
         try:
-            future.result(timeout=10)
+            msg = future.result(timeout=10)
+            gate_message_id = msg.message_id
         except Exception as exc:
             _log.error(
                 "gate_send_failure: could not send approval request for action=%s tool=%s: %s",
@@ -75,11 +77,21 @@ class TelegramNotifier:
                 pass
             return "n"
 
-        event.wait(timeout=300)
+        resolved = event.wait(timeout=300)
 
         with self._lock:
             decision = self._decisions.pop(action_id, None)
             self._pending.pop(action_id, None)
+
+        if not resolved and gate_message_id is not None:
+            asyncio.run_coroutine_threadsafe(
+                self._bot.edit_message_text(
+                    chat_id=self._chat_id,
+                    message_id=gate_message_id,
+                    text="⏱ Approval request expired — action auto-rejected.",
+                ),
+                self._loop,
+            )
 
         return "y" if decision else "n"
 

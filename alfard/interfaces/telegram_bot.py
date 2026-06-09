@@ -8,6 +8,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 from telegram import Update
@@ -94,6 +95,7 @@ class AlfardTelegramBot:
         # session key is chat_id (== user_id for DMs, channel/group id for groups)
         self._sessions: dict[int, tuple] = {}
         self._locks: dict[int, threading.Lock] = {}
+        self._sessions_lock = threading.Lock()  # guards session creation and eviction
         self._first_message: dict[int, bool] = {}
         self._session_last_active: dict[int, float] = {}
         self._message_counts: dict[int, int] = {}
@@ -102,6 +104,7 @@ class AlfardTelegramBot:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_flag: asyncio.Event | None = None
         self._app: Application | None = None
+        self._executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="alfard-tg")
 
         from alfard.cron import bot_registry
         bot_registry.register(agent_name, "telegram", self)
@@ -116,56 +119,58 @@ class AlfardTelegramBot:
 
     def _get_session(self, chat_id: int) -> tuple:
         """Get or create a session keyed by chat_id."""
-        if chat_id not in self._sessions:
-            if self._app is None or self._loop is None:
-                raise RuntimeError("Bot is not running — cannot create session")
-            session = _build_session(self.agent_name, self._app.bot, chat_id, self._loop)
-            self._sessions[chat_id] = session
-            self._locks[chat_id] = threading.Lock()
-            self._first_message[chat_id] = True
-            self._session_last_active[chat_id] = time.time()
-            self._message_counts[chat_id] = 0
-            orchestrator, audit, _, loader, _ = session
+        with self._sessions_lock:
+            if chat_id not in self._sessions:
+                if self._app is None or self._loop is None:
+                    raise RuntimeError("Bot is not running — cannot create session")
+                session = _build_session(self.agent_name, self._app.bot, chat_id, self._loop)
+                self._sessions[chat_id] = session
+                self._locks[chat_id] = threading.Lock()
+                self._first_message[chat_id] = True
+                self._session_last_active[chat_id] = time.time()
+                self._message_counts[chat_id] = 0
+                orchestrator, audit, _, loader, _ = session
 
-            def _notify_reflect(n: int, _cid: int = chat_id) -> None:
-                import asyncio
-                loop = self._loop
-                bot = self._app.bot if self._app else None
-                if bot is None or loop is None:
-                    return
-                text = f"_💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:_ `alfard memory review`"
-                asyncio.run_coroutine_threadsafe(
-                    bot.send_message(chat_id=_cid, text=text, parse_mode="Markdown"),
-                    loop,
+                def _notify_reflect(n: int, _cid: int = chat_id) -> None:
+                    import asyncio
+                    loop = self._loop
+                    bot = self._app.bot if self._app else None
+                    if bot is None or loop is None:
+                        return
+                    text = f"_💡 reflect triggered ({n} proposal{'s' if n != 1 else ''}) — review with:_ `alfard memory review`"
+                    asyncio.run_coroutine_threadsafe(
+                        bot.send_message(chat_id=_cid, text=text, parse_mode="Markdown"),
+                        loop,
+                    )
+
+                reflect_triggers.start_idle_watcher(
+                    f"{self.agent_name}:{chat_id}",
+                    loader.memory_manager,
+                    orchestrator._llm,
+                    audit.log_path,
+                    notify_callback=_notify_reflect,
                 )
-
-            reflect_triggers.start_idle_watcher(
-                self.agent_name,
-                loader.memory_manager,
-                orchestrator._llm,
-                audit.log_path,
-                notify_callback=_notify_reflect,
-            )
-            orchestrator._on_reflect = _notify_reflect
+                orchestrator._on_reflect = _notify_reflect
         return self._sessions[chat_id]
 
     def _evict_stale_sessions(self) -> None:
         cutoff = time.time() - (SESSION_TIMEOUT_HOURS * 3600)
-        stale = [cid for cid, ts in self._session_last_active.items() if ts < cutoff]
-        for cid in stale:
-            try:
-                _, audit, _, loader, _ = self._sessions.pop(cid)
-                reflect_triggers.stop_idle_watcher(self.agent_name)
-                audit.close()
-            except Exception:
-                pass
-            for d in (
-                self._locks,
-                self._first_message,
-                self._session_last_active,
-                self._message_counts,
-            ):
-                d.pop(cid, None)
+        with self._sessions_lock:
+            stale = [cid for cid, ts in self._session_last_active.items() if ts < cutoff]
+            for cid in stale:
+                try:
+                    _, audit, _, loader, _ = self._sessions.pop(cid)
+                    reflect_triggers.stop_idle_watcher(f"{self.agent_name}:{cid}")
+                    audit.close()
+                except Exception:
+                    pass
+                for d in (
+                    self._locks,
+                    self._first_message,
+                    self._session_last_active,
+                    self._message_counts,
+                ):
+                    d.pop(cid, None)
 
     # ── cron injection ───────────────────────────────────────────────────────
 
@@ -207,11 +212,7 @@ class AlfardTelegramBot:
             return
 
         gate_disabled = job_cfg.get("approval_gate") == "disabled"
-        threading.Thread(
-            target=self._run_cron_injection,
-            args=(chat_id, job_name, task, gate_disabled),
-            daemon=True,
-        ).start()
+        self._executor.submit(self._run_cron_injection, chat_id, job_name, task, gate_disabled)
 
     def _run_cron_injection(self, chat_id: int, job_name: str, task: str, gate_disabled: bool = False) -> None:
         """Execute the cron task in the live session, then send output to the chat."""
@@ -221,7 +222,8 @@ class AlfardTelegramBot:
         from alfard.gate.approval import ToolDeniedError
         from alfard.agents.loader import AGENTS_DIR
 
-        self._session_last_active[chat_id] = time.time()
+        with self._sessions_lock:
+            self._session_last_active[chat_id] = time.time()
         self._evict_stale_sessions()
 
         try:
@@ -233,9 +235,6 @@ class AlfardTelegramBot:
             )
             return
 
-        _old_gate = orchestrator._gate.enabled
-        if gate_disabled:
-            orchestrator._gate.enabled = False
         lock = self._locks[chat_id]
 
         def _reply(msg: str, parse_mode: str | None = None) -> None:
@@ -247,6 +246,10 @@ class AlfardTelegramBot:
             ).result(timeout=30)
 
         with lock:
+            _old_gate = orchestrator._gate.enabled
+            if gate_disabled:
+                orchestrator._gate.enabled = False
+
             if self._first_message.get(chat_id):
                 system_prompt = loader.build_system_prompt(query=task)
                 orchestrator._memory._system_prompt = system_prompt
@@ -312,7 +315,7 @@ class AlfardTelegramBot:
             pass
 
         reflect_triggers.on_user_message(
-            self.agent_name,
+            f"{self.agent_name}:{chat_id}",
             loader.memory_manager,
             orchestrator._llm,
             audit.log_path,
@@ -328,7 +331,8 @@ class AlfardTelegramBot:
         reply_fn,
         reply_html_fn=None,
     ) -> None:
-        self._session_last_active[chat_id] = time.time()
+        with self._sessions_lock:
+            self._session_last_active[chat_id] = time.time()
         self._evict_stale_sessions()
 
         orchestrator, audit, notifier, loader, registry = self._get_session(chat_id)
@@ -361,16 +365,21 @@ class AlfardTelegramBot:
             html_out = to_telegram_html(response)
             if len(html_out) > _TG_MAX:
                 html_out = html_out[:_TG_MAX - 1] + "…"
-            _send_html(html_out)
-
-            for entry in _drain_notifications():
-                try:
-                    _send_html(_format_memory_notification(entry))
-                except Exception:
-                    pass
+            try:
+                _send_html(html_out)
+            except Exception as exc:
+                _log.error(
+                    "Failed to send response to chat %s: %s", chat_id, exc, exc_info=True
+                )
+            finally:
+                for entry in _drain_notifications():
+                    try:
+                        _send_html(_format_memory_notification(entry))
+                    except Exception:
+                        pass
 
         reflect_triggers.on_user_message(
-            self.agent_name,
+            f"{self.agent_name}:{chat_id}",
             loader.memory_manager,
             orchestrator._llm,
             audit.log_path,
@@ -391,8 +400,6 @@ class AlfardTelegramBot:
         loop = asyncio.get_running_loop()
         chat_id = update.effective_chat.id
 
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
         def _reply(msg: str) -> None:
             asyncio.run_coroutine_threadsafe(
                 context.bot.send_message(chat_id=chat_id, text=msg),
@@ -405,12 +412,18 @@ class AlfardTelegramBot:
                 loop,
             ).result(timeout=30)
 
-        threading.Thread(
-            target=self._process_message,
-            args=(chat_id, text, _reply),
-            kwargs={"reply_html_fn": _reply_html},
-            daemon=True,
-        ).start()
+        future = self._executor.submit(self._process_message, chat_id, text, _reply, _reply_html)
+
+        async def _keep_typing() -> None:
+            while not future.done():
+                try:
+                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                except Exception:
+                    pass
+                await asyncio.sleep(4)
+
+        typing_task = asyncio.create_task(_keep_typing())
+        future.add_done_callback(lambda _: loop.call_soon_threadsafe(typing_task.cancel))
 
     async def _handle_new(self, update: Update, context) -> None:
         user_id = update.effective_user.id
@@ -423,13 +436,15 @@ class AlfardTelegramBot:
             return
 
         orchestrator, _, _, loader, _ = self._sessions[chat_id]
+        lock = self._locks[chat_id]
 
         def _do_new() -> str:
-            orchestrator.checkpoint_session()
-            new_prompt = loader.build_system_prompt()
-            orchestrator._memory._system_prompt = new_prompt
-            orchestrator._memory.reset()
-            self._first_message[chat_id] = True
+            with lock:
+                orchestrator.checkpoint_session()
+                new_prompt = loader.build_system_prompt()
+                orchestrator._memory._system_prompt = new_prompt
+                orchestrator._memory.reset()
+                self._first_message[chat_id] = True
             return "Session saved. Starting fresh with updated memory."
 
         msg = await asyncio.get_running_loop().run_in_executor(None, _do_new)
@@ -451,25 +466,27 @@ class AlfardTelegramBot:
             return
 
         _, _, _, loader, _ = self._sessions[chat_id]
+        lock = self._locks[chat_id]
         loop = asyncio.get_running_loop()
 
         def _do_remember() -> str:
-            result = loader.memory_manager.write(
-                content,
-                memory_type="fact",
-                valence="neutral",
-                source="user_explicit",
-                confidence=1.0,
-            )
-            for entry in _drain_notifications():
-                asyncio.run_coroutine_threadsafe(
-                    context.bot.send_message(
-                        chat_id=chat_id,
-                        text=_format_memory_notification(entry),
-                        parse_mode="HTML",
-                    ),
-                    loop,
-                ).result(timeout=30)
+            with lock:
+                result = loader.memory_manager.write(
+                    content,
+                    memory_type="fact",
+                    valence="neutral",
+                    source="user_explicit",
+                    confidence=1.0,
+                )
+                for entry in _drain_notifications():
+                    asyncio.run_coroutine_threadsafe(
+                        context.bot.send_message(
+                            chat_id=chat_id,
+                            text=_format_memory_notification(entry),
+                            parse_mode="HTML",
+                        ),
+                        loop,
+                    ).result(timeout=30)
             return result
 
         result = await loop.run_in_executor(None, _do_remember)
@@ -518,8 +535,8 @@ class AlfardTelegramBot:
         )
 
         async with app:
-            await app.updater.start_polling()
             await app.start()
+            await app.updater.start_polling()
             print("[telegram] connected. Send a message to start.")
             await self._stop_flag.wait()
             await app.updater.stop()
@@ -530,15 +547,17 @@ class AlfardTelegramBot:
         asyncio.run(self._async_run())
 
     def stop(self) -> None:
-        """Signal the bot to stop cleanly."""
+        """Signal the bot to stop cleanly and wait for in-flight work to finish."""
         if self._loop and self._stop_flag:
             self._loop.call_soon_threadsafe(self._stop_flag.set)
         from alfard.cron import bot_registry
         bot_registry.deregister(self.agent_name, "telegram")
         for cid in list(self._sessions):
             try:
-                reflect_triggers.stop_idle_watcher(self.agent_name)
-                _, audit, _, _, _ = self._sessions[cid]
+                reflect_triggers.stop_idle_watcher(f"{self.agent_name}:{cid}")
+                orchestrator, audit, _, _, _ = self._sessions[cid]
+                orchestrator.stop()
                 audit.close()
             except Exception:
                 pass
+        self._executor.shutdown(wait=True)
