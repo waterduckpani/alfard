@@ -239,73 +239,77 @@ class AlfardSlackBot:
         self._session_last_active[cron_session_key] = time.time()
         self._evict_stale_sessions()
         orchestrator, audit, notifier, loader = self._get_session(cron_session_key, notify_channel=channel)
+        _old_gate = orchestrator._gate.enabled
         if gate_disabled:
             orchestrator._gate.enabled = False
         lock = self._locks[cron_session_key]
 
-        with lock:
-            if self._first_message.get(cron_session_key):
-                system_prompt = loader.build_system_prompt(query=task)
-                orchestrator._memory._system_prompt = system_prompt
-                self._first_message[cron_session_key] = False
+        try:
+            with lock:
+                if self._first_message.get(cron_session_key):
+                    system_prompt = loader.build_system_prompt(query=task)
+                    orchestrator._memory._system_prompt = system_prompt
+                    self._first_message[cron_session_key] = False
 
-            cron_text = build_cron_context(job_name, task) + "\n\n" + task
+                cron_text = build_cron_context(job_name, task) + "\n\n" + task
 
-            thinking_ts = None
-            try:
-                resp = self.web_client.chat_postMessage(
-                    channel=channel,
-                    text=f"_🤖 {job_name} running..._",
-                )
-                thinking_ts = resp.get("ts")
-            except Exception:
-                pass
-
-            error_occurred = False
-            try:
-                response = orchestrator.run(cron_text)
-            except Exception as exc:
-                _log.error(
-                    "cron injection error job=%s agent=%s: %s",
-                    job_name, self.agent_name, exc, exc_info=True,
-                )
-                response = f"Cron job '{job_name}' encountered an error: {exc}"
-                error_occurred = True
-
-            self._message_counts[cron_session_key] = self._message_counts.get(cron_session_key, 0) + 1
-            if self._message_counts[cron_session_key] >= 15:
-                self._message_counts[cron_session_key] = 0
+                thinking_ts = None
                 try:
-                    orchestrator.checkpoint_session()
+                    resp = self.web_client.chat_postMessage(
+                        channel=channel,
+                        text=f"_🤖 {job_name} running..._",
+                    )
+                    thinking_ts = resp.get("ts")
                 except Exception:
                     pass
 
-            if thinking_ts:
+                error_occurred = False
                 try:
-                    self.web_client.chat_delete(channel=channel, ts=thinking_ts)
-                except Exception:
-                    pass
+                    response = orchestrator.run(cron_text)
+                except Exception as exc:
+                    _log.error(
+                        "cron injection error job=%s agent=%s: %s",
+                        job_name, self.agent_name, exc, exc_info=True,
+                    )
+                    response = f"Cron job '{job_name}' encountered an error: {exc}"
+                    error_occurred = True
 
-            status_icon = "❌" if error_occurred else "✅"
-            summary = response[:500] + "…" if len(response) > 500 else response
-            try:
-                self.web_client.chat_postMessage(
-                    channel=channel,
-                    text=f"*{status_icon} {job_name}*\n{to_slack(summary)}",
-                )
-            except Exception as exc:
-                _log.error(
-                    "failed to post cron output job=%s: %s", job_name, exc
-                )
+                self._message_counts[cron_session_key] = self._message_counts.get(cron_session_key, 0) + 1
+                if self._message_counts[cron_session_key] >= 15:
+                    self._message_counts[cron_session_key] = 0
+                    try:
+                        orchestrator.checkpoint_session()
+                    except Exception:
+                        pass
 
-            for entry in _drain_notifications():
+                if thinking_ts:
+                    try:
+                        self.web_client.chat_delete(channel=channel, ts=thinking_ts)
+                    except Exception:
+                        pass
+
+                status_icon = "❌" if error_occurred else "✅"
+                summary = response[:500] + "…" if len(response) > 500 else response
                 try:
                     self.web_client.chat_postMessage(
                         channel=channel,
-                        text=_format_memory_notification(entry),
+                        text=f"*{status_icon} {job_name}*\n{to_slack(summary)}",
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _log.error(
+                        "failed to post cron output job=%s: %s", job_name, exc
+                    )
+
+                for entry in _drain_notifications():
+                    try:
+                        self.web_client.chat_postMessage(
+                            channel=channel,
+                            text=_format_memory_notification(entry),
+                        )
+                    except Exception:
+                        pass
+        finally:
+            orchestrator._gate.enabled = _old_gate
 
         try:
             _save_log(AGENTS_DIR / agent_name, job_name, task, response, error=False)

@@ -251,6 +251,7 @@ class AlfardDiscordBot(discord.Client):
         orchestrator, audit, notifier, loader, registry = self._get_session(
             key, channel, loop
         )
+        _old_gate = orchestrator._gate.enabled
         if gate_disabled:
             orchestrator._gate.enabled = False
         lock = self._locks[key]
@@ -296,6 +297,7 @@ class AlfardDiscordBot(discord.Client):
                 response = f"Cron job '{job_name}' encountered an error: {exc}"
             finally:
                 orchestrator.pre_tool_hook = None
+                orchestrator._gate.enabled = _old_gate
 
             self._message_counts[key] = self._message_counts.get(key, 0) + 1
             if self._message_counts[key] >= 15:

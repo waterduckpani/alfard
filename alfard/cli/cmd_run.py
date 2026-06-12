@@ -51,10 +51,38 @@ def _socket_alive(sock_path: Path) -> bool:
         return False
 
 
+def _ipc_write(writer: asyncio.StreamWriter, payload: bytes) -> None:
+    writer.write(len(payload).to_bytes(4, "big") + payload)
+
+
+async def _ipc_read(reader: asyncio.StreamReader, timeout: float) -> bytes | None:
+    """Read one length-prefixed message; return None on clean EOF."""
+    try:
+        header = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
+    except asyncio.IncompleteReadError:
+        return None
+    length = int.from_bytes(header, "big")
+    return await asyncio.wait_for(reader.readexactly(length), timeout=timeout)
+
+
+PROTOCOL_VERSION = 1
+_IPC_MAX_RETRIES = 3
+
+
+async def _ipc_send_with_retry(sock_path: Path, task: str, timeout: float = 300.0) -> str:
+    """Attempt _ipc_send up to _IPC_MAX_RETRIES times, sleeping 1 s between OSError failures."""
+    for attempt in range(_IPC_MAX_RETRIES):
+        try:
+            return await _ipc_send(sock_path, task, timeout=timeout)
+        except OSError:
+            if attempt == _IPC_MAX_RETRIES - 1:
+                raise
+            await asyncio.sleep(1.0)
+    raise RuntimeError("unreachable")  # never reached
+
+
 async def _ipc_send(sock_path: Path, task: str, timeout: float = 300.0) -> str:
     """Send one task to the daemon and return its response text."""
-    import sys
-
     if sys.platform == "win32":
         port_file = sock_path.parent / "agent.port"
         port = int(port_file.read_text(encoding="utf-8").strip())
@@ -63,9 +91,11 @@ async def _ipc_send(sock_path: Path, task: str, timeout: float = 300.0) -> str:
         reader, writer = await asyncio.open_unix_connection(str(sock_path))
 
     try:
-        writer.write((json.dumps({"task": task}) + "\n").encode())
+        _ipc_write(writer, json.dumps({"task": task, "protocol": PROTOCOL_VERSION}).encode())
         await writer.drain()
-        raw = await asyncio.wait_for(reader.readline(), timeout=timeout)
+        raw = await _ipc_read(reader, timeout=timeout)
+        if raw is None:
+            raise RuntimeError("daemon closed connection without response")
         try:
             resp = json.loads(raw.decode())
         except json.JSONDecodeError:
@@ -120,7 +150,7 @@ async def _run_ipc_session(agent: str, sock_path: Path) -> None:
             ui.set_running(True)
 
             try:
-                result = await _ipc_send(sock_path, stripped)
+                result = await _ipc_send_with_retry(sock_path, stripped)
                 ui.append(_rich_to_ansi(f"[{p.fg_em}]{agent}[/]"))
                 ui.append(_rich_to_ansi(Markdown(result)))
                 ui.append("\n")
@@ -129,7 +159,10 @@ async def _run_ipc_session(agent: str, sock_path: Path) -> None:
             except asyncio.TimeoutError:
                 ui.append(_rich_to_ansi(f"[{p.warn}]timed out waiting for response.[/]\n"))
             except OSError as exc:
-                ui.append(_rich_to_ansi(f"[{p.err}]connection lost: {exc}[/]\n"))
+                ui.append(_rich_to_ansi(
+                    f"[{p.err}]daemon unreachable after {_IPC_MAX_RETRIES} "
+                    f"reconnect attempt(s): {exc}[/]\n"
+                ))
                 ui.append(_rich_to_ansi(f"[{p.fg_dim}]goodbye.[/]\n"))
                 await asyncio.sleep(0.15)
                 ui.exit()

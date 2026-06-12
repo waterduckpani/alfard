@@ -40,6 +40,7 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
     try:
         job_cfg = _load_job_cfg(agent_name, job_name)
         linked_skills: list[str] | None = job_cfg.get("linked_skills") or None
+        gate_enabled = job_cfg.get("approval_gate") != "disabled"
 
         from alfard.orchestrator.builder import build_orchestrator
         from alfard.gate.cron_gate import CRON_ALWAYS_GATE
@@ -48,7 +49,7 @@ def run_job(agent_name: str, task: str, job_name: str) -> str:
         orchestrator, audit, loader, _registry = build_orchestrator(
             agent_name=agent_name,
             connect_mcp=True,
-            gate_enabled=True,
+            gate_enabled=gate_enabled,
             linked_skills=linked_skills,
             interactive=False,
         )

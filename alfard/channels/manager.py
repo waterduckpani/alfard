@@ -181,3 +181,15 @@ class ChannelManager:
                 ch.stop()
             except Exception:
                 pass
+
+    def join_all(self, timeout: float = 5.0) -> None:
+        """Block until every channel thread has finished (up to timeout seconds each)."""
+        for name, (thread, _) in list(self._channel_threads.items()):
+            try:
+                thread.join(timeout=timeout)
+                if thread.is_alive():
+                    log.warning(
+                        "channel thread '%s' did not stop within %.1f s", name, timeout
+                    )
+            except Exception:
+                pass

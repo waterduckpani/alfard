@@ -23,6 +23,8 @@ from alfard.orchestrator.builder import build_orchestrator
 from alfard.paths import load_env
 
 IDLE_TIMEOUT_SEC = 3600  # 60 minutes
+MAX_IPC_CONNECTIONS = 32
+PROTOCOL_VERSION = 1
 
 _log = logging.getLogger("alfard.daemon")
 
@@ -82,6 +84,24 @@ async def _lane_worker(queue: asyncio.Queue, orchestrator, worker_idle: asyncio.
 
 
 # ---------------------------------------------------------------------------
+# IPC framing — 4-byte big-endian length prefix + JSON body
+# ---------------------------------------------------------------------------
+
+def _ipc_write(writer: asyncio.StreamWriter, payload: bytes) -> None:
+    writer.write(len(payload).to_bytes(4, "big") + payload)
+
+
+async def _ipc_read(reader: asyncio.StreamReader, timeout: float) -> bytes | None:
+    """Read one length-prefixed message; return None on clean EOF."""
+    try:
+        header = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
+    except asyncio.IncompleteReadError:
+        return None
+    length = int.from_bytes(header, "big")
+    return await asyncio.wait_for(reader.readexactly(length), timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
 # IPC client handler
 # ---------------------------------------------------------------------------
 
@@ -91,90 +111,129 @@ async def _handle_ipc_client(
     queue: asyncio.Queue,
     on_activity,
     agent_name: str,
+    conn_sem: asyncio.Semaphore,
 ) -> None:
-    """Accept one JSON-line request, queue it, return the JSON-line response.
+    """Accept one length-prefixed JSON request, queue it, return the JSON response.
 
     Supported commands:
       {"task": "<prompt>"}                              — run a task via the orchestrator lane
       {"cmd": "cron_run", "name": "<job>", "task": "<prompt>"}  — fire a cron job in-process
     """
-    try:
-        raw = await asyncio.wait_for(reader.readline(), timeout=10.0)
-        if not raw:
-            return
+    if conn_sem.locked():
         try:
-            req = json.loads(raw.decode())
-        except json.JSONDecodeError:
-            writer.write(b'{"error": "invalid json"}\n')
+            _ipc_write(writer, b'{"error": "too many connections"}')
             await writer.drain()
-            return
-
-        cmd = req.get("cmd")
-
-        if cmd == "reload_env":
-            load_env()
-            writer.write(b'{"result": "reloaded"}\n')
-            await writer.drain()
-            return
-
-        if cmd == "get_version":
-            from alfard import __version__
-            writer.write((json.dumps({"version": __version__}) + "\n").encode())
-            await writer.drain()
-            return
-
-        if cmd == "cron_run":
-            name = req.get("name", "").strip()
-            task = req.get("task", "").strip()
-            if not name or not task:
-                writer.write(b'{"error": "missing name or task"}\n')
-                await writer.drain()
-                return
-            on_activity()
-            loop = asyncio.get_running_loop()
-            try:
-                from alfard.cron.scheduler import _fire_cron_job
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(None, _fire_cron_job, agent_name, name, task),
-                    timeout=300.0,
-                )
-                resp = json.dumps({"result": result if result is not None else "injected"}) + "\n"
-            except asyncio.TimeoutError:
-                resp = json.dumps({"error": "timeout"}) + "\n"
-            except Exception as exc:
-                resp = json.dumps({"error": str(exc)}) + "\n"
-            writer.write(resp.encode())
-            await writer.drain()
-            return
-
-        task = req.get("task", "").strip()
-        if not task:
-            writer.write(b'{"error": "missing task"}\n')
-            await writer.drain()
-            return
-
-        on_activity()
-
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future = loop.create_future()
-        await queue.put((task, fut))
-
-        try:
-            result = await asyncio.wait_for(asyncio.shield(fut), timeout=300.0)
-            resp = json.dumps({"result": result}) + "\n"
-        except asyncio.TimeoutError:
-            resp = json.dumps({"error": "timeout"}) + "\n"
-        except Exception as exc:
-            resp = json.dumps({"error": str(exc)}) + "\n"
-
-        writer.write(resp.encode())
-        await writer.drain()
-    finally:
+        except Exception:
+            pass
         try:
             writer.close()
             await writer.wait_closed()
         except Exception:
             pass
+        return
+
+    async with conn_sem:
+        try:
+            try:
+                raw = await _ipc_read(reader, timeout=10.0)
+            except asyncio.TimeoutError:
+                _ipc_write(writer, b'{"error": "read timeout"}')
+                await writer.drain()
+                return
+            if raw is None:
+                return
+            try:
+                req = json.loads(raw.decode())
+            except json.JSONDecodeError:
+                _ipc_write(writer, b'{"error": "invalid json"}')
+                await writer.drain()
+                return
+
+            client_protocol = req.get("protocol")
+            if client_protocol is not None and client_protocol != PROTOCOL_VERSION:
+                _ipc_write(writer, json.dumps({
+                    "error": (
+                        f"protocol version mismatch: "
+                        f"client={client_protocol} daemon={PROTOCOL_VERSION} — "
+                        f"run 'pip install -U alfard' to align versions"
+                    )
+                }).encode())
+                await writer.drain()
+                return
+
+            cmd = req.get("cmd")
+
+            if cmd == "reload_env":
+                load_env()
+                _ipc_write(writer, b'{"result": "reloaded"}')
+                await writer.drain()
+                return
+
+            if cmd == "get_version":
+                from alfard import __version__
+                _ipc_write(writer, json.dumps({"version": __version__}).encode())
+                await writer.drain()
+                return
+
+            if cmd == "cron_run":
+                name = req.get("name", "").strip()
+                task = req.get("task", "").strip()
+                if not name or not task:
+                    _ipc_write(writer, b'{"error": "missing name or task"}')
+                    await writer.drain()
+                    return
+                on_activity()
+                loop = asyncio.get_running_loop()
+                try:
+                    from alfard.cron.scheduler import _fire_cron_job
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, _fire_cron_job, agent_name, name, task),
+                        timeout=300.0,
+                    )
+                    resp = json.dumps({"result": result if result is not None else "injected"}).encode()
+                except asyncio.TimeoutError:
+                    resp = b'{"error": "timeout"}'
+                except Exception as exc:
+                    resp = json.dumps({"error": str(exc)}).encode()
+                _ipc_write(writer, resp)
+                await writer.drain()
+                return
+
+            task = req.get("task", "").strip()
+            if not task:
+                _ipc_write(writer, b'{"error": "missing task"}')
+                await writer.drain()
+                return
+
+            on_activity()
+
+            loop = asyncio.get_running_loop()
+            fut: asyncio.Future = loop.create_future()
+            try:
+                queue.put_nowait((task, fut))
+            except asyncio.QueueFull:
+                _ipc_write(writer, b'{"error": "server busy — queue full"}')
+                await writer.drain()
+                return
+
+            try:
+                result = await asyncio.wait_for(fut, timeout=300.0)
+                resp = json.dumps({"result": result}).encode()
+            except asyncio.TimeoutError:
+                if not fut.done():
+                    fut.cancel()
+                resp = b'{"error": "timeout"}'
+            except Exception as exc:
+                resp = json.dumps({"error": str(exc)}).encode()
+
+            _ipc_write(writer, resp)
+            await writer.drain()
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +259,13 @@ def _start_crons(
 
     def _enqueue(task: str, job_name: str) -> None:
         on_activity()
-        loop.call_soon_threadsafe(queue.put_nowait, (task, None))
-        _log.info("cron '%s' enqueued", job_name)
+        def _put() -> None:
+            try:
+                queue.put_nowait((task, None))
+                _log.info("cron '%s' enqueued", job_name)
+            except asyncio.QueueFull:
+                _log.warning("cron '%s' dropped — queue full", job_name)
+        loop.call_soon_threadsafe(_put)
 
     loaded = 0
     for job in jobs:
@@ -287,11 +351,13 @@ async def _run_daemon(
     sock_path: Path,
 ) -> None:
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     idle_reset = asyncio.Event()
     shutdown_event = asyncio.Event()
     worker_idle = asyncio.Event()
     worker_idle.set()
+    conn_sem = asyncio.Semaphore(MAX_IPC_CONNECTIONS)
+    _session_checkpointed = False
 
     def on_activity() -> None:
         """Reset the idle timer; safe to call from any thread."""
@@ -306,26 +372,31 @@ async def _run_daemon(
     port_file: Path | None = None
 
     if sys.platform == "win32":
-        import socket as _socket
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _s:
-            _s.bind(("127.0.0.1", 0))
-            _port = _s.getsockname()[1]
         ipc_server = await asyncio.start_server(
-            lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name),
+            lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name, conn_sem),
             "127.0.0.1",
-            _port,
+            0,  # OS picks port; sockets[0] is bound before start_server() returns
         )
+        _port = ipc_server.sockets[0].getsockname()[1]
         port_file = sock_path.parent / "agent.port"
-        port_file.write_text(str(_port), encoding="utf-8")
+        _port_bytes = str(_port).encode("utf-8")
+        _fd = os.open(str(port_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(_fd, _port_bytes)
+        finally:
+            os.close(_fd)
         _log.info("IPC TCP server ready: 127.0.0.1:%d", _port)
     else:
         if sock_path.exists():
             sock_path.unlink()
-        ipc_server = await asyncio.start_unix_server(
-            lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name),
-            path=str(sock_path),
-        )
-        os.chmod(sock_path, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
+        _old_umask = os.umask(0o177)
+        try:
+            ipc_server = await asyncio.start_unix_server(
+                lambda r, w: _handle_ipc_client(r, w, queue, on_activity, agent_name, conn_sem),
+                path=str(sock_path),
+            )
+        finally:
+            os.umask(_old_umask)
         _log.info("IPC socket ready: %s", sock_path)
 
     # Cron scheduler
@@ -356,17 +427,30 @@ async def _run_daemon(
 
     # Idle watchdog
     async def _watchdog() -> None:
+        nonlocal _session_checkpointed
         while not shutdown_event.is_set():
             try:
                 await asyncio.wait_for(idle_reset.wait(), timeout=float(IDLE_TIMEOUT_SEC))
                 idle_reset.clear()
             except asyncio.TimeoutError:
-                await worker_idle.wait()  # don't interrupt a running task
-                _log.info(
-                    "idle timeout (%d min) — triggering session checkpoint",
-                    IDLE_TIMEOUT_SEC // 60,
-                )
-                shutdown_event.set()
+                # Poll with a bounded wait so a hung worker can't block the watchdog forever.
+                while not worker_idle.is_set() and not shutdown_event.is_set():
+                    try:
+                        await asyncio.wait_for(worker_idle.wait(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        pass
+                if not shutdown_event.is_set():
+                    _log.info(
+                        "idle timeout (%d min) — checkpointing session before shutdown",
+                        IDLE_TIMEOUT_SEC // 60,
+                    )
+                    try:
+                        await loop.run_in_executor(None, orchestrator.checkpoint_session)
+                        _session_checkpointed = True
+                        _log.info("idle checkpoint complete")
+                    except Exception as exc:
+                        _log.warning("idle checkpoint failed: %s", exc)
+                    shutdown_event.set()
                 return
 
     watchdog_task = asyncio.create_task(_watchdog())
@@ -381,7 +465,7 @@ async def _run_daemon(
 
         if scheduler is not None:
             try:
-                scheduler.shutdown(wait=False)
+                scheduler.shutdown(wait=True)
             except Exception:
                 pass
 
@@ -399,16 +483,18 @@ async def _run_daemon(
                 pass
 
         channel_manager.stop_all()
+        channel_manager.join_all(timeout=5.0)
 
         # Drain queue and stop lane worker
         loop.call_soon_threadsafe(queue.put_nowait, None)
         await worker_task
 
-        # Session end + memory write
-        try:
-            orchestrator.checkpoint_session()
-        except Exception as exc:
-            _log.warning("checkpoint_session failed: %s", exc)
+        # Session end + memory write (skip if idle watchdog already checkpointed)
+        if not _session_checkpointed:
+            try:
+                orchestrator.checkpoint_session()
+            except Exception as exc:
+                _log.warning("checkpoint_session failed: %s", exc)
 
         try:
             audit.log_session_end(
@@ -473,6 +559,53 @@ def daemon(agent: str | None, no_mcp: bool) -> None:
         raise SystemExit(1)
 
     load_env()
+
+    if sys.platform == "win32":
+        import socket as _sprobe
+        _port_file = AGENTS_DIR / agent / "agent.port"
+        if _port_file.exists():
+            try:
+                _port = int(_port_file.read_text(encoding="utf-8").strip())
+                with _sprobe.socket(_sprobe.AF_INET, _sprobe.SOCK_STREAM) as _s:
+                    _s.settimeout(1.0)
+                    _s.connect(("127.0.0.1", _port))
+                console.print(error_block(
+                    agent="alfard daemon",
+                    state="failed",
+                    headline=f"daemon for '{agent}' is already running.",
+                    explanation=f"live on port {_port} — stop the existing daemon first.",
+                    next_actions=[
+                        {"cmd": f"alfard service stop {agent}", "desc": "stop the running daemon"},
+                    ],
+                ))
+                raise SystemExit(1)
+            except (ConnectionRefusedError, OSError, ValueError):
+                # Stale port file from a previous crash — remove it so the new daemon
+                # can write its own port number without confusion.
+                try:
+                    _port_file.unlink()
+                except OSError:
+                    pass
+    else:
+        _early_sock = AGENTS_DIR / agent / "agent.sock"
+        if _early_sock.exists():
+            try:
+                import socket as _sprobe
+                with _sprobe.socket(_sprobe.AF_UNIX, _sprobe.SOCK_STREAM) as _s:
+                    _s.settimeout(1.0)
+                    _s.connect(str(_early_sock))
+                console.print(error_block(
+                    agent="alfard daemon",
+                    state="failed",
+                    headline=f"daemon for '{agent}' is already running.",
+                    explanation=f"live socket at {_early_sock} — stop the existing daemon first.",
+                    next_actions=[
+                        {"cmd": f"alfard service stop {agent}", "desc": "stop the running daemon"},
+                    ],
+                ))
+                raise SystemExit(1)
+            except (ConnectionRefusedError, OSError):
+                pass  # stale socket — safe to proceed
 
     try:
         loader = AgentLoader(agent)

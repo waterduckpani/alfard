@@ -420,6 +420,8 @@ class TerminalChannel(BaseChannel):
 
                 # Quit / interrupt signal
                 if raw == _QUIT:
+                    if notifier.has_pending():
+                        notifier.post_response("n")
                     if _current_task and not _current_task.done():
                         orchestrator.stop()
                         try:
@@ -446,8 +448,10 @@ class TerminalChannel(BaseChannel):
                         notifier.post_response("n")
                         ui.append(_rich_to_ansi(f"[{p.warn}]· rejected[/]\n\n"))
                     else:
+                        notifier.post_response("n")
                         ui.append(_rich_to_ansi(
-                            f"[{p.warn}]· type y to approve or n to deny[/]\n"
+                            f"[{p.warn}]· rejected — unrecognised input"
+                            f" (type y or n at the next prompt)[/]\n\n"
                         ))
                     continue
 
