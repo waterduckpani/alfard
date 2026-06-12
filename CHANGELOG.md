@@ -5,6 +5,52 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.27 — 2026-06-12
+
+### Fixed
+
+**Telegram bot**
+- Inverted PTB startup order — application was being started after the bot began receiving updates, causing handlers to fire against an uninitialised application
+- Session creation race condition — concurrent messages for the same chat ID could create duplicate sessions
+- `/new` and `/remember` commands bypassing session lock — slash command handlers acquired no lock, racing against ongoing message processing
+- Gate state mutation before lock — approval gate was modified before the session lock was held, allowing a cron run to clobber interactive gate state
+- Silent message loss on network failures — send errors were swallowed; messages are now retried or the failure is surfaced to the user
+- Idle watcher keyed by agent name instead of chat ID — a single watcher was shared across all chats for the same agent, triggering reflect on the wrong session
+- Unbounded thread growth — each incoming message spawned a new thread with no upper bound; threads are now pooled
+- Daemon threads killed mid-operation on shutdown — worker threads were marked daemon, causing mid-flight tool calls and send operations to be hard-killed on process exit
+- Typing indicator expiring during long responses — the chat action was sent once and expired after 5 seconds; it is now refreshed until the response is ready
+- Stale approval buttons after timeout — timed-out approval messages kept active inline keyboards; buttons are now disabled when the gate window expires
+- Drain notifications not running after send failure — the post-send notification path was skipped when the primary send raised; notifications now run in a finally block
+- Session tracking dicts mutated without locks — `_sessions` and `_session_locks` were written from multiple threads without synchronisation
+- Stale session eviction race — a session could be evicted and re-created between the idle check and the eviction write
+- Reflect notifications using wrong parse mode — memory write notifications were sent with `parse_mode=Markdown` but the bot sends HTML; special characters caused silent drops
+- Session creation racing against unstarted application — messages arriving before `application.start()` completed could create sessions against an uninitialised dispatcher
+
+**Approval gate**
+- Gate never restored after cron run in Slack and Discord — after a cron job with `approval_gate: disabled`, all subsequent interactive messages in the same session bypassed the gate (was fixed in Telegram in v0.1.26; now fixed for Slack and Discord)
+- Terminal cron runner ignoring `approval_gate: disabled` config — the terminal runner always started with the gate enabled regardless of per-job config
+- Invalid approval input deadlocking the orchestrator thread — any input other than `y`/`n` at the CLI approval prompt caused an infinite retry loop that blocked the orchestrator
+
+**Daemon and IPC**
+- Stale socket deleted without live daemon check — `alfard run` deleted a stale socket file and assumed no daemon was running, even when a live daemon held a different socket path
+- Socket world-readable between creation and `chmod` — a narrow window existed where the Unix socket accepted connections from any local user before permissions were tightened
+- Windows port file written before server listening — the port file was created at bind time; clients connecting immediately could find the server not yet in `listen()` state
+- IPC timeout leaving client hanging — a slow or unresponsive daemon caused the `alfard run` client to block indefinitely; a configurable read timeout now applies
+- Newline framing corrupting multi-line prompts — the IPC protocol used `\n` as a message delimiter, truncating any prompt that contained a newline
+- No connection limit on IPC socket — an unbounded number of concurrent IPC clients could exhaust file descriptors
+- Channel threads not joined on shutdown — the daemon's channel threads were stopped but never joined, leaving zombie threads after the process exited
+- Windows port file not cleaned on crash — an unhandled exception left the port file on disk, causing subsequent starts to connect to a dead address
+- Abandoned future on IPC timeout — the timed-out `asyncio.Future` was never cancelled, leaking memory on every timeout
+- Unbounded task queue — the IPC server queued incoming requests with no backpressure, allowing memory to grow without bound under load
+- Cron scheduler hard-killing mid-run jobs — the scheduler sent a hard interrupt to running jobs on shutdown; jobs now receive a cooperative stop signal and are given a drain window
+- Idle watchdog blocking forever on hung worker — the watchdog thread joined worker threads with no timeout, stalling the entire shutdown sequence when a worker was deadlocked
+- Windows port file world-readable — the port file had default permissions; it is now written with owner-read-only permissions
+- No reconnection on mid-session disconnect — if the daemon dropped the IPC connection mid-session, `alfard run` exited with a raw socket error instead of reconnecting or reporting clearly
+- No protocol version negotiation — client and daemon silently used incompatible framing when versions differed; a version handshake is now performed at connection open
+- Idle shutdown not checkpointing session — when the daemon shut down due to inactivity, in-progress session state was discarded; state is now flushed to disk before exit
+
+---
+
 ## v0.1.26 — 2026-06-05
 
 ### Security
