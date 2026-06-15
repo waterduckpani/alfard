@@ -5,6 +5,15 @@ Versioning: https://semver.org
 
 ---
 
+## v0.1.28 — 2026-06-15
+
+### Fixed
+
+**Daemon**
+- `SyntaxError` on daemon startup — a `b'...'` IPC error response in `cmd_daemon.py` contained an em-dash (a non-ASCII character), which is invalid inside a bytes literal and crashed the module on import. Replaced with an ASCII hyphen.
+
+---
+
 ## v0.1.27 — 2026-06-12
 
 ### Fixed

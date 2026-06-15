@@ -212,7 +212,7 @@ async def _handle_ipc_client(
             try:
                 queue.put_nowait((task, fut))
             except asyncio.QueueFull:
-                _ipc_write(writer, b'{"error": "server busy — queue full"}')
+                _ipc_write(writer, b'{"error": "server busy - queue full"}')
                 await writer.drain()
                 return
 
