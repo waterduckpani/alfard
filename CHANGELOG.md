@@ -5,6 +5,15 @@ Versioning: https://semver.org
 
 ---
 
+## [Unreleased]
+
+### Added
+
+**Tests**
+- Added test coverage for `OpenAICompatAdapter` and `AnthropicAdapter` (`tests/test_openai_compat.py`, `tests/test_anthropic_adapter.py`) — covers success responses, tool-call normalization, SDK exception handling (including real `RateLimitError` cases), and empty-string vs `None` content edge cases. No production code changes.
+
+---
+
 ## v0.1.28 — 2026-06-15
 
 ### Fixed
